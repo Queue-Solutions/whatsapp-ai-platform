@@ -1,14 +1,14 @@
 # Hosted development environment
 
-Status: deployment configuration is prepared. No Vercel project, paid plan, deployment, or remote scheduler has been activated.
+Status (2026-09-12): deployed on the existing Vercel Hobby team. Public source: https://github.com/Queue-Solutions/whatsapp-ai-platform. Stable development URL: https://whatsapp-ai-platform-dev.vercel.app. No paid plan or trial was activated. Meta callback verification and real English/Arabic round trips passed on the hosted app. Supabase recovery scheduling is active and verified. With the local server and tunnel stopped, the minute job processed one queued diagnostic, returned HTTP 200, and produced one delivered reply.
 
 ## Hosting decision
 
-The user selected Vercel Hobby for the temporary test environment and a public repository. No paid plan or trial is authorized. Vercel lists Hobby for personal, non-commercial use; changing repository visibility or the scheduler does not change those usage terms. The deployment configuration omits Vercel Cron. Supabase Cron is the proposed scheduler for recovering pending work.
+The user selected Vercel Hobby for the temporary test environment and a public repository. No paid plan or trial is authorized. Vercel lists Hobby for personal, non-commercial use; changing repository visibility or the scheduler does not change those usage terms. The deployment configuration omits Vercel Cron. Supabase Cron is the selected scheduler for recovering pending work.
 
 References: [Vercel plans](https://vercel.com/pricing), [cron limits](https://vercel.com/docs/cron-jobs/usage-and-pricing), [securing cron](https://vercel.com/docs/cron-jobs/manage-cron-jobs).
 
-## Vercel settings when hosting is approved
+## Vercel settings
 
 - Create a dedicated project named `whatsapp-ai-platform-dev` from the public Queue Solutions repository. Keep all WhatsApp assets in test mode.
 - Framework: Next.js; root directory: repository root; Node.js: 24.x; install: `npm ci`; build: `npm run build`; output directory: framework default.
@@ -61,3 +61,9 @@ The normal webhook stores messages before acknowledging Meta and then tries one 
 In Supabase Vault, save `queue_dev_worker_url` as the deployed URL ending `/api/internal/process-messages`, and `queue_dev_worker_secret` as the same value as Vercel's `CRON_SECRET`. Create/update them through the authenticated dashboard; keep plaintext secrets out of SQL files, Git, and logs. Apply `supabase/operations/configure-worker.sql` as the database administrator. It updates a consistently named cron job, validates configuration, and sends no HTTP requests when there is no eligible work. The scheduler is for this low-volume development tenant; future deployments need their own configuration and capacity planning.
 
 Monitor HTTP responses as well as job run history: a successful `pg_cron` execution means the HTTP request was queued, not that the worker finished. For errors, check HTTP status codes and application job states. To stop recovery, run `select cron.unschedule('queue-dev-message-recovery');`. This does not delete messages or jobs.
+
+## Repository connection
+
+The repository is public. The first hosted release was deployed using the Vercel CLI. The owner then granted the existing Vercel GitHub integration access to this repository, and the project was connected successfully. Pushes to main trigger Vercel deployment; GitHub Actions runs validation separately, so check CI before promoting changes. Preview environments do not receive the development credentials. Manual deployment remains available with `vercel deploy --prod --scope queuesolutions`. No Vercel token is stored in GitHub Actions.
+
+Standard Protection remains enabled: preview URLs and generated deployment URLs require Vercel access; the stable production domain for this development project is public. Its webhook still requires the Meta signature and its worker requires the private bearer token.

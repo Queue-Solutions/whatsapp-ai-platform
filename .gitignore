@@ -10,3 +10,4 @@ supabase/.temp/
 
 # Local operational evidence; never publish it.
 .local/
+.vercel

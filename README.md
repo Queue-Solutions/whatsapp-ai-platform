@@ -4,15 +4,15 @@ Next.js + TypeScript + Supabase, using **Meta's temporary test number only**. Th
 
 ## Current milestone
 
-Real English and Arabic WhatsApp → webhook → Supabase → echo flows were verified on 2026-09-12, including Meta delivery receipts. See `docs/VALIDATION.md` for evidence and remaining hosting checks.
+Real English and Arabic WhatsApp → webhook → Supabase → echo flows were verified on 2026-09-12, including Meta delivery receipts. The hosted development app is https://whatsapp-ai-platform-dev.vercel.app. Its Supabase minute recovery timer was verified with the local server and tunnel stopped. See `docs/VALIDATION.md` for evidence.
 
 Signed WhatsApp webhook → customer/conversation/inbound message + durable job committed together → `processIncomingMessage()` → saved outbound intent → Meta text reply → delivery receipts.
 
-The webhook acknowledges after persistence. Next.js `after()` attempts one queued message after the response. A protected worker endpoint drains one more per call. **Configure a recurring worker invocation before any sustained test or deployment**; `after()` alone is not a durable scheduler. The simple one-message worker is deliberately for low-volume development.
+The webhook acknowledges after persistence. Next.js `after()` attempts one queued message after the response. A protected worker endpoint drains one more per call. The hosted development environment has Supabase Cron configured; **configure a recurring worker invocation for each separate deployment**; `after()` alone is not a durable scheduler. The simple one-message worker is deliberately for low-volume development.
 
 ## Run locally
 
-1. Use Node.js 22+ (24 recommended), then `npm ci`.
+1. Use Node.js 24.x, then `npm ci`.
 2. Copy `.env.example` to `.env.local` if absent. Keep it out of Git; fill the Supabase URL and backend secret key.
 3. Apply `supabase/migrations/202609120001_foundation.sql` to the empty development project with Supabase SQL Editor. The file is a single transaction. Run it once; it deliberately does not drop or overwrite existing objects. For later CLI use, follow the migration-history note below.
 4. Run `npm run check:supabase` to verify the connection and schema.
