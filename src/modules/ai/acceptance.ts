@@ -1,3 +1,4 @@
+import { replyLanguage } from './language';
 import type { AgentDecision, KnowledgeSource } from './contracts';
 import type { MessageContext } from '../messaging/types';
 const copper: KnowledgeSource = { id: 'a1111111-1111-4111-8111-111111111111', kind: 'fact', updatedAt: '2026-09-12T00:00:00.000Z', label: 'K1',
@@ -22,7 +23,7 @@ export function checkAcceptance(id: AcceptanceCaseId, decision: AgentDecision) {
   const expectedAction = decision.action === fixture.action;
   const closingTime = decision.action !== 'answer' || /21(?::00)?|٢١|\b9\b|٩|nine/i.test(decision.text);
   const cited = decision.action !== 'answer' || decision.sources.some(s => s.id === copper.id);
-  const language = !id.startsWith('arabic') && id !== 'egyptian_arabic' || /[\u0600-\u06ff]/.test(decision.text);
+  const language = replyLanguage(decision.text) === replyLanguage(fixture.text);
   // An unavailable answer must come from the model's decision, not a provider failure.
   const modelRan = ['empty_knowledge','human_request'].includes(id) || !!decision.usage;
   return { pass: expectedAction && closingTime && cited && language && modelRan, expectedAction, closingTime, cited, language, modelRan };

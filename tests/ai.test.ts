@@ -73,6 +73,14 @@ describe('grounded reply strategy', () => {
       expect(decision.action).toBe('unavailable'); expect(decision.usage).toBeDefined(); expect(ledger.finish).toHaveBeenCalledOnce();
     }
   });
+  it('rejects the wrong reply language even when the model cites the right source', async () => {
+    const decision=await new GroundedStrategy(async()=>[source],fakeLedger(),{complete:async()=>({
+      ...modelResult(),decision:{...modelResult().decision,text:'فرع الاختبار بيقفل الساعة تسعة مساءً.'},
+    })}).reply(context);
+    expect(decision.reason).toBe('wrong_response_language');expect(decision.action).toBe('unavailable');
+    expect(decision.text).not.toMatch(/[\u0600-\u06ff]/);
+    expect(JSON.parse(buildRequest(context,[{...source,content:'كوبر: test branch hours'}])).instructions).toContain('REQUIRED OUTPUT LANGUAGE: English');
+  });
   it('does not reuse a cached answer after its source was changed or unpublished', async () => {
     const load = vi.fn(async()=>[source]); const complete = vi.fn(async()=>modelResult()); const strategy = new GroundedStrategy(load,fakeLedger(),{complete});
     await strategy.reply(context); load.mockResolvedValue([{...source,updatedAt:'2026-09-13T00:00:00.000Z'}]);
@@ -135,7 +143,7 @@ describe('acceptance endpoint boundary', () => {
     const req=()=>new Request('https://test',{method:'POST',headers:{Authorization:`Bearer ${secret}`},body:'{"case":"english_hours"}'});
     expect((await handleAcceptance(req(),{...options,enabled:false})).status).toBe(404);
     expect((await handleAcceptance(req(),options)).status).toBe(200);
-    expect(run).toHaveBeenCalledWith(expect.objectContaining({tenantId:tenant,requestKey:'acceptance:v1:english_hours'}),expect.any(Array));
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({tenantId:tenant,requestKey:'acceptance:v2:english_hours'}),expect.any(Array));
   });
 });
 

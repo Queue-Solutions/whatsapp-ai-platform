@@ -1,12 +1,12 @@
+import { replyLanguage } from './language';
 import type { MessageContext, ReplyStrategy } from '../messaging/types';
 import type { AgentDecision, KnowledgeSource } from './contracts';
 import type { UsageLedger } from './ledger';
 import { AI_MODEL, MAX_KNOWLEDGE_BYTES } from './config';
 import { buildRequest, ModelFailure, type ModelProvider } from './openai';
 export type SourceLoader = (tenant: string) => Promise<KnowledgeSource[]>;
-function arabic(text: string) { return /[\u0600-\u06ff]/.test(text); }
 export function fallback(context: MessageContext, reason: string, action: AgentDecision['action'] = 'unavailable'): AgentDecision {
-  const ar = arabic(context.text ?? '');
+  const ar = replyLanguage(context.text ?? '') === 'ar';
   const text = action === 'handoff'
     ? ar ? 'طلبك محتاج مساعدة من فريق العمل. من فضلك تواصل مع الفريق مباشرة؛ الردود الآلية هتتوقف في المحادثة دي.' : 'Please contact the business team directly for help. Automated replies will pause in this conversation.'
     : ar ? 'المعلومة دي مش متاحة عندي بشكل مؤكد حالياً. من فضلك وضّح سؤالك أو تواصل مع فريق العمل مباشرة.' : 'I do not have confirmed information for this right now. Please clarify your question or contact the business team directly.';
@@ -61,6 +61,7 @@ export class GroundedStrategy implements ReplyStrategy {
     // Never let the model invent a link, even when it names a valid source.
     const urls = decision.text.match(/https?:\/\/[^\s<>]+/g) ?? [];
     if (urls.some(url => !selected.some(s => s?.content.includes(url)))) decision = fallback(context, 'unsupported_link');
+    if (replyLanguage(decision.text) !== replyLanguage(context.text)) decision = fallback(context, 'wrong_response_language');
     decision.usage = { model: AI_MODEL, inputTokens: result.input, outputTokens: result.output, costNano: result.input*400+result.output*1600 };
     await this.ledger.finish(context.tenantId, reservation.id, { state: 'completed', input: result.input,
       output: result.output, latency: Date.now()-start, decision, error: null });

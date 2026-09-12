@@ -23,7 +23,7 @@ export async function handleAcceptance(request: Request, options: {
     const id = input.case as AcceptanceCaseId; const fixture = acceptanceCases[id];
     const tenant = await options.resolveTenant();
     const decision = await options.run({ tenantId: tenant, conversationId: 'isolated-acceptance',
-      requestKey: `acceptance:v1:${id}`, text: fixture.text, type: 'text', eligible: true,
+      requestKey: `acceptance:v2:${id}`, text: fixture.text, type: 'text', eligible: true,
       history: 'history' in fixture ? fixture.history : [],
     }, fixture.sources);
     return Response.json({ case: id, checks: checkAcceptance(id,decision), decision }, { headers: { 'Cache-Control': 'no-store' } });
