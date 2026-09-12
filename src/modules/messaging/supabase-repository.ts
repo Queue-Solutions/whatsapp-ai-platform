@@ -1,3 +1,4 @@
+import type { AgentDecision } from '../ai/contracts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { DeliveryStatus, IncomingMessage, MessageContext, MessageJob, MessagingRepository, PreparedReply } from './types';
 
@@ -23,13 +24,33 @@ export class SupabaseMessagingRepository implements MessagingRepository {
     return rows[0]??null;
   }
   async context(job: MessageJob): Promise<MessageContext> {
-    const {data,error}=await this.db.from('messages').select('tenant_id,conversation_id,body,message_type')
+    const {data,error}=await this.db.from('messages').select('tenant_id,conversation_id,channel_id,body,message_type,created_at')
       .eq('id',job.inbound_message_id).eq('tenant_id',job.tenant_id).single();
     if(error || !data) throw new Error('Message context unavailable');
-    return {tenantId:data.tenant_id,conversationId:data.conversation_id,text:data.body,type:data.message_type};
+    const [conversation, channel, history] = await Promise.all([
+      this.db.from('conversations').select('automation_mode,status,last_inbound_at').eq('tenant_id', job.tenant_id).eq('id',data.conversation_id).single(),
+      this.db.from('whatsapp_channels').select('enabled,mode,phone_number_id').eq('tenant_id',job.tenant_id).eq('id',data.channel_id).single(),
+      this.db.from('messages').select('body,direction').eq('tenant_id',job.tenant_id).eq('conversation_id',data.conversation_id)
+        .lt('created_at',data.created_at).in('delivery_status',['received','sent','delivered','read']).order('created_at',{ascending:false}).limit(6),
+    ]);
+    if (conversation.error || channel.error || history.error) throw new Error('Message context unavailable');
+    const c = conversation.data; const ch = channel.data;
+    const eligible = c.automation_mode === 'auto' && c.status === 'open' && ch.enabled && ch.mode === 'test'
+      && ch.phone_number_id === this.phoneNumberId && Date.parse(c.last_inbound_at) >= Date.now() - (23*60+55)*60000;
+    let bytes = 0;
+    const boundedHistory = history.data.filter(m => typeof m.body === 'string' && m.body.trim()).flatMap(m => {
+      const content = m.body as string; const size = Buffer.byteLength(content,'utf8');
+      if (bytes + size > 2500) return []; bytes += size;
+      return [{ role: m.direction === 'inbound' ? 'user' as const : 'assistant' as const, content }];
+    }).reverse();
+    return {tenantId:data.tenant_id,conversationId:data.conversation_id,text:data.body,type:data.message_type,eligible,history:boundedHistory};
   }
   prepare(job: MessageJob, text: string) {
     return this.rpc<PreparedReply|null>('prepare_message_reply',{p_job:job.id,p_lease:job.lease_token,p_body:text});
+  }
+  prepareDecision(job: MessageJob, decision: AgentDecision) {
+    return this.rpc<PreparedReply|null>('prepare_ai_reply', { p_job: job.id, p_lease: job.lease_token,
+      p_body: decision.text, p_action: decision.action, p_sources: decision.sources });
   }
   async complete(job: MessageJob, providerMessageId: string) {
     await this.rpc('complete_message_job',{p_job:job.id,p_lease:job.lease_token,p_provider_id:providerMessageId});

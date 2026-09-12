@@ -8,8 +8,9 @@ export async function processIncomingMessage(job: MessageJob, deps: {
   const { repository, sender, strategy } = deps;
   // Errors before prepare leave a recoverable processing lease; no external send occurred.
   const context = await repository.context(job);
-  const text = await strategy.reply(context);
-  const reply = await repository.prepare(job, text);
+  const decision = await strategy.reply({ ...context, requestKey: `message:${job.inbound_message_id}` });
+  if (typeof decision !== 'string' && !repository.prepareDecision) throw new Error('Structured reply persistence unavailable');
+  const reply = typeof decision === 'string' ? await repository.prepare(job, decision) : await repository.prepareDecision!(job, decision);
   if (!reply) return "skipped";
   // prepare durably records 'sending' before the external side effect.
   try {

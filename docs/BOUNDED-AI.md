@@ -1,0 +1,36 @@
+# Bounded AI replies
+
+The grounded strategy uses `gpt-4.1-mini-2025-04-14` through the Responses API with strict JSON output, `store:false`, no tools, temperature zero, a 650-token output cap, an 18-second request timeout and no automatic API retry. Official model pricing checked 2026-09-12: $0.40 per million input tokens and $1.60 per million output tokens. Cached inputs are conservatively costed at the full input rate in this application's ledger. This ledger is a model-cost estimate, not an OpenAI account billing report.
+
+Sources: [model and pricing](https://developers.openai.com/api/docs/models/gpt-4.1-mini), [structured output](https://developers.openai.com/api/docs/guides/structured-outputs).
+
+## Configuration and release order
+
+1. Apply the forward migration `supabase/migrations/202609120002_bounded_ai.sql` once to the existing development database. Do not replay the baseline or reset the database. Like the baseline, SQL Editor application does not populate CLI migration history.
+2. Set server-only `OPENAI_API_KEY` in Vercel Production. A local copy is only needed for local AI execution. Never add a public prefix or put the key in chat, source control or browser code.
+3. Leave `WHATSAPP_REPLY_MODE=echo` (the default) during initial acceptance. Set `AI_ACCEPTANCE_ENABLED=true` temporarily and deploy to run the protected fixed-fixture checks below.
+4. After acceptance, set `AI_ACCEPTANCE_ENABLED=false` and `WHATSAPP_REPLY_MODE=ai`, then redeploy. Mode changes require a deployment to affect the hosted runtime. Echo remains available for diagnostics.
+
+## Approved knowledge and conversations
+
+Each inbound message's tenant is resolved from the trusted test channel. The strategy reads published facts/FAQs in both `en` and `ar`, excludes incomplete branches and blank FAQ answers, and lets the model understand paraphrases and translate supplied facts. No embeddings, vector index or document RAG has been added. For this small first version, the selected corpus is limited to 40 sources and 8,500 UTF-8 bytes. Oversized knowledge fails closed without a model call; expanding beyond this limit needs a ranked retrieval implementation.
+
+Context includes at most six prior messages, bounded to 2,500 UTF-8 bytes. Future messages and uncertain outbound intents are excluded. Only message text goes to the model; customer phone numbers, account credentials, tenant IDs and internal source IDs are not included. The serialized request is at most 16,000 UTF-8 bytes, with a conservative 24,000-input-token reservation including framing/schema margin. Oversized messages/context get a local unavailable response. `store:false` disables response storage for API retrieval; it does not promise zero provider retention.
+
+The prompt treats customer messages, history and retrieved content as untrusted data. Business facts must come from approved sources, with structured source references. Unknown source labels and invented links are rejected. Unknown information and provider failures receive a short local fallback in English or Arabic. Empty knowledge causes no paid call. Grounding instructions and source validation reduce errors; they do not mathematically prove that every natural-language statement follows from a source. Real acceptance is deliberately limited and further client-specific evaluation remains needed.
+
+Before an external reply, the existing database guard rechecks lease validity, human takeover, channel state and the service window. AI answers also recheck source publication and revision timestamps within the send-intent transaction. A changed or unpublished source suppresses that pending answer. An explicit human request records a handoff by setting the conversation to human mode together with its acknowledgement intent. The reply tells the user to contact the team directly; it does not claim that staff were notified. Staff notifications, an inbox and audited resume controls are not implemented yet. A human-mode conversation needs an administrator to explicitly return it to auto; old skipped jobs are not replayed.
+
+## The $0.25 development allowance
+
+`ai_budget` contains one shared, non-renewing allowance of at most 250,000,000 nanodollars ($0.25). It spans all requests/tenants using this deployment's database, including acceptance tests and real test-number AI replies. Only backend credentials can reserve or settle usage. Browsers can only read their own tenant's AI request records through RLS; they cannot change the budget, reservations or usage.
+
+Before each model call, a transaction reserves 10,640,000 nanodollars ($0.01064): 24,000 input tokens at $0.40/M plus 650 output tokens at $1.60/M. Reservations serialize on the shared budget row. A call is blocked if the remaining allowance cannot cover its entire reservation, even if the eventual call might be cheaper. A completed response settles to reported token usage at the published rates and releases the excess reservation. OpenAI usage includes input tokens that may receive a cached-input discount; our estimate deliberately does not apply that discount.
+
+Requests have a unique tenant-scoped key. Completed requests return their stored decision rather than call the model again. A failed or still-reserved request is never automatically sent to OpenAI again. Timeouts, malformed usage or crashes retain the full reservation, so concurrent/recovery workers cannot silently overspend. Failed usage persistence prevents sending the uncommitted generated answer; a recovered worker can use a committed cached result or return a safe local fallback. Do not reset this allowance or uncertain reservations merely to retry tests. Increasing it requires a new explicit user budget decision and a reviewed schema/configuration change. This is an application allowance; other apps or keys on the same OpenAI account are outside its control.
+
+## Acceptance without WhatsApp sends
+
+`POST /api/internal/ai-acceptance` requires the existing `CRON_SECRET` bearer credential, the explicit enable switch, and one body field: `case`. It resolves the development tenant from the configured test channel, accepts only the fixed case IDs in `src/modules/ai/acceptance.ts`, shares the same strategy/provider/ledger as messaging, and never invokes the WhatsApp sender or inserts customer messages or business knowledge. The source facts belong to a fictional test shop. An arbitrary query, tenant override or extra body field is rejected. Repeating a case uses its durable `acceptance:v1:<case>` identity and cannot initiate another paid request.
+
+Cases cover English/Arabic wording changes, missing prices, prompt injection, branch ambiguity, a contextual follow-up, empty knowledge and a human request. Return bodies contain fictional test replies and check results only; do not generalize that endpoint into a customer-message simulator. Disable the endpoint after testing. Real WhatsApp round trips with approved business content are a separate acceptance step and require the user to supply/approve that content first.

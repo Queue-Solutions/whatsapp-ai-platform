@@ -1,6 +1,6 @@
 # Queue Solutions · WhatsApp AI platform foundation
 
-Next.js + TypeScript + Supabase, using **Meta's temporary test number only**. The current response strategy echoes text in Arabic or English; it does not call OpenAI.
+Next.js + TypeScript + Supabase, using **Meta's temporary test number only**. The response mode defaults to diagnostic echo. A bounded OpenAI strategy can answer from approved dashboard knowledge when enabled; see `docs/BOUNDED-AI.md`.
 
 ## Current milestone
 
@@ -68,10 +68,14 @@ The Vercel development configuration is in `vercel.json` with no Vercel Cron sch
 
 ## Next milestones
 
-See `docs/ROADMAP.md`. No OpenAI, RAG, lead score, inferred sentiment, analytics, or CSAT results are fabricated by this foundation.
+See `docs/ROADMAP.md`. AI replies are optional and bounded; document RAG, lead scoring, inferred sentiment, analytics and CSAT collection remain future work.
 
 Reference documentation: [Supabase keys](https://supabase.com/docs/guides/getting-started/api-keys), [RLS](https://supabase.com/docs/guides/database/postgres/row-level-security), [migrations](https://supabase.com/docs/guides/deployment/database-migrations), [Meta's webhook signature example](https://github.com/fbsamples/whatsapp-api-examples/tree/main/signature-validation-with-webhooks-payloads), [Next.js installation](https://nextjs.org/docs/app/getting-started/installation).
 
 ## Business knowledge editor
 
-`/dashboard` provides email/password sign-in, tenant-scoped branches/hours/Google Maps fields, and twelve blank starter FAQs. Owners/admins can save drafts and approve completed entries. See `docs/ADMIN-KNOWLEDGE.md`. The inbox, analytics and AI replies remain future work.
+`/dashboard` provides email/password sign-in, tenant-scoped branches/hours/Google Maps fields, and twelve blank starter FAQs. Owners/admins can save drafts and approve completed entries. See `docs/ADMIN-KNOWLEDGE.md`. The inbox and analytics remain future work. See `docs/BOUNDED-AI.md` for the optional approved-knowledge reply mode and its $0.25 development allowance.
+
+## AI allowance and acceptance
+
+The forward bounded-AI migration adds tenant-isolated usage records, a shared non-renewing $0.25 development allowance, durable request deduplication, and source/handoff checks immediately before a send. Real fixed-fixture acceptance runs on a separately authenticated, temporarily enabled internal endpoint without WhatsApp sends. See `docs/BOUNDED-AI.md`.

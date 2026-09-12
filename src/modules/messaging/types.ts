@@ -1,3 +1,4 @@
+import type { AgentDecision } from '../ai/contracts';
 export interface IncomingMessage {
   phoneNumberId: string;
   providerMessageId: string;
@@ -27,6 +28,9 @@ export interface PreparedReply {
   body: string;
 }
 export interface MessageContext {
+  requestKey?: string;
+  eligible?: boolean;
+  history?: Array<{ role: "user" | "assistant"; content: string }>;
   tenantId: string;
   conversationId: string;
   text: string | null;
@@ -38,8 +42,9 @@ export interface MessagingRepository {
   claim(): Promise<MessageJob | null>;
   context(job: MessageJob): Promise<MessageContext>;
   prepare(job: MessageJob, text: string): Promise<PreparedReply | null>;
+  prepareDecision?(job: MessageJob, decision: AgentDecision): Promise<PreparedReply | null>;
   complete(job: MessageJob, providerMessageId: string): Promise<void>;
   fail(job: MessageJob, state: "failed" | "needs_review", code: string): Promise<void>;
 }
-export interface ReplyStrategy { reply(context: MessageContext): Promise<string> }
+export interface ReplyStrategy { reply(context: MessageContext): Promise<string | AgentDecision> }
 export interface MessageSender { send(reply: PreparedReply): Promise<string> }
