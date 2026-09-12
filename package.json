@@ -1,0 +1,40 @@
+{
+  "name": "queue-whatsapp-platform",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build",
+    "setup:test-tenant": "tsx --env-file=.env.local scripts/setup-test-tenant.ts",
+    "smoke:webhook": "tsx --env-file=.env.local scripts/smoke-webhook.ts",
+    "check:supabase": "tsx --env-file=.env.local scripts/check-supabase.ts",
+    "worker:once": "tsx --env-file=.env.local scripts/drain-once.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.116.0",
+    "next": "16.3.4",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "server-only": "0.0.1",
+    "zod": "4.6.2"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@types/node": "22.20.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.3.4",
+    "tsx": "4.23.13",
+    "typescript": "5.9.3",
+    "vitest": "5.0.0"
+  }
+}
