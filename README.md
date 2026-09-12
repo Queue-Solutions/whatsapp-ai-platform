@@ -52,7 +52,7 @@ Status events are stored even if they arrive before the outbound provider ID is 
 
 ## Security and reuse
 
-Every client-owned record has a tenant ID; composite foreign keys prevent cross-tenant relations. Channels resolve tenant identity on the server. No tenant ID from a public webhook is trusted. Browser roles have no worker/RPC access; authenticated members can read their tenant's data, and only owners/admins can edit its knowledge. User provisioning and the authenticated admin UI are future work. The privileged Supabase client must remain on the server, behind authorization.
+Every client-owned record has a tenant ID; composite foreign keys prevent cross-tenant relations. Channels resolve tenant identity on the server. No tenant ID from a public webhook is trusted. Browser roles have no worker/RPC access; authenticated members can read their tenant's data, and only owners/admins can edit its knowledge. The authenticated business knowledge editor is at `/dashboard`; see `docs/ADMIN-KNOWLEDGE.md` for its public-key and account setup. Account provisioning remains an administrator operation. The privileged Supabase client must remain on the server, behind authorization.
 
 This first deployment configures one test channel and token. Additional Queue Solutions clients need a secret-manager-backed credential resolver per channel, authenticated tenant administration and production onboarding. The schema supports multiple tenants; one environment token is not a production multi-client credential system.
 
@@ -71,3 +71,7 @@ The Vercel development configuration is in `vercel.json` with no Vercel Cron sch
 See `docs/ROADMAP.md`. No OpenAI, RAG, lead score, inferred sentiment, analytics, or CSAT results are fabricated by this foundation.
 
 Reference documentation: [Supabase keys](https://supabase.com/docs/guides/getting-started/api-keys), [RLS](https://supabase.com/docs/guides/database/postgres/row-level-security), [migrations](https://supabase.com/docs/guides/deployment/database-migrations), [Meta's webhook signature example](https://github.com/fbsamples/whatsapp-api-examples/tree/main/signature-validation-with-webhooks-payloads), [Next.js installation](https://nextjs.org/docs/app/getting-started/installation).
+
+## Business knowledge editor
+
+`/dashboard` provides email/password sign-in, tenant-scoped branches/hours/Google Maps fields, and twelve blank starter FAQs. Owners/admins can save drafts and approve completed entries. See `docs/ADMIN-KNOWLEDGE.md`. The inbox, analytics and AI replies remain future work.

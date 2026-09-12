@@ -207,6 +207,33 @@ describe('PostgreSQL migration and complete message flow',()=>{
     await expect(db.exec("update public.conversations set automation_mode='human'")).rejects.toThrow();
     await expect(repo.claim()).rejects.toThrow();await db.exec('reset role');
   });
+  it('persists knowledge drafts and approvals, isolating owner edits from viewers and other tenants', async () => {
+    await db.query('insert into auth.users(id) values($1)', [user]);
+    await db.query("insert into public.tenant_memberships values($1,$2,'owner')", [tenant,user]);
+    await db.query("select set_config('request.jwt.claim.sub',$1,false)", [user]);
+    await db.exec('set role authenticated');
+    await db.query("insert into public.faqs(tenant_id,question,answer) values($1,'What are the payment options?','')", [tenant]);
+    expect(await scalar('select is_published as v from public.faqs')).toBe(false);
+    await db.query("insert into public.business_facts(tenant_id,category,fact_key,value) values($1,'branch','branch:test',$2)",
+      [tenant,JSON.stringify({name:'',address:'',hours:'',exceptions:'',phone:'',mapsUrl:''})]);
+    expect(await scalar("select value->>'mapsUrl' as v from public.business_facts")).toBe('');
+    await db.exec("update public.faqs set answer='إجابة معتمدة للاختبار',is_published=true");
+    expect(await scalar('select answer as v from public.faqs')).toBe('إجابة معتمدة للاختبار');
+    await expect(db.query("insert into public.business_facts(tenant_id,category,fact_key,value) values($1,'branch','branch:other','{}')",[otherTenant])).rejects.toThrow();
+    await db.exec('reset role');
+    await db.query("update public.tenant_memberships set role='viewer' where user_id=$1",[user]);
+    await db.exec('set role authenticated');
+    expect(await scalar('select count(*)::int as v from public.faqs')).toBe(1);
+    expect((await db.exec("update public.faqs set answer='unauthorized' returning id"))[0].rows).toHaveLength(0);
+    expect((await db.exec("delete from public.business_facts returning id"))[0].rows).toHaveLength(0);
+    await expect(db.query("insert into public.faqs(tenant_id,question,answer) values($1,'Unauthorized?','No')",[tenant])).rejects.toThrow();
+    await db.exec('reset role');
+    await db.query("update public.tenant_memberships set tenant_id=$1 where user_id=$2",[otherTenant,user]);
+    await db.exec('set role authenticated');
+    expect(await scalar('select count(*)::int as v from public.faqs')).toBe(0);
+    expect(await scalar('select count(*)::int as v from public.business_facts')).toBe(0);
+    await db.exec('reset role');
+  });
   it('permits service-role RPCs with explicit grants',async()=>{
     await db.exec('set role service_role');await repo.ingest(incoming());expect(await repo.claim()).not.toBeNull();await db.exec('reset role');
   });
