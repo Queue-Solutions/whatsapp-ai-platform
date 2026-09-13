@@ -130,9 +130,9 @@ function PasswordForm({ db, onDone }: { db: SupabaseClient; onDone: () => void }
   }
   return <form className="login-card" onSubmit={update}><h2>Choose your password</h2>
     {done ? <><p className="success" role="status">Your password has been updated.</p><button type="button" className="secondary" onClick={onDone}>Close</button></> : <>
-      <label>New password<input name="password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required disabled={busy} /></label>
-      <label>Confirm new password<input name="confirmation" type="password" autoComplete="new-password" minLength={12} maxLength={128} required disabled={busy} /></label>
-      <p style={{marginTop:10}}>Use at least 12 characters.</p>{error && <p className="error" role="alert">{error}</p>}
+      <label>New password<input name="password" type="password" autoComplete="new-password" minLength={6} maxLength={128} required disabled={busy} /></label>
+      <label>Confirm new password<input name="confirmation" type="password" autoComplete="new-password" minLength={6} maxLength={128} required disabled={busy} /></label>
+      <p style={{marginTop:10}}>Use at least 6 characters.</p>{error && <p className="error" role="alert">{error}</p>}
       <button className="primary" disabled={busy}>{busy ? 'Updating…' : 'Update password'}</button><button type="button" className="text-button" disabled={busy} onClick={onDone}>Cancel</button>
     </>}
   </form>;

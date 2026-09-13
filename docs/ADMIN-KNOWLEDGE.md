@@ -13,3 +13,5 @@ Each entry offers Save draft and Save & approve. Saving an approved entry as dra
 Knowledge uses the existing `faqs` table and `business_facts` with category `branch`, unique `branch:<uuid>` keys and JSON values. All other knowledge categories remain untouched. Saves are per entry. Concurrent edits use last-save-wins; audited revisions/conflict resolution and recovery UI are future work. Dashboard approval makes records available to the bounded AI strategy when AI mode is enabled; echo remains the default diagnostic mode.
 
 The sidebar also links to `/dashboard/inbox` for conversation history, delivery status, audited pause/resume and manual replies. Knowledge approval remains limited to owners/admins, while inbox controls also allow agents.
+
+The password-change form requires at least six characters, matching Supabase's minimum supported password length. Four-character passwords are not supported by the hosted provider. This changes validation for future password updates, not existing account passwords.
