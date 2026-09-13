@@ -20,6 +20,7 @@ export class SupabaseMessagingRepository implements MessagingRepository {
       p_status:s.status,p_occurred:s.occurredAt,p_code:s.errorCode??null});
   }
   async claim() {
+    await this.rpc('expire_manual_replies', {});
     const rows=await this.rpc<MessageJob[]>('claim_message_job',{p_phone:this.phoneNumberId});
     return rows[0]??null;
   }
@@ -28,7 +29,7 @@ export class SupabaseMessagingRepository implements MessagingRepository {
       .eq('id',job.inbound_message_id).eq('tenant_id',job.tenant_id).single();
     if(error || !data) throw new Error('Message context unavailable');
     const [conversation, channel, history] = await Promise.all([
-      this.db.from('conversations').select('automation_mode,status,last_inbound_at').eq('tenant_id', job.tenant_id).eq('id',data.conversation_id).single(),
+      this.db.from('conversations').select('automation_mode,automation_epoch,status,last_inbound_at').eq('tenant_id', job.tenant_id).eq('id',data.conversation_id).single(),
       this.db.from('whatsapp_channels').select('enabled,mode,phone_number_id').eq('tenant_id',job.tenant_id).eq('id',data.channel_id).single(),
       this.db.from('messages').select('body,direction').eq('tenant_id',job.tenant_id).eq('conversation_id',data.conversation_id)
         .lt('created_at',data.created_at).in('delivery_status',['received','sent','delivered','read']).order('created_at',{ascending:false}).limit(6),
@@ -36,6 +37,7 @@ export class SupabaseMessagingRepository implements MessagingRepository {
     if (conversation.error || channel.error || history.error) throw new Error('Message context unavailable');
     const c = conversation.data; const ch = channel.data;
     const eligible = c.automation_mode === 'auto' && c.status === 'open' && ch.enabled && ch.mode === 'test'
+      && job.automation_epoch === c.automation_epoch
       && ch.phone_number_id === this.phoneNumberId && Date.parse(c.last_inbound_at) >= Date.now() - (23*60+55)*60000;
     let bytes = 0;
     const boundedHistory = history.data.filter(m => typeof m.body === 'string' && m.body.trim()).flatMap(m => {

@@ -20,6 +20,7 @@ export interface MessageJob {
   tenant_id: string;
   inbound_message_id: string;
   lease_token: string;
+  automation_epoch?: number;
 }
 export interface PreparedReply {
   outbound_id: string;

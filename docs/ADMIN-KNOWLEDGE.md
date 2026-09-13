@@ -1,6 +1,6 @@
 # Business knowledge dashboard
 
-`/dashboard` uses Supabase email/password authentication. All knowledge reads and writes use the signed-in user's JWT and existing database RLS. Only owners/admins can save; agents/viewers can read. Public signup does not grant tenant membership, and the page exposes no service credentials. No new migration is required.
+`/dashboard` uses Supabase email/password authentication. All knowledge reads and writes use the signed-in user's JWT and existing database RLS. Only owners/admins can save; agents/viewers can read. Public signup does not grant tenant membership, and the page exposes no service credentials. The knowledge editor needs no additional migration beyond the foundation. The inbox extension requires `202609130001_inbox.sql`; see `INBOX.md`.
 
 Set `SUPABASE_PUBLISHABLE_KEY` to the project's `sb_publishable_...` key in Vercel Production and redeploy. `SUPABASE_URL` already exists. The dashboard passes only these public connection values to its browser component. For local development, set the public key in `.env.local` as well. OpenAI keys belong in server-side Vercel configuration for hosted AI use; a local copy is only needed for local AI execution. See `BOUNDED-AI.md` for the bounded AI mode and its deployment switch.
 
@@ -11,3 +11,5 @@ The dashboard presents twelve starter FAQs with blank answers, plus a blank firs
 Each entry offers Save draft and Save & approve. Saving an approved entry as draft removes it from published knowledge. In-progress edits leave the prior saved version in place until saved. Blank FAQ answers cannot be approved through the editor. A branch needs a name, address and hours to be approved; its Maps link can remain blank. The retrieval adapter defensively excludes empty answers and incomplete branch entries, including records written outside this UI. Existing non-branch business facts are preserved.
 
 Knowledge uses the existing `faqs` table and `business_facts` with category `branch`, unique `branch:<uuid>` keys and JSON values. All other knowledge categories remain untouched. Saves are per entry. Concurrent edits use last-save-wins; audited revisions/conflict resolution and recovery UI are future work. Dashboard approval makes records available to the bounded AI strategy when AI mode is enabled; echo remains the default diagnostic mode.
+
+The sidebar also links to `/dashboard/inbox` for conversation history, delivery status, audited pause/resume and manual replies. Knowledge approval remains limited to owners/admins, while inbox controls also allow agents.

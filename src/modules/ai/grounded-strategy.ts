@@ -1,4 +1,5 @@
 import { replyLanguage } from './language';
+import { socialReply } from './social-reply';
 import type { MessageContext, ReplyStrategy } from '../messaging/types';
 import type { AgentDecision, KnowledgeSource } from './contracts';
 import type { UsageLedger } from './ledger';
@@ -25,6 +26,8 @@ export class GroundedStrategy implements ReplyStrategy {
       return fallback(context, 'human_requested', 'handoff');
     if (!context.requestKey) return fallback(context, 'missing_request_identity');
     if (Buffer.byteLength(context.text, 'utf8') > 3500) return fallback(context, 'message_too_long');
+    const social = socialReply(context.text);
+    if (social) return social;
     let sources: KnowledgeSource[];
     try { sources = await this.loadSources(context.tenantId); }
     catch { return fallback(context, 'knowledge_unavailable'); }

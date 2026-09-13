@@ -4,6 +4,8 @@ Next.js + TypeScript + Supabase, using **Meta's temporary test number only**. Th
 
 ## Current milestone
 
+The hosted development bot uses bounded AI replies from approved business knowledge. Whole-message greetings/thanks use fixed, free social replies. The authenticated inbox provides history, delivery status, audited pause/resume and manual text replies.
+
 Real English and Arabic WhatsApp → webhook → Supabase → echo flows were verified on 2026-09-12, including Meta delivery receipts. The hosted development app is https://whatsapp-ai-platform-dev.vercel.app. Its Supabase minute recovery timer was verified with the local server and tunnel stopped. See `docs/VALIDATION.md` for evidence.
 
 Signed WhatsApp webhook → customer/conversation/inbound message + durable job committed together → `processIncomingMessage()` → saved outbound intent → Meta text reply → delivery receipts.
@@ -14,7 +16,7 @@ The webhook acknowledges after persistence. Next.js `after()` attempts one queue
 
 1. Use Node.js 24.x, then `npm ci`.
 2. Copy `.env.example` to `.env.local` if absent. Keep it out of Git; fill the Supabase URL and backend secret key.
-3. Apply `supabase/migrations/202609120001_foundation.sql` to the empty development project with Supabase SQL Editor. The file is a single transaction. Run it once; it deliberately does not drop or overwrite existing objects. For later CLI use, follow the migration-history note below.
+3. Apply the SQL files in `supabase/migrations` once each, in filename order, to an empty development database. For an existing database, apply only its missing forward migrations; never replay the foundation or reset the database. The current worker requires the inbox migration even in echo mode. For later CLI use, follow the migration-history note below.
 4. Run `npm run check:supabase` to verify the connection and schema.
 5. Follow `docs/META-TEST-NUMBER.md` to fill Meta settings and seed the development tenant/channel.
 6. Run `npm run dev`. The service page is at `http://localhost:3000`.
@@ -28,7 +30,9 @@ The webhook acknowledges after persistence. Next.js `after()` attempts one queue
 | `GET /api/webhooks/whatsapp` | Meta verification challenge |
 | `POST /api/webhooks/whatsapp` | Signed inbound messages and delivery events |
 | `GET/POST /api/internal/process-messages` | Worker; requires `Authorization: Bearer <CRON_SECRET>` |
-| `GET /api/health` | Process liveness only; no claim of database/Meta readiness |
+| `GET /api/health` | Process liveness and configured reply strategy; no claim of database/Meta readiness |
+| `/dashboard/inbox` | Authenticated conversation history and pause/resume controls |
+| `POST /api/dashboard/reply` | Manual text reply; requires a verified member session |
 
 No unauthenticated simulator, admin API, or dashboard data endpoint is exposed.
 
@@ -52,7 +56,7 @@ Status events are stored even if they arrive before the outbound provider ID is 
 
 ## Security and reuse
 
-Every client-owned record has a tenant ID; composite foreign keys prevent cross-tenant relations. Channels resolve tenant identity on the server. No tenant ID from a public webhook is trusted. Browser roles have no worker/RPC access; authenticated members can read their tenant's data, and only owners/admins can edit its knowledge. The authenticated business knowledge editor is at `/dashboard`; see `docs/ADMIN-KNOWLEDGE.md` for its public-key and account setup. Account provisioning remains an administrator operation. The privileged Supabase client must remain on the server, behind authorization.
+Every client-owned record has a tenant ID; composite foreign keys prevent cross-tenant relations. Channels resolve tenant identity on the server. No tenant ID from a public webhook is trusted. Browser roles have no worker or sending RPC access; a narrow authenticated RPC supports audited pause/resume; authenticated members can read their tenant's data, and only owners/admins can edit its knowledge. The authenticated business knowledge editor is at `/dashboard`; see `docs/ADMIN-KNOWLEDGE.md` for its public-key and account setup. Account provisioning remains an administrator operation. The privileged Supabase client must remain on the server, behind authorization.
 
 This first deployment configures one test channel and token. Additional Queue Solutions clients need a secret-manager-backed credential resolver per channel, authenticated tenant administration and production onboarding. The schema supports multiple tenants; one environment token is not a production multi-client credential system.
 
@@ -74,7 +78,7 @@ Reference documentation: [Supabase keys](https://supabase.com/docs/guides/gettin
 
 ## Business knowledge editor
 
-`/dashboard` provides email/password sign-in, tenant-scoped branches/hours/Google Maps fields, and twelve blank starter FAQs. Owners/admins can save drafts and approve completed entries. See `docs/ADMIN-KNOWLEDGE.md`. The inbox and analytics remain future work. See `docs/BOUNDED-AI.md` for the optional approved-knowledge reply mode and its $0.25 development allowance.
+`/dashboard` provides email/password sign-in, tenant-scoped branches/hours/Google Maps fields, and twelve blank starter FAQs. Owners/admins can save drafts and approve completed entries. See `docs/ADMIN-KNOWLEDGE.md`. The inbox is available at `/dashboard/inbox`; see `docs/INBOX.md`. Analytics remains future work. See `docs/BOUNDED-AI.md` for the optional approved-knowledge reply mode and its $0.25 development allowance.
 
 ## AI allowance and acceptance
 

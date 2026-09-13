@@ -1,4 +1,6 @@
-# Planned extensions
+# Platform roadmap
+
+Implemented in development: hosted test-number messaging and recovery, bounded approved-knowledge AI, the knowledge dashboard, and a human inbox with audited pause/resume and guarded manual text replies. See `VALIDATION.md` for verified behavior and remaining real-delivery acceptance. The items below retain the broader plan; client onboarding remains future work.
 
 1. **Hosted foundation acceptance:** apply the migration, verify the hosted API, get the Meta test number, run the real Arabic/English round trip, replay duplicates, and verify takeover suppression. Add durable worker scheduling and queue monitoring before sustained traffic.
 2. **OpenAI:** implement the existing ReplyStrategy contract. Add structured output validation, model/prompt versions, timeout and spend limits, per-turn usage records and explicit escalation outcomes. Keep echo available for transport diagnostics. Choose and verify the current OpenAI API/model when implementing, not before.
