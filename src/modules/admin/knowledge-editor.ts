@@ -16,14 +16,15 @@ export class KnowledgeEditor {
   }
   async load(tenant: string, locale: string) {
     const [faqs, facts, templates] = await Promise.all([
-      this.db.from('faqs').select('id,question,answer,is_published,updated_at').eq('tenant_id', tenant).eq('locale', locale).order('created_at'),
+      this.db.from('faqs').select('id,question,answer,is_published,updated_at,deleted_at').eq('tenant_id', tenant).eq('locale', locale).order('created_at'),
       this.db.from('business_facts').select('id,fact_key,value,is_published,updated_at').eq('tenant_id', tenant).eq('locale', locale).eq('category', 'branch').order('created_at'),
       starterFaqs(tenant, locale),
     ]);
     if (faqs.error || facts.error) throw new Error('Could not load your answers. Please try again.');
-    const saved = faqs.data as Faq[];
-    const merged = templates.map(t => saved.find(f => f.id === t.id) ?? t);
-    merged.push(...saved.filter(f => !templates.some(t => t.id === f.id)));
+    // Keep deleted starter identities so the template cannot recreate them on reload.
+    const saved = faqs.data as (Faq & { deleted_at?: string | null })[];
+    const merged = templates.map(t => saved.find(f => f.id === t.id) ?? t).filter(f => !('deleted_at' in f && f.deleted_at));
+    merged.push(...saved.filter(f => !f.deleted_at && !templates.some(t => t.id === f.id)));
     // Fail explicitly rather than silently overwrite an existing incompatible branch record.
     const branches: Branch[] = (facts.data ?? []).map(row => {
       const value = branchSchema.safeParse(row.value);
@@ -35,7 +36,7 @@ export class KnowledgeEditor {
   async saveFaq(tenant: string, locale: string, faq: Faq, publish: boolean) {
     validateFaq(faq, publish);
     const { data, error } = await this.db.from('faqs').upsert({ id: faq.id, tenant_id: tenant, locale,
-      question: faq.question.trim(), answer: faq.answer.trim(), is_published: publish }, { onConflict: 'id' })
+      question: faq.question.trim(), answer: faq.answer.trim(), is_published: publish, deleted_at: null }, { onConflict: 'id' })
       .select('id,question,answer,is_published,updated_at').single();
     if (error || !data) throw new Error('Could not save. Check your connection and owner/admin access, then try again.');
     return data as Faq;
@@ -47,5 +48,17 @@ export class KnowledgeEditor {
       .select('id,fact_key,value,is_published,updated_at').single();
     if (error || !data) throw new Error('Could not save. Check your connection and owner/admin access, then try again.');
     return data as Branch;
+  }
+  async deleteFaq(tenant: string, locale: string, id: string) {
+    // A content-free tombstone also handles starter questions that were never saved.
+    const { data, error } = await this.db.from('faqs').upsert({ id, tenant_id: tenant, locale,
+      question: '', answer: '', is_published: false, deleted_at: new Date().toISOString() }, { onConflict: 'id' })
+      .select('id').single();
+    if (error || !data) throw new Error('Could not delete. Check your connection and owner/admin access, then try again.');
+  }
+  async deleteBranch(tenant: string, locale: string, id: string) {
+    const { data, error } = await this.db.from('business_facts').delete().eq('tenant_id', tenant).eq('locale', locale)
+      .eq('category', 'branch').eq('id', id).select('id').single();
+    if (error || !data) throw new Error('Could not delete. Check your connection and owner/admin access, then try again.');
   }
 }

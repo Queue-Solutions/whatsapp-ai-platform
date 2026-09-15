@@ -65,3 +65,39 @@ it('does not report success when RLS or the network rejects a save', async () =>
   await expect(new KnowledgeEditor(db).saveFaq('tenant-a','en',faq,false)).rejects.toThrow('Could not save');
   expect(query.upsert).toHaveBeenCalledWith(expect.objectContaining({ tenant_id: 'tenant-a', locale: 'en', answer: '', is_published: false }), { onConflict: 'id' });
 });
+
+it('keeps deleted starter FAQs out of the editor after reloading', async () => {
+  const [starter] = await starterFaqs('tenant-a', 'en');
+  const query = (data: unknown[]) => {
+    const q = { select: vi.fn(), eq: vi.fn(), order: vi.fn().mockResolvedValue({ data, error: null }) };
+    q.select.mockReturnValue(q); q.eq.mockReturnValue(q); return q;
+  };
+  const faqs = query([{ ...starter, deleted_at: '2026-09-15T12:00:00Z' }]);
+  const facts = query([]);
+  const db = { from: (table: string) => table === 'faqs' ? faqs : facts } as unknown as SupabaseClient;
+  const result = await new KnowledgeEditor(db).load('tenant-a', 'en');
+  expect(result.faqs).toHaveLength(11);
+  expect(result.faqs.some(f => f.id === starter.id)).toBe(false);
+});
+
+it('removes FAQ content and approval when deleting even an unsaved starter', async () => {
+  const q = { upsert: vi.fn(), select: vi.fn(), single: vi.fn().mockResolvedValue({ data: { id: 'faq-id' }, error: null }) };
+  q.upsert.mockReturnValue(q); q.select.mockReturnValue(q);
+  const db = { from: () => q } as unknown as SupabaseClient;
+  await new KnowledgeEditor(db).deleteFaq('tenant-a', 'ar', 'faq-id');
+  expect(q.upsert).toHaveBeenCalledWith({ id: 'faq-id', tenant_id: 'tenant-a', locale: 'ar', question: '', answer: '', is_published: false, deleted_at: expect.any(String) }, { onConflict: 'id' });
+  q.single.mockResolvedValue({ data: null, error: null } as never);
+  await expect(new KnowledgeEditor(db).deleteFaq('tenant-a', 'ar', 'faq-id')).rejects.toThrow('Could not delete');
+});
+
+it('scopes branch deletion and reports denied or failed deletes without false success', async () => {
+  const q = { delete: vi.fn(), eq: vi.fn(), select: vi.fn(), single: vi.fn().mockResolvedValue({ data: { id: 'branch-id' }, error: null }) };
+  q.delete.mockReturnValue(q); q.eq.mockReturnValue(q); q.select.mockReturnValue(q);
+  const db = { from: () => q } as unknown as SupabaseClient;
+  await new KnowledgeEditor(db).deleteBranch('tenant-a', 'ar', 'branch-id');
+  for (const pair of [['tenant_id', 'tenant-a'], ['locale', 'ar'], ['category', 'branch'], ['id', 'branch-id']]) expect(q.eq).toHaveBeenCalledWith(...pair);
+  q.single.mockResolvedValue({ data: null, error: null } as never);
+  await expect(new KnowledgeEditor(db).deleteBranch('tenant-a', 'ar', 'branch-id')).rejects.toThrow('Could not delete');
+  q.single.mockRejectedValue(new Error('Network unavailable'));
+  await expect(new KnowledgeEditor(db).deleteBranch('tenant-a', 'ar', 'branch-id')).rejects.toThrow('Network unavailable');
+});

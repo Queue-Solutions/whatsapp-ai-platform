@@ -118,6 +118,7 @@ describe('PostgreSQL migration and complete message flow',()=>{
       create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
       grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;`);
     await db.exec(await readFile(new URL('../supabase/migrations/202609120001_foundation.sql',import.meta.url),'utf8'));
+    await db.exec(await readFile(new URL('../supabase/migrations/202609150001_faq_deletion.sql',import.meta.url),'utf8'));
   });
   afterAll(async()=>{await db?.close();});
   beforeEach(async()=>{
@@ -232,6 +233,26 @@ describe('PostgreSQL migration and complete message flow',()=>{
     await db.exec('set role authenticated');
     expect(await scalar('select count(*)::int as v from public.faqs')).toBe(0);
     expect(await scalar('select count(*)::int as v from public.business_facts')).toBe(0);
+    await db.exec('reset role');
+  });
+  it('isolates FAQ deletion markers and branch deletes, and prevents publishing deleted FAQs', async () => {
+    await db.query('insert into auth.users(id) values($1)', [user]);
+    await db.query("insert into public.tenant_memberships values($1,$2,'admin')", [tenant,user]);
+    for (const tenantId of [tenant, otherTenant]) {
+      await db.query("insert into public.faqs(tenant_id,question,answer) values($1,'Question','Answer')", [tenantId]);
+      await db.query("insert into public.business_facts(tenant_id,category,fact_key,value) values($1,'branch','branch:delete','{}')", [tenantId]);
+    }
+    await db.query("select set_config('request.jwt.claim.sub',$1,false)", [user]);
+    await db.exec('set role authenticated');
+    expect((await db.exec("update public.faqs set deleted_at=now(),answer='',question='',is_published=false returning id"))[0].rows).toHaveLength(1);
+    await expect(db.exec('update public.faqs set is_published=true')).rejects.toThrow();
+    expect((await db.exec('delete from public.business_facts returning id'))[0].rows).toHaveLength(1);
+    await db.exec('reset role');
+    expect((await db.query('select id from public.faqs where tenant_id=$1 and deleted_at is null', [otherTenant])).rows).toHaveLength(1);
+    expect((await db.query('select id from public.business_facts where tenant_id=$1', [otherTenant])).rows).toHaveLength(1);
+    await db.query("update public.tenant_memberships set role='viewer' where user_id=$1", [user]);
+    await db.exec('set role authenticated');
+    expect((await db.exec('update public.faqs set deleted_at=now() returning id'))[0].rows).toHaveLength(0);
     await db.exec('reset role');
   });
   it('permits service-role RPCs with explicit grants',async()=>{
