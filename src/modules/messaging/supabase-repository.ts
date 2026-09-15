@@ -51,8 +51,8 @@ export class SupabaseMessagingRepository implements MessagingRepository {
     return this.rpc<PreparedReply|null>('prepare_message_reply',{p_job:job.id,p_lease:job.lease_token,p_body:text});
   }
   prepareDecision(job: MessageJob, decision: AgentDecision) {
-    return this.rpc<PreparedReply|null>('prepare_ai_reply', { p_job: job.id, p_lease: job.lease_token,
-      p_body: decision.text, p_action: decision.action, p_sources: decision.sources });
+    return this.rpc<PreparedReply|null>('prepare_inbox_reply', { p_job: job.id, p_lease: job.lease_token,
+      p_body: decision.text, p_action: decision.action, p_sources: decision.sources, p_reason: decision.reason, p_summary: decision.attentionSummary ?? null });
   }
   async complete(job: MessageJob, providerMessageId: string) {
     await this.rpc('complete_message_job',{p_job:job.id,p_lease:job.lease_token,p_provider_id:providerMessageId});

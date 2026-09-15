@@ -1,3 +1,4 @@
+import { detectAttention, summarizeAttention } from './attention-detection';
 import { replyLanguage } from './language';
 import { socialReply } from './social-reply';
 import type { MessageContext, ReplyStrategy } from '../messaging/types';
@@ -9,7 +10,7 @@ export type SourceLoader = (tenant: string) => Promise<KnowledgeSource[]>;
 export function fallback(context: MessageContext, reason: string, action: AgentDecision['action'] = 'unavailable'): AgentDecision {
   const ar = replyLanguage(context.text ?? '') === 'ar';
   const text = action === 'handoff'
-    ? ar ? 'طلبك محتاج مساعدة من فريق العمل. من فضلك تواصل مع الفريق مباشرة؛ الردود الآلية هتتوقف في المحادثة دي.' : 'Please contact the business team directly for help. Automated replies will pause in this conversation.'
+    ? ar ? 'طلبك محتاج متابعة شخصية من صاحب النشاط. هوقف الردود الآلية هنا علشان يقدر يراجع المحادثة ويرد عليك.' : 'Your message needs personal attention from the business owner. I’ll pause automated replies here so they can review the conversation and respond.'
     : ar ? 'المعلومة دي مش متاحة عندي بشكل مؤكد حالياً. من فضلك وضّح سؤالك أو تواصل مع فريق العمل مباشرة.' : 'I do not have confirmed information for this right now. Please clarify your question or contact the business team directly.';
   return { text, action, reason, sources: [] };
 }
@@ -22,8 +23,8 @@ export class GroundedStrategy implements ReplyStrategy {
   async reply(context: MessageContext): Promise<AgentDecision> {
     if (context.eligible === false) return fallback(context, 'ineligible', 'suppress');
     if (context.type !== 'text' || !context.text?.trim()) return fallback(context, 'unsupported_message');
-    if (/\b(speak|talk|connect|transfer).{0,35}\b(human|person|agent|staff)\b|\b(human|real person)\b|(?:عايز|عاوز|ممكن|أريد|اريد).{0,30}(?:موظف|بني آدم|بني ادم|حد من|خدمة العملاء)|(?:كلمني|وصلني).{0,20}(?:موظف|حد)/i.test(context.text))
-      return fallback(context, 'human_requested', 'handoff');
+    const attention = detectAttention(context.text);
+    if (attention) return { ...fallback(context, attention, 'handoff'), attentionSummary: summarizeAttention(context.text,attention) };
     if (!context.requestKey) return fallback(context, 'missing_request_identity');
     if (Buffer.byteLength(context.text, 'utf8') > 3500) return fallback(context, 'message_too_long');
     const social = socialReply(context.text);
@@ -57,10 +58,11 @@ export class GroundedStrategy implements ReplyStrategy {
     const invalidSources = selected.some(s => !s) || (result.decision.action === 'answer' && !selected.length);
     let decision: AgentDecision;
     if (invalidSources) decision = fallback(context, 'invalid_source_reference');
-    else if (result.decision.action === 'unavailable' || result.decision.action === 'handoff')
-      decision = fallback(context, result.decision.action === 'handoff' ? 'human_requested' : 'answer_not_supported', result.decision.action);
+    else if (result.decision.action === 'unavailable' || result.decision.action === 'handoff' || result.decision.action === 'complaint')
+      decision = fallback(context, result.decision.action === 'complaint' ? 'complaint' : result.decision.action === 'handoff' ? 'human_requested' : 'answer_not_supported', result.decision.action === 'complaint' ? 'handoff' : result.decision.action);
     else decision = { text: result.decision.text, action: result.decision.action, reason: 'approved_knowledge',
       sources: selected.map(s => ({ id: s!.id, kind: s!.kind, updatedAt: s!.updatedAt })) };
+    if (decision.action === 'handoff' && result.decision.summary?.trim()) decision.attentionSummary = result.decision.summary.trim();
     // Never let the model invent a link, even when it names a valid source.
     const urls = decision.text.match(/https?:\/\/[^\s<>]+/g) ?? [];
     if (urls.some(url => !selected.some(s => s?.content.includes(url)))) decision = fallback(context, 'unsupported_link');

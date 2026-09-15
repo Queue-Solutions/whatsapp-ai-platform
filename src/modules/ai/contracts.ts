@@ -8,6 +8,7 @@ export interface AgentDecision {
   action: AgentAction;
   reason: string;
   sources: SourceReference[];
+  attentionSummary?: string;
   usage?: { model: string; inputTokens: number; outputTokens: number; costNano: number };
 }
 export interface KnowledgeRetriever {
