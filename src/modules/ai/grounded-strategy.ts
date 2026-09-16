@@ -4,14 +4,18 @@ import { socialReply } from './social-reply';
 import type { MessageContext, ReplyStrategy } from '../messaging/types';
 import type { AgentDecision, KnowledgeSource } from './contracts';
 import type { UsageLedger } from './ledger';
-import { AI_MODEL, MAX_KNOWLEDGE_BYTES } from './config';
+import { AI_MODEL } from './config';
+import { selectKnowledge } from './knowledge-selection';
 import { buildRequest, ModelFailure, type ModelProvider } from './openai';
 export type SourceLoader = (tenant: string) => Promise<KnowledgeSource[]>;
 export function fallback(context: MessageContext, reason: string, action: AgentDecision['action'] = 'unavailable'): AgentDecision {
   const ar = replyLanguage(context.text ?? '') === 'ar';
+  const technical = /^(knowledge_unavailable|knowledge_selection_empty|context_too_large|missing_request_identity|cached_knowledge_changed|invalid_source_reference|unsupported_link|wrong_response_language|openai_|ai_)/.test(reason);
   const text = action === 'handoff'
     ? ar ? 'طلبك محتاج متابعة شخصية من صاحب النشاط. هوقف الردود الآلية هنا علشان يقدر يراجع المحادثة ويرد عليك.' : 'Your message needs personal attention from the business owner. I’ll pause automated replies here so they can review the conversation and respond.'
-    : ar ? 'المعلومة دي مش متاحة عندي بشكل مؤكد حالياً. من فضلك وضّح سؤالك أو تواصل مع فريق العمل مباشرة.' : 'I do not have confirmed information for this right now. Please clarify your question or contact the business team directly.';
+    : technical
+      ? ar ? 'آسف، مش قادر أجاوبك دلوقتي بسبب مشكلة تقنية. حاول تاني بعد شوية، أو اطلب تتكلم مع صاحب النشاط.' : 'Sorry, I can’t answer right now because of a technical issue. Please try again later, or ask to speak to the business owner.'
+      : ar ? 'المعلومة دي مش متاحة عندي بشكل مؤكد حالياً. من فضلك وضّح سؤالك أو تواصل مع فريق العمل مباشرة.' : 'I do not have confirmed information for this right now. Please clarify your question or contact the business team directly.';
   return { text, action, reason, sources: [] };
 }
 function sourcesCurrent(decision: AgentDecision, available: KnowledgeSource[]) {
@@ -33,15 +37,17 @@ export class GroundedStrategy implements ReplyStrategy {
     try { sources = await this.loadSources(context.tenantId); }
     catch { return fallback(context, 'knowledge_unavailable'); }
     if (!sources.length) return fallback(context, 'no_approved_knowledge');
-    if (sources.length > 40 || Buffer.byteLength(JSON.stringify(sources.map(s => ({ label: s.label, content: s.content }))), 'utf8') > MAX_KNOWLEDGE_BYTES)
-      return fallback(context, 'knowledge_too_large');
+    const available = sources;
+    const selection = selectKnowledge(context, available);
+    sources = selection.sources;
+    if (!sources.length) return fallback(context, 'knowledge_selection_empty');
     let request: string;
-    try { request = buildRequest(context, sources); } catch { return fallback(context, 'context_too_large'); }
+    try { request = buildRequest(context, sources, selection.coverage); } catch { return fallback(context, 'context_too_large'); }
     // Reservation commits before the external API call. No auto-retry of a reserved request.
     const reservation = await this.ledger.reserve(context.tenantId, context.requestKey, this.purpose);
     if (reservation.status === 'completed') {
       const decision = reservation.decision;
-      if (!decision || !Array.isArray(decision.sources) || !sourcesCurrent(decision, sources)) return fallback(context, 'cached_knowledge_changed');
+      if (!decision || !Array.isArray(decision.sources) || !sourcesCurrent(decision, available)) return fallback(context, 'cached_knowledge_changed');
       return decision;
     }
     if (reservation.status !== 'new' || !reservation.id) return fallback(context, `ai_${reservation.status}`);

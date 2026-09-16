@@ -125,7 +125,9 @@ describe('grounded reply strategy', () => {
   });
   it('does not call the provider when approved knowledge exceeds the input allowance', async () => {
     const complete=vi.fn(); const ledger=fakeLedger();
-    expect((await new GroundedStrategy(async()=>[{...source,content:'x'.repeat(9000)}],ledger,{complete}).reply(context)).reason).toBe('knowledge_too_large');
+    const result = await new GroundedStrategy(async()=>[{...source,content:'x'.repeat(9000)}],ledger,{complete}).reply(context);
+    expect(result.reason).toBe('knowledge_selection_empty');
+    expect(result.text).toContain('technical issue');
     expect(ledger.reserve).not.toHaveBeenCalled();
   });
 });
