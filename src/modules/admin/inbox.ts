@@ -2,10 +2,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 export type InboxFilter = 'all' | 'attention' | 'complaints' | 'resolved';
 export type AttentionAction = 'reply' | 'resolve' | 'resume' | 'flag' | 'complaint' | 'remove_complaint';
 export type Conversation = {id:string;automation_mode:'auto'|'human';status:string;last_inbound_at:string;updated_at:string;customer_id:string;name:string;phone:string|null;username:string|null;
-  attention_state:'none'|'waiting'|'in_progress'|'resolved';attention_reason:string|null;attention_summary:string;attention_since:string|null;resolved_at:string|null;is_complaint:boolean;attention_message_id:string|null;followup_state:'none'|'collecting'|'ready'|'declined';followup_name:string|null;followup_phone:string|null};
+  attention_state:'none'|'waiting'|'in_progress'|'resolved';attention_reason:string|null;attention_summary:string;attention_since:string|null;resolved_at:string|null;is_complaint:boolean;attention_message_id:string|null;followup_state:'none'|'collecting'|'ready'|'declined';followup_name:string|null;followup_phone:string|null;followup_purpose?:string;followup_role?:string|null;blocked?:boolean};
 export type InboxCounts = Record<InboxFilter,number>;
-export const attentionReason = (reason:string|null) => ({human_requested:'Requested a person',complaint:'Complaint',manual:'Flagged by you',customer_follow_up:'Customer followed up',knowledge_gap:'Missing business information'}[reason??'']??'Personal attention');
-export function conversationStateLabel(c:Pick<Conversation,'attention_state'|'automation_mode'>) {
+export const attentionReason = (reason:string|null) => ({career_application:'Job enquiry',moderation_review:'Content check needs review',human_requested:'Requested a person',complaint:'Complaint',manual:'Flagged by you',customer_follow_up:'Customer followed up',knowledge_gap:'Missing business information'}[reason??'']??'Personal attention');
+export function conversationStateLabel(c:Pick<Conversation,'attention_state'|'automation_mode'|'blocked'>) {
+  if(c.blocked)return 'Blacklisted · Replies blocked';
   if(c.attention_state==='resolved')return c.automation_mode==='auto'?'Resolved · Assistant on':'Resolved · Assistant paused';
   if(c.attention_state==='in_progress')return 'Replying personally';
   if(c.attention_state==='waiting')return c.automation_mode==='auto'?'Needs review · Assistant on':'Needs you · Assistant paused';
@@ -29,7 +30,7 @@ export class InboxRepository {
     return {all:rows[0].count??0,attention:rows[1].count??0,complaints:rows[2].count??0,resolved:rows[3].count??0};
   }
   async conversations(tenant:string,filter:InboxFilter='all',limit=50):Promise<Conversation[]>{
-    let query=this.db.from('conversations').select('id,automation_mode,status,last_inbound_at,updated_at,customer_id,attention_state,attention_reason,attention_summary,attention_since,resolved_at,is_complaint,attention_message_id,followup_state,followup_name,followup_phone').eq('tenant_id',tenant);
+    let query=this.db.from('conversations').select('id,automation_mode,status,last_inbound_at,updated_at,customer_id,attention_state,attention_reason,attention_summary,attention_since,resolved_at,is_complaint,attention_message_id,followup_state,followup_name,followup_phone,followup_purpose,followup_role').eq('tenant_id',tenant);
     if(filter==='attention')query=query.in('attention_state',['waiting','in_progress']);
     if(filter==='complaints')query=query.eq('is_complaint',true);
     if(filter==='resolved')query=query.eq('attention_state','resolved');
@@ -38,7 +39,9 @@ export class InboxRepository {
     if(!data.length)return [];
     const customers=await this.db.from('customers').select('id,display_name,whatsapp_id,whatsapp_username').eq('tenant_id',tenant).in('id',data.map(c=>c.customer_id));
     if(customers.error)throw new Error('Could not load customer details.');
-    return data.map(c=>{const customer=customers.data.find(x=>x.id===c.customer_id);return {...c,name:customer?.display_name||(customer?.whatsapp_username?`@${customer.whatsapp_username}`:'WhatsApp customer'),phone:customer?.whatsapp_id??null,username:customer?.whatsapp_username??null};});
+    const blocks=await this.db.from('customer_blacklist').select('customer_id,state').eq('tenant_id',tenant).in('customer_id',data.map(c=>c.customer_id));
+    if(blocks.error)throw new Error('Could not load block status.');
+    return data.map(c=>{const customer=customers.data.find(x=>x.id===c.customer_id);return {...c,blocked:blocks.data.some(b=>b.customer_id===c.customer_id&&b.state!=='removed'),name:customer?.display_name||(customer?.whatsapp_username?`@${customer.whatsapp_username}`:'WhatsApp customer'),phone:customer?.whatsapp_id??null,username:customer?.whatsapp_username??null};});
   }
   async messages(tenant:string,conversation:string,limit=100):Promise<InboxMessage[]>{
     const {data,error}=await this.db.from('messages').select('id,direction,body,message_type,delivery_status,created_at')

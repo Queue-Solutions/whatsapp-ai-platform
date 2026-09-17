@@ -3,6 +3,7 @@ export interface IncomingMessage {
   phoneNumberId: string;
   providerMessageId: string;
   from: string;
+  mediaId?: string;
   userId?: string;
   username?: string;
   displayName?: string;
@@ -40,6 +41,9 @@ export interface PreparedReply {
   body: string;
 }
 export interface MessageContext {
+  mediaId?:string;
+  moderationState?:string;
+  blocked?:boolean;
   followUp?: import('../ai/follow-up').FollowUpContext;
   requestKey?: string;
   eligible?: boolean;
@@ -50,6 +54,7 @@ export interface MessageContext {
   type: string;
 }
 export interface MessagingRepository {
+  moderate?(job:MessageJob,result:import('../moderation/provider').ModerationResult):Promise<boolean>;
   isAllowedIdentity?(identifier:string,allowed:string[]):Promise<boolean>;
   updateIdentity?(change:IdentityChange):Promise<void>;
   ingest(message: IncomingMessage): Promise<void>;

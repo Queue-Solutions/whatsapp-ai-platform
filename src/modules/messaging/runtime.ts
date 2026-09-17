@@ -1,4 +1,5 @@
 import 'server-only';
+import {OpenAiModerator} from '../moderation/provider';
 import { readEnvironment } from '@/config/env';
 import { createAdminClient } from '@/lib/supabase/client';
 import { SupabaseMessagingRepository } from './supabase-repository';
@@ -16,5 +17,5 @@ export function createMessagingRuntime() {
     ? new GroundedStrategy(tenant => new KnowledgeRepository(db).forAssistant(tenant), new SupabaseUsageLedger(db), new OpenAiProvider(readAiKey()))
     : echoStrategy;
   return {env,repository:new SupabaseMessagingRepository(db,env.WHATSAPP_TEST_PHONE_NUMBER_ID),
-    sender:new MetaMessageSender(env),strategy};
+    sender:new MetaMessageSender(env),strategy,moderator:new OpenAiModerator(process.env.OPENAI_API_KEY,env)};
 }

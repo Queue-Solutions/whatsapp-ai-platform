@@ -3,11 +3,18 @@ import type { MessageJob, MessageSender, MessagingRepository, ReplyStrategy } fr
 
 /** Reusable orchestration; no Next.js, Supabase SDK, or AI provider dependency. */
 export async function processIncomingMessage(job: MessageJob, deps: {
+  moderator?: import('../moderation/provider').ContentModerator;
   repository: MessagingRepository; sender: MessageSender; strategy: ReplyStrategy;
 }): Promise<"sent" | "skipped" | "failed" | "needs_review"> {
   const { repository, sender, strategy } = deps;
   // Errors before prepare leave a recoverable processing lease; no external send occurred.
   const context = await repository.context(job);
+  if(deps.moderator){
+    if(!repository.moderate)throw new Error('Moderation persistence unavailable');
+    // Recovered jobs reuse the durable verdict. Blocked customers never invoke the AI.
+    const result=context.blocked?{state:'clear' as const,categories:[]}:context.moderationState==='clear'?{state:'clear' as const,categories:[]}:await deps.moderator.check(context);
+    if(!await repository.moderate(job,result))return 'skipped';
+  }
   const decision = await strategy.reply({ ...context, requestKey: `message:${job.inbound_message_id}` });
   if (typeof decision !== 'string' && !repository.prepareDecision) throw new Error('Structured reply persistence unavailable');
   const reply = typeof decision === 'string' ? await repository.prepare(job, decision) : await repository.prepareDecision!(job, decision);

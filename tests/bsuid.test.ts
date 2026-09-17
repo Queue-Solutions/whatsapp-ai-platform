@@ -50,7 +50,7 @@ describe('Meta BSUID protocol',()=>{
  });
  it('shows actual phone numbers separately and never turns a BSUID into a fake phone number',async()=>{
   const data:Record<string,unknown[]>={conversations:[{id:'1',customer_id:'1'},{id:'2',customer_id:'2'}],customers:[{id:'1',display_name:'Maya',whatsapp_id:phone},{id:'2',whatsapp_id:null,whatsapp_username:'maya.test'}]};
-  const db={from:(table:string)=>{const q={select:()=>q,eq:()=>q,in:()=>q,order:()=>q,limit:()=>q,then:(resolve:(v:unknown)=>unknown)=>Promise.resolve({data:data[table]}).then(resolve)};return q;}} as unknown as SupabaseClient;
+  const db={from:(table:string)=>{const q={select:()=>q,eq:()=>q,in:()=>q,order:()=>q,limit:()=>q,then:(resolve:(v:unknown)=>unknown)=>Promise.resolve({data:data[table]??[]}).then(resolve)};return q;}} as unknown as SupabaseClient;
   expect(await new InboxRepository(db).conversations('tenant')).toMatchObject([{name:'Maya',phone},{name:'@maya.test',phone:null,username:'maya.test'}]);
  });
 });

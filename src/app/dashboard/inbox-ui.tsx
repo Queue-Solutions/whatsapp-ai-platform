@@ -82,7 +82,7 @@ function ConversationPanel({repository,knowledgeEditor,tenant,conversation:c,can
   useEffect(()=>{let active=true;let running=false;const load=async()=>{if(running)return;running=true;try{const [m,e]=await Promise.all([repository.messages(tenant,c.id,limit),repository.events(tenant,c.id)]);if(active){setMessages(m);setEvents(e);setNow(Date.now());}}catch{if(active)setError('Could not refresh messages. Use Refresh to try again.');}finally{running=false;}};void load();const timer=setInterval(()=>void load(),10000);return()=>{active=false;clearInterval(timer);};},[repository,tenant,c.id,limit,reload]);
   useEffect(()=>{const el=messageList.current;if(!el||!messages.length)return;if(firstMessages.current||el.scrollHeight-el.scrollTop-el.clientHeight<100)el.scrollTop=el.scrollHeight;firstMessages.current=false;},[messages]);
   const gapMessage=loadedGapMessage?.id===c.attention_message_id?loadedGapMessage:null;
-  const canSend=canEdit&&c.automation_mode==='human'&&c.attention_state==='in_progress'&&c.status==='open'&&Date.parse(c.last_inbound_at)>now-(23*60+55)*60000;
+  const canSend=!c.blocked&&canEdit&&c.automation_mode==='human'&&c.attention_state==='in_progress'&&c.status==='open'&&Date.parse(c.last_inbound_at)>now-(23*60+55)*60000;
   async function action(value:AttentionAction){
     const clearsDraft=['resolve','resume'].includes(value);
     if(clearsDraft&&(text||faqDirty)&&!window.confirm('Discard unsaved changes and continue?'))return false;
@@ -102,7 +102,7 @@ function ConversationPanel({repository,knowledgeEditor,tenant,conversation:c,can
     }catch(e){setAttempt({...pending,blocked:true});setError(`${(e as Error).message} Check the message list before composing another reply.`);}
     finally{setBusy(false);onWorking(false);setReload(n=>n+1);onRefresh();}
   }
-  const disabled=!canEdit||busy||c.status!=='open';
+  const disabled=!!c.blocked||!canEdit||busy||c.status!=='open';
   async function prepareFaqReply(answer:string){
     if(text&&!window.confirm('Replace your unsent reply with the saved FAQ answer?'))return;
     if(await action('reply')){setText(answer.slice(0,4096));setAttempt(null);setFaqTarget(null);setFaqDirty(false);setNotice(answer.length>4096?'FAQ saved. The answer was shortened to fit a WhatsApp reply; review it before sending.':'FAQ saved. Review your personal reply below and choose Send reply when ready.');}
@@ -117,15 +117,16 @@ function ConversationPanel({repository,knowledgeEditor,tenant,conversation:c,can
         {c.automation_mode==='human'&&<button className="secondary" disabled={disabled} onClick={()=>void action('resume')}>Return to assistant</button>}
       </div>
     </div>
+    {c.blocked&&<p className="notice">This customer is blacklisted. <a href="/dashboard/blacklist">Review the block</a> before replying or resuming the assistant.</p>}
     <div className={`attention-detail ${c.attention_state==='resolved'?'is-resolved':''}`}>
       {c.attention_state!=='none'&&<div><strong>{attentionReason(c.attention_reason)}</strong><p dir="auto">{c.attention_summary||'You’re handling this conversation personally.'}</p>{c.attention_reason==='knowledge_gap'&&<div className="knowledge-gap-details">{gapMessage?.body&&<><span className="gap-detail-label">Latest unanswered question</span><blockquote dir="auto">{gapMessage.body}</blockquote></>}<p><b>Suggested next step:</b> Check the saved information, confirm the answer, then reply or add it to FAQs.</p><p>{c.automation_mode==='auto'?c.attention_state==='resolved'?'This review is resolved. The assistant can answer new questions.':'The assistant can still answer other questions. This flag stays until you resolve it.':'The assistant is paused while you handle this conversation.'}</p>{canEditFaq&&gapMessage?.body&&<button className="secondary" disabled={disabled||!!faqTarget} onClick={()=>setFaqTarget({id:gapMessage.id,question:gapMessage.body!})}>Add to FAQs</button>}</div>}<span>{c.attention_state==='waiting'?waitingLabel(c.attention_since,now):c.attention_state==='resolved'?`Resolved ${formatTime(c.resolved_at!)}`:'In progress · You’re replying personally'}</span></div>}
       <div className="flag-actions"><button className="text-button" disabled={disabled} onClick={()=>void action(c.is_complaint?'remove_complaint':'complaint')}>{c.is_complaint?'Remove complaint label':'Mark as complaint'}</button>{c.attention_state!=='waiting'&&<button className="text-button" disabled={disabled} onClick={()=>void action('flag')}>Needs human</button>}</div>
     </div>
     {c.followup_state!=='none'&&<section className="followup-card" aria-label="Personal follow-up">
-      <strong>Personal follow-up</strong>
-      <p>{c.attention_state==='resolved'?'This follow-up is marked resolved.':c.followup_state==='ready'?'Ready for personal contact. Please contact this customer shortly.':c.followup_state==='declined'?'The customer chose not to share contact details. You can reply in this conversation.':c.automation_mode==='human'?'Contact details are incomplete. The assistant is paused, so you can collect them personally.':'Waiting for the customer’s name and contact number. The assistant is collecting these details.'}</p>
-      <dl><div><dt>Name</dt><dd dir="auto">{c.followup_name||'Not provided yet'}</dd></div><div><dt>Phone</dt><dd dir="ltr">{c.followup_phone?<a href={`tel:+${c.followup_phone}`}>+{c.followup_phone}</a>:'Not provided yet'}</dd></div></dl>
-      {c.followup_state==='ready'&&c.attention_state!=='resolved'&&<p>Contact the customer personally, then mark the conversation resolved.</p>}
+      <strong>{c.followup_purpose==='career'?'Job application':'Personal follow-up'}</strong>
+      <p>{c.attention_state==='resolved'?'This follow-up is marked resolved.':c.followup_state==='ready'?(c.followup_purpose==='career'?'Application details are ready. Contact this applicant only if the desired role is needed.':'Ready for personal contact. Please contact this customer shortly.'):c.followup_state==='declined'?'The customer chose not to share contact details. You can reply in this conversation.':c.automation_mode==='human'?'Contact details are incomplete. The assistant is paused, so you can collect them personally.':c.followup_purpose==='career'&&!c.followup_role?'Waiting for the applicant’s desired job role.':'Waiting for the customer’s name and contact number. The assistant is collecting these details.'}</p>
+      <dl>{c.followup_purpose==='career'&&<div><dt>Desired role</dt><dd dir="auto">{c.followup_role||'Not provided yet'}</dd></div>}<div><dt>Name</dt><dd dir="auto">{c.followup_name||'Not provided yet'}</dd></div><div><dt>Phone</dt><dd dir="ltr">{c.followup_phone?<a href={`tel:+${c.followup_phone}`}>+{c.followup_phone}</a>:'Not provided yet'}</dd></div></dl>
+      {c.followup_purpose!=='career'&&c.followup_state==='ready'&&c.attention_state!=='resolved'&&<p>Contact the customer personally, then mark the conversation resolved.</p>}
     </section>}
     {c.attention_state==='resolved'&&<p className="resolved-note">{c.automation_mode==='auto'?'This review is resolved. The assistant is on.':'This issue is marked resolved. The assistant stays paused until you return the conversation to it.'}</p>}
     {faqTarget&&<GapFaqEditor key={faqTarget.id} editor={knowledgeEditor} tenant={tenant} messageId={faqTarget.id} question={faqTarget.question} onClose={closeFaq} onPrepare={prepareFaqReply} onDirty={setFaqDirty} onWorking={value=>{setBusy(value);onWorking(value);}}/>}

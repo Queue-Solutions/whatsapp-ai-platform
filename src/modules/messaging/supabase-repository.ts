@@ -11,8 +11,8 @@ export class SupabaseMessagingRepository implements MessagingRepository {
   }
   async ingest(m: IncomingMessage) {
     if(m.phoneNumberId!==this.phoneNumberId) throw new Error('Channel mismatch');
-    await this.rpc('ingest_whatsapp_identity_message',{p_phone:m.phoneNumberId,p_provider_id:m.providerMessageId,
-      p_from:m.from,p_user_id:m.userId??null,p_username:m.username??null,p_name:m.displayName??null,p_occurred:m.occurredAt,p_type:m.type,p_body:m.text});
+    await this.rpc('ingest_moderated_message',{p_phone:m.phoneNumberId,p_provider_id:m.providerMessageId,
+      p_from:m.from,p_user_id:m.userId??null,p_username:m.username??null,p_name:m.displayName??null,p_occurred:m.occurredAt,p_type:m.type,p_body:m.text,p_media_id:m.mediaId??null});
   }
   isAllowedIdentity(identifier:string,allowed:string[]){
     return this.rpc<boolean>('is_allowed_whatsapp_identity',{p_phone:this.phoneNumberId,p_identifier:identifier,p_allowed:allowed});
@@ -33,18 +33,21 @@ export class SupabaseMessagingRepository implements MessagingRepository {
     return rows[0]??null;
   }
   async context(job: MessageJob): Promise<MessageContext> {
-    const {data,error}=await this.db.from('messages').select('tenant_id,conversation_id,channel_id,body,message_type,created_at')
+    const {data,error}=await this.db.from('messages').select('tenant_id,conversation_id,channel_id,body,message_type,media_id,moderation_state,created_at')
       .eq('id',job.inbound_message_id).eq('tenant_id',job.tenant_id).single();
     if(error || !data) throw new Error('Message context unavailable');
     const [conversation, channel, history] = await Promise.all([
-      this.db.from('conversations').select('automation_mode,automation_epoch,status,last_inbound_at,followup_state,followup_name,followup_phone,attention_reason,attention_summary').eq('tenant_id', job.tenant_id).eq('id',data.conversation_id).single(),
+      this.db.from('conversations').select('customer_id,followup_purpose,followup_role,automation_mode,automation_epoch,status,last_inbound_at,followup_state,followup_name,followup_phone,attention_reason,attention_summary').eq('tenant_id', job.tenant_id).eq('id',data.conversation_id).single(),
       this.db.from('whatsapp_channels').select('enabled,mode,phone_number_id').eq('tenant_id',job.tenant_id).eq('id',data.channel_id).single(),
       this.db.from('messages').select('body,direction').eq('tenant_id',job.tenant_id).eq('conversation_id',data.conversation_id)
         .lt('created_at',data.created_at).in('delivery_status',['received','sent','delivered','read']).order('created_at',{ascending:false}).limit(6),
     ]);
     if (conversation.error || channel.error || history.error) throw new Error('Message context unavailable');
     const c = conversation.data; const ch = channel.data;
-    const eligible = c.automation_mode === 'auto' && c.status === 'open' && ch.enabled && ch.mode === 'test'
+    const block=await this.db.from('customer_blacklist').select('state').eq('tenant_id',job.tenant_id).eq('customer_id',c.customer_id).maybeSingle();
+    if(block.error)throw new Error('Block status unavailable');
+    const blocked=!!block.data&&block.data.state!=='removed';
+    const eligible = !blocked && c.automation_mode === 'auto' && c.status === 'open' && ch.enabled && ch.mode === 'test'
       && job.automation_epoch === c.automation_epoch
       && ch.phone_number_id === this.phoneNumberId && Date.parse(c.last_inbound_at) >= Date.now() - (23*60+55)*60000;
     let bytes = 0;
@@ -53,9 +56,12 @@ export class SupabaseMessagingRepository implements MessagingRepository {
       if (bytes + size > 2500) return []; bytes += size;
       return [{ role: m.direction === 'inbound' ? 'user' as const : 'assistant' as const, content }];
     }).reverse();
-    return {tenantId:data.tenant_id,conversationId:data.conversation_id,text:data.body,type:data.message_type,eligible,history:boundedHistory,
-      followUp:c.followup_state==='collecting'?{state:'collecting',name:c.followup_name,phone:c.followup_phone,
+    return {tenantId:data.tenant_id,conversationId:data.conversation_id,text:data.body,type:data.message_type,mediaId:data.media_id??undefined,moderationState:data.moderation_state,blocked,eligible,history:boundedHistory,
+      followUp:c.followup_state==='collecting'?{state:'collecting',purpose:c.followup_purpose==='career'?'career':undefined,role:c.followup_role,name:c.followup_name,phone:c.followup_phone,
         reason:c.attention_reason==='knowledge_gap'?'missing_business_information':c.attention_reason,summary:c.attention_summary}:undefined};
+  }
+  moderate(job:MessageJob,result:import('../moderation/provider').ModerationResult){
+    return this.rpc<boolean>('finish_content_check',{p_job:job.id,p_lease:job.lease_token,p_state:result.state,p_categories:result.categories});
   }
   prepare(job: MessageJob, text: string) {
     return this.rpc<PreparedReply|null>('prepare_message_reply',{p_job:job.id,p_lease:job.lease_token,p_body:text});

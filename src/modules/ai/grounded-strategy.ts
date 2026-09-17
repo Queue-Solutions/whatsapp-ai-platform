@@ -7,7 +7,7 @@ import type { UsageLedger } from './ledger';
 import { AI_MODEL } from './config';
 import { selectKnowledge } from './knowledge-selection';
 import { knowledgeGap } from './knowledge-gap';
-import { beginFollowUp, continueFollowUp } from './follow-up';
+import { beginFollowUp, continueFollowUp, beginCareer, isCareerEnquiry } from './follow-up';
 import { formatReply, formatBranchReply } from './reply-format';
 import { buildRequest, ModelFailure, type ModelProvider } from './openai';
 export type SourceLoader = (tenant: string) => Promise<KnowledgeSource[]>;
@@ -36,6 +36,7 @@ export class GroundedStrategy implements ReplyStrategy {
   }
   private async generate(context: MessageContext): Promise<AgentDecision> {
     if (context.eligible === false) return fallback(context, 'ineligible', 'suppress');
+    if(context.type==='text'&&context.text&&isCareerEnquiry(context.text)&&context.followUp?.purpose!=='career')return beginCareer(context);
     const contactReply=continueFollowUp(context);
     if(contactReply)return contactReply;
     if (context.type !== 'text' || !context.text?.trim()) return fallback(context, 'unsupported_message');
