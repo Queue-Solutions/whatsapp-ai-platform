@@ -63,3 +63,5 @@
 .gap-faq-editor textarea { resize: vertical; }
 .gap-faq-actions { justify-content: flex-start; }
 @media (max-width: 600px) { .gap-faq-editor { margin: 12px; padding: 14px; } .gap-faq-actions button { width: 100%; } }
+
+.followup-card{margin:16px 24px;padding:16px 18px;border:1px solid #ccdad0;background:#f4f8f5;border-radius:10px}.followup-card>strong{font-size:14px}.followup-card p{font-size:12px;line-height:1.6;color:#52675d}.followup-card dl{display:flex;gap:32px;flex-wrap:wrap;margin:14px 0}.followup-card dt{font-size:11px;color:#63766c}.followup-card dd{margin:4px 0 0;font-size:14px;font-weight:600;overflow-wrap:anywhere}.followup-card a{text-decoration:underline}@media(max-width:600px){.followup-card{margin:12px 18px}.followup-card dl{gap:14px;flex-direction:column}}

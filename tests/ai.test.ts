@@ -28,14 +28,14 @@ function fakeLedger() {
 }
 const modelResult = () => ({ decision: { text: answer.text, action: 'answer' as const, sourceLabels: ['K1'] }, input: 400, output: 70 });
 describe('grounded reply strategy', () => {
-  it('flags a model-confirmed knowledge gap with a bounded explanation, without a handoff', async () => {
+  it('flags a model-confirmed knowledge gap with a bounded explanation and starts contact collection', async () => {
     const ledger=fakeLedger();
     const result=await new GroundedStrategy(async()=>[source],ledger,{complete:async()=>({
       decision:{action:'knowledge_gap',text:'An invented notification promise.',summary:'The customer asked about parking. The available branch information does not confirm parking availability.',sourceLabels:[]},input:400,output:70,
     })}).reply({...context,text:'Is parking available at the test branch?'});
-    expect(result).toMatchObject({action:'unavailable',reason:'missing_business_information',sources:[],attentionSummary:expect.stringContaining('parking')});
+    expect(result).toMatchObject({action:'clarify',followUp:{state:'collecting'},reason:'missing_business_information',sources:[],attentionSummary:expect.stringContaining('parking')});
     expect(result.text).not.toContain('invented');expect(result.text).not.toContain('pause');
-    expect(ledger.finish).toHaveBeenCalledWith(tenant,expect.any(String),expect.objectContaining({state:'completed',decision:result}));
+    expect(ledger.finish).toHaveBeenCalledWith(tenant,expect.any(String),expect.objectContaining({state:'completed',decision:expect.objectContaining({action:'unavailable',reason:'missing_business_information'})}));
   });
   it('keeps clarification and unrelated requests out of the attention queue', async () => {
     for(const action of ['clarify','unavailable'] as const){
@@ -81,18 +81,18 @@ describe('grounded reply strategy', () => {
       expect((await strategy.reply({...context,text,requestKey:text})).reason).not.toMatch(/^social_/);
     }
     expect(complete).toHaveBeenCalledTimes(4);
-    expect((await strategy.reply({...context,text:'Hi, can I speak to a human?'})).action).toBe('handoff');
+    expect((await strategy.reply({...context,text:'Hi, can I speak to a human?'})).action).toBe('clarify');
   });
   it('recognizes explicit requests and complaints in English and Arabic without paid calls',async()=>{
     const complete=vi.fn();const strategy=new GroundedStrategy(async()=>[],fakeLedger(),{complete});
-    for(const text of ['عايز أكلم حد','ممكن أتكلم مع حد','Can I speak to the owner?'])expect(await strategy.reply({...context,text})).toMatchObject({action:'handoff',reason:'human_requested'});
-    for(const text of ['My order arrived damaged','You sent me the wrong item','I want a refund','الطلب وصل غلط','عايز اشتكي','الخدمة سيئة'])expect(await strategy.reply({...context,text})).toMatchObject({action:'handoff',reason:'complaint'});
+    for(const text of ['عايز أكلم حد','ممكن أتكلم مع حد','Can I speak to the owner?'])expect(await strategy.reply({...context,text})).toMatchObject({action:'clarify',followUp:{state:'collecting'},reason:'human_requested'});
+    for(const text of ['My order arrived damaged','You sent me the wrong item','I want a refund','الطلب وصل غلط','عايز اشتكي','الخدمة سيئة'])expect(await strategy.reply({...context,text})).toMatchObject({action:'clarify',followUp:{state:'collecting'},reason:'complaint'});
     for(const text of ['What is your refund policy?','I want refund policy details','What are your delivery times?','If my order arrives damaged, what is the return policy?',"I do not want a refund",'ايه سياسة الاسترجاع؟'])expect((await strategy.reply({...context,text})).reason).not.toBe('complaint');
     expect(complete).not.toHaveBeenCalled();
   });
   it('turns model-detected complaints into a bounded handover acknowledgment',async()=>{
     const result=await new GroundedStrategy(async()=>[source],fakeLedger(),{complete:async()=>({decision:{action:'complaint',text:'A fabricated refund promise',sourceLabels:[]},input:300,output:40})}).reply({...context,text:'This was not the experience I expected.'});
-    expect(result).toMatchObject({action:'handoff',reason:'complaint',sources:[]});expect(result.text).not.toContain('fabricated');
+    expect(result).toMatchObject({action:'clarify',followUp:{state:'collecting'},reason:'complaint',sources:[]});expect(result.text).not.toContain('fabricated');
   });
   it('uses only the resolved tenant and reuses completed decisions on duplicate processing', async () => {
     const load = vi.fn(async () => [source]); const ledger = fakeLedger(); const complete = vi.fn(async () => modelResult());
@@ -106,7 +106,7 @@ describe('grounded reply strategy', () => {
     const complete = vi.fn(); const ledger = fakeLedger(); const strategy = new GroundedStrategy(async () => [],ledger,{ complete });
     expect((await strategy.reply(context)).reason).toBe('missing_business_information');
     expect((await strategy.reply({...context,eligible:false})).action).toBe('suppress');
-    expect((await strategy.reply({...context,text:'عايز أكلم موظف'})).action).toBe('handoff');
+    expect((await strategy.reply({...context,text:'عايز أكلم موظف'})).action).toBe('clarify');
     expect((await strategy.reply({...context,type:'image',text:null})).reason).toBe('unsupported_message');
     expect((await strategy.reply({...context,text:'ع'.repeat(2000)})).reason).toBe('message_too_long');
     expect(complete).not.toHaveBeenCalled(); expect(ledger.reserve).not.toHaveBeenCalled();

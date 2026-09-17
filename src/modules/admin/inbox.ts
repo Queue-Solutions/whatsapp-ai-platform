@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 export type InboxFilter = 'all' | 'attention' | 'complaints' | 'resolved';
 export type AttentionAction = 'reply' | 'resolve' | 'resume' | 'flag' | 'complaint' | 'remove_complaint';
 export type Conversation = {id:string;automation_mode:'auto'|'human';status:string;last_inbound_at:string;updated_at:string;customer_id:string;name:string;
-  attention_state:'none'|'waiting'|'in_progress'|'resolved';attention_reason:string|null;attention_summary:string;attention_since:string|null;resolved_at:string|null;is_complaint:boolean;attention_message_id:string|null};
+  attention_state:'none'|'waiting'|'in_progress'|'resolved';attention_reason:string|null;attention_summary:string;attention_since:string|null;resolved_at:string|null;is_complaint:boolean;attention_message_id:string|null;followup_state:'none'|'collecting'|'ready'|'declined';followup_name:string|null;followup_phone:string|null};
 export type InboxCounts = Record<InboxFilter,number>;
 export const attentionReason = (reason:string|null) => ({human_requested:'Requested a person',complaint:'Complaint',manual:'Flagged by you',customer_follow_up:'Customer followed up',knowledge_gap:'Missing business information'}[reason??'']??'Personal attention');
 export function conversationStateLabel(c:Pick<Conversation,'attention_state'|'automation_mode'>) {
@@ -29,7 +29,7 @@ export class InboxRepository {
     return {all:rows[0].count??0,attention:rows[1].count??0,complaints:rows[2].count??0,resolved:rows[3].count??0};
   }
   async conversations(tenant:string,filter:InboxFilter='all',limit=50):Promise<Conversation[]>{
-    let query=this.db.from('conversations').select('id,automation_mode,status,last_inbound_at,updated_at,customer_id,attention_state,attention_reason,attention_summary,attention_since,resolved_at,is_complaint,attention_message_id').eq('tenant_id',tenant);
+    let query=this.db.from('conversations').select('id,automation_mode,status,last_inbound_at,updated_at,customer_id,attention_state,attention_reason,attention_summary,attention_since,resolved_at,is_complaint,attention_message_id,followup_state,followup_name,followup_phone').eq('tenant_id',tenant);
     if(filter==='attention')query=query.in('attention_state',['waiting','in_progress']);
     if(filter==='complaints')query=query.eq('is_complaint',true);
     if(filter==='resolved')query=query.eq('attention_state','resolved');

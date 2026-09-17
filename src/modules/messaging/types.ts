@@ -29,6 +29,7 @@ export interface PreparedReply {
   body: string;
 }
 export interface MessageContext {
+  followUp?: import('../ai/follow-up').FollowUpContext;
   requestKey?: string;
   eligible?: boolean;
   history?: Array<{ role: "user" | "assistant"; content: string }>;

@@ -8,8 +8,8 @@ export function socialReply(text: string): AgentDecision | null {
   const thanks = /^(?:(?:ok|okay|alright|تمام) )?(?:thanks|thank you|thanks a lot|thank you so much|thank you very much|thanks so much|many thanks|شكرا|شكرا ليك|شكرا جزيلا|متشكر|متشكرة|تسلم|تسلمي|تسلموا)$/;
   const ar = /\p{Script=Arabic}/u.test(normalized);
   if (greetings.test(normalized)) return { action: 'clarify', reason: 'social_greeting', sources: [],
-    text: ar ? 'أهلاً بيك! أقدر أساعدك في إيه؟' : 'Hi! How can I help you today?' };
+    text: ar ? 'أهلًا بيك في ارم ✨\n\nنوّرتنا! تحب تعرف عن فروعنا، ولا فيه حاجة معينة نساعدك فيها؟ 🤍' : 'Welcome to IRAM ✨\n\nLovely to have you here! Looking for a branch, or is there something special we can help you with? 🤍' };
   if (thanks.test(normalized)) return { action: 'clarify', reason: 'social_thanks', sources: [],
-    text: ar ? 'العفو! أقدر أساعدك في حاجة تانية؟' : 'You’re welcome! Is there anything else I can help with?' };
+    text: ar ? 'العفو، ده يسعدنا 🤍\n\nلو محتاج أي حاجة تانية، أنا معاك.' : 'You’re very welcome 🤍\n\nIf you need anything else, I’m here to help.' };
   return null;
 }

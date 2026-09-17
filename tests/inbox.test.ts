@@ -16,7 +16,7 @@ describe('inbox PostgreSQL boundaries',()=>{
   }
   async function claim(){return(await rows<{id:string;lease_token:string;automation_epoch:number}>("select * from public.claim_message_job('9001')"))[0];}
   beforeAll(async()=>{db=new PGlite();await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;`);
-    for(const file of ['202609120001_foundation.sql','202609120002_bounded_ai.sql','202609130001_inbox.sql','202609150001_faq_deletion.sql','202609160001_inbox_attention.sql','202609170001_knowledge_gap_attention.sql'])await db.exec(await readFile(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));
+    for(const file of ['202609120001_foundation.sql','202609120002_bounded_ai.sql','202609130001_inbox.sql','202609150001_faq_deletion.sql','202609160001_inbox_attention.sql','202609170001_knowledge_gap_attention.sql','202609170002_contact_followup.sql'])await db.exec(await readFile(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));
   });
   afterAll(async()=>{await db?.close();});
   beforeEach(async()=>{await db.exec('reset role;truncate public.tenants,auth.users cascade;');
@@ -131,6 +131,53 @@ describe('inbox PostgreSQL boundaries',()=>{
     const sending=await rows<{id:string;lease_token:string}>("select j.id,j.lease_token from public.message_jobs j join public.messages m on m.id=j.inbound_message_id where m.conversation_id=$1 and j.state='sending'",[conversation]);
     for(const job of sending)await db.query('select public.complete_message_job($1,$2,$3)',[job.id,job.lease_token,'sent-'+job.id]);
     await db.query("select public.ingest_whatsapp_message('9001',$1,'201000000001',null,now(),'text','Another fictional business question')",[id]);return claim();}
+  async function contact(job:Awaited<ReturnType<typeof claim>>,details:Record<string,unknown>,reason='complaint'){
+    return (await rows<{v:{recipient:string}|null}>("select public.prepare_followup_reply($1,$2,'Synthetic contact reply',$3,'[]',$4,'The customer needs help with a damaged item.',$5) as v",
+      [job.id,job.lease_token,details.state==='collecting'?'clarify':'handoff',reason,JSON.stringify(details)]))[0].v;
+  }
+  it('collects contact details atomically, keeps the original issue and destination, then pauses for personal follow-up',async()=>{
+    const job=await claim();
+    expect(await contact(job,{state:'collecting',name:null,phone:null})).toMatchObject({recipient:'201000000001'});
+    const [original]=await rows('select * from public.conversations where id=$1',[conversation]);
+    expect(original).toMatchObject({followup_state:'collecting',automation_mode:'auto',attention_reason:'complaint',is_complaint:true});
+    await contact(await newMessage('name'),{state:'collecting',name:'Maya Hassan',phone:null});
+    const last=await newMessage('phone');
+    expect(await contact(last,{state:'ready',name:'Maya Hassan',phone:'201012345678'})).toMatchObject({recipient:'201000000001'});
+    expect((await rows('select * from public.conversations where id=$1',[conversation]))[0]).toMatchObject({
+      followup_state:'ready',followup_name:'Maya Hassan',followup_phone:'201012345678',automation_mode:'human',automation_epoch:1,
+      attention_state:'waiting',attention_message_id:original.attention_message_id,attention_since:original.attention_since});
+    await db.query("select public.fail_message_job($1,$2,'needs_review','network_outcome_unknown')",[last.id,last.lease_token]);
+    await expect(contact(last,{state:'ready',name:'Maya Hassan',phone:'201012345678'})).rejects.toThrow('lease');
+    expect(await rows("select id from public.conversation_events where event_type='complaint'")).toHaveLength(1);
+    expect((await rows('select followup_state from public.conversations where tenant_id=$1',[other]))[0]).toMatchObject({followup_state:'none'});
+    await asUser(viewer);expect(await rows('select followup_name from public.conversations')).toEqual([{followup_name:'Maya Hassan'}]);
+    await expect(contact(last,{state:'collecting',name:'Intruder',phone:null})).rejects.toThrow();
+  });
+  it('rejects incomplete callback acknowledgments and stale contact collection after takeover',async()=>{
+    const job=await claim();await expect(contact(job,{state:'ready',name:'Maya',phone:null})).rejects.toThrow('Invalid follow-up');
+    expect(await rows("select id from public.messages where direction='outbound'")).toHaveLength(0);
+    await asUser(owner);await attention('reply');await db.exec('reset role');
+    expect(await contact(job,{state:'collecting',name:'Maya',phone:null})).toBeNull();
+    expect((await rows('select followup_state,followup_name from public.conversations where id=$1',[conversation]))[0]).toMatchObject({followup_state:'none',followup_name:null});
+  });
+  it('preserves collected details for a known answer, prioritizes new complaints and clears collection on resolution/resume',async()=>{
+    await contact(await claim(),{state:'collecting',name:'Maya',phone:null},'missing_business_information');
+    const [gapCase]=await rows('select attention_message_id from public.conversations where id=$1',[conversation]);
+    const known=await newMessage('known-during-collection');
+    await db.query("select public.prepare_followup_reply($1,$2,'Hello','clarify','[]','social_greeting',null,null)",[known.id,known.lease_token]);
+    expect((await rows('select followup_state,followup_name from public.conversations where id=$1',[conversation]))[0]).toMatchObject({followup_state:'collecting',followup_name:'Maya'});
+    await contact(await newMessage('new-complaint'),{state:'collecting',name:'Maya',phone:null});
+    const [complaintCase]=await rows('select attention_reason,attention_message_id from public.conversations where id=$1',[conversation]);
+    expect(complaintCase.attention_reason).toBe('complaint');expect(complaintCase.attention_message_id).not.toBe(gapCase.attention_message_id);
+    await asUser(owner);await attention('resolve');
+    expect((await rows('select followup_state from public.conversations where id=$1',[conversation]))[0]).toMatchObject({followup_state:'none'});
+    await attention('resume');
+    expect((await rows('select followup_state,followup_name,followup_phone from public.conversations where id=$1',[conversation]))[0]).toMatchObject({followup_state:'none',followup_name:null,followup_phone:null});
+  });
+  it('keeps declined contact requests visible and pauses without requiring personal details',async()=>{
+    await contact(await claim(),{state:'declined',name:null,phone:null},'human_requested');
+    expect((await rows('select followup_state,attention_state,automation_mode from public.conversations where id=$1',[conversation]))[0]).toMatchObject({followup_state:'declined',attention_state:'waiting',automation_mode:'human'});
+  });
   it('flags a missing answer without pausing, retains the original message, and allows a later known reply',async()=>{
     const job=await claim();expect(await gap(job)).not.toBeNull();
     const [c]=await rows<{attention_message_id:string;attention_since:string}>("select * from public.conversations where id=$1",[conversation]);

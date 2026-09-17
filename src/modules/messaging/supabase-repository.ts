@@ -29,7 +29,7 @@ export class SupabaseMessagingRepository implements MessagingRepository {
       .eq('id',job.inbound_message_id).eq('tenant_id',job.tenant_id).single();
     if(error || !data) throw new Error('Message context unavailable');
     const [conversation, channel, history] = await Promise.all([
-      this.db.from('conversations').select('automation_mode,automation_epoch,status,last_inbound_at').eq('tenant_id', job.tenant_id).eq('id',data.conversation_id).single(),
+      this.db.from('conversations').select('automation_mode,automation_epoch,status,last_inbound_at,followup_state,followup_name,followup_phone,attention_reason,attention_summary').eq('tenant_id', job.tenant_id).eq('id',data.conversation_id).single(),
       this.db.from('whatsapp_channels').select('enabled,mode,phone_number_id').eq('tenant_id',job.tenant_id).eq('id',data.channel_id).single(),
       this.db.from('messages').select('body,direction').eq('tenant_id',job.tenant_id).eq('conversation_id',data.conversation_id)
         .lt('created_at',data.created_at).in('delivery_status',['received','sent','delivered','read']).order('created_at',{ascending:false}).limit(6),
@@ -45,14 +45,16 @@ export class SupabaseMessagingRepository implements MessagingRepository {
       if (bytes + size > 2500) return []; bytes += size;
       return [{ role: m.direction === 'inbound' ? 'user' as const : 'assistant' as const, content }];
     }).reverse();
-    return {tenantId:data.tenant_id,conversationId:data.conversation_id,text:data.body,type:data.message_type,eligible,history:boundedHistory};
+    return {tenantId:data.tenant_id,conversationId:data.conversation_id,text:data.body,type:data.message_type,eligible,history:boundedHistory,
+      followUp:c.followup_state==='collecting'?{state:'collecting',name:c.followup_name,phone:c.followup_phone,
+        reason:c.attention_reason==='knowledge_gap'?'missing_business_information':c.attention_reason,summary:c.attention_summary}:undefined};
   }
   prepare(job: MessageJob, text: string) {
     return this.rpc<PreparedReply|null>('prepare_message_reply',{p_job:job.id,p_lease:job.lease_token,p_body:text});
   }
   prepareDecision(job: MessageJob, decision: AgentDecision) {
-    return this.rpc<PreparedReply|null>('prepare_inbox_reply', { p_job: job.id, p_lease: job.lease_token,
-      p_body: decision.text, p_action: decision.action, p_sources: decision.sources, p_reason: decision.reason, p_summary: decision.attentionSummary ?? null });
+    return this.rpc<PreparedReply|null>('prepare_followup_reply', { p_job: job.id, p_lease: job.lease_token,
+      p_body: decision.text, p_action: decision.action, p_sources: decision.sources, p_reason: decision.reason, p_summary: decision.attentionSummary ?? null, p_contact:decision.followUp??null });
   }
   async complete(job: MessageJob, providerMessageId: string) {
     await this.rpc('complete_message_job',{p_job:job.id,p_lease:job.lease_token,p_provider_id:providerMessageId});

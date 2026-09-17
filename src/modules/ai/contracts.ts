@@ -9,6 +9,7 @@ export interface AgentDecision {
   reason: string;
   sources: SourceReference[];
   attentionSummary?: string;
+  followUp?: import('./follow-up').FollowUpDetails;
   usage?: { model: string; inputTokens: number; outputTokens: number; costNano: number };
 }
 export interface KnowledgeRetriever {
