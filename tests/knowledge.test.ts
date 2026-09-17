@@ -32,9 +32,27 @@ describe('business knowledge approval', () => {
 });
 
 import { KnowledgeRepository } from '../src/modules/knowledge/repository';
-import { KnowledgeEditor } from '../src/modules/admin/knowledge-editor';
+import { KnowledgeEditor, gapFaqId } from '../src/modules/admin/knowledge-editor';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { vi } from 'vitest';
+
+it('gives each tenant/message a stable FAQ identity and preserves an existing approved answer', async()=>{
+  const id=await gapFaqId('tenant-a','message-1');
+  expect(id).toMatch(/^[a-f0-9-]{36}$/);
+  expect(await gapFaqId('tenant-a','message-1')).toBe(id);
+  expect(await gapFaqId('tenant-b','message-1')).not.toBe(id);
+  expect(await gapFaqId('tenant-a','message-2')).not.toBe(id);
+  const saved={id,question:'Parking?',answer:'Confirmed parking information',is_published:true,locale:'en'};
+  const q={select:vi.fn(),eq:vi.fn(),maybeSingle:vi.fn().mockResolvedValue({data:saved,error:null})};
+  q.select.mockReturnValue(q);q.eq.mockReturnValue(q);
+  const editor=new KnowledgeEditor({from:()=>q} as unknown as SupabaseClient);
+  expect(await editor.faqForGap('tenant-a','message-1','Original question')).toEqual(saved);
+  expect(q.eq).toHaveBeenCalledWith('tenant_id','tenant-a');expect(q.eq).toHaveBeenCalledWith('id',id);
+  q.maybeSingle.mockResolvedValueOnce({data:null,error:null});
+  expect(await editor.faqForGap('tenant-a','message-1','فيه ركنة؟')).toMatchObject({id,answer:'',is_published:false,locale:'ar'});
+  q.maybeSingle.mockResolvedValueOnce({data:{...saved,deleted_at:'2026-09-17'},error:null});
+  await expect(editor.faqForGap('tenant-a','message-1','Parking?')).rejects.toThrow('deleted');
+});
 
 it('excludes empty published answers and incomplete branches even if stored outside the editor', async () => {
   const makeQuery = (data: unknown[]) => {

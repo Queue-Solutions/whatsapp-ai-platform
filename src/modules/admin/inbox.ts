@@ -2,9 +2,15 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 export type InboxFilter = 'all' | 'attention' | 'complaints' | 'resolved';
 export type AttentionAction = 'reply' | 'resolve' | 'resume' | 'flag' | 'complaint' | 'remove_complaint';
 export type Conversation = {id:string;automation_mode:'auto'|'human';status:string;last_inbound_at:string;updated_at:string;customer_id:string;name:string;
-  attention_state:'none'|'waiting'|'in_progress'|'resolved';attention_reason:string|null;attention_summary:string;attention_since:string|null;resolved_at:string|null;is_complaint:boolean};
+  attention_state:'none'|'waiting'|'in_progress'|'resolved';attention_reason:string|null;attention_summary:string;attention_since:string|null;resolved_at:string|null;is_complaint:boolean;attention_message_id:string|null};
 export type InboxCounts = Record<InboxFilter,number>;
-export const attentionReason = (reason:string|null) => ({human_requested:'Requested a person',complaint:'Complaint',manual:'Flagged by you',customer_follow_up:'Customer followed up'}[reason??'']??'Personal attention');
+export const attentionReason = (reason:string|null) => ({human_requested:'Requested a person',complaint:'Complaint',manual:'Flagged by you',customer_follow_up:'Customer followed up',knowledge_gap:'Missing business information'}[reason??'']??'Personal attention');
+export function conversationStateLabel(c:Pick<Conversation,'attention_state'|'automation_mode'>) {
+  if(c.attention_state==='resolved')return c.automation_mode==='auto'?'Resolved · Assistant on':'Resolved · Assistant paused';
+  if(c.attention_state==='in_progress')return 'Replying personally';
+  if(c.attention_state==='waiting')return c.automation_mode==='auto'?'Needs review · Assistant on':'Needs you · Assistant paused';
+  return c.automation_mode==='auto'?'Assistant on':'Assistant paused';
+}
 export function waitingLabel(since:string|null,now=Date.now()) {
   if(!since)return 'Needs attention';
   const minutes=Math.max(0,Math.floor((now-Date.parse(since))/60000));
@@ -23,7 +29,7 @@ export class InboxRepository {
     return {all:rows[0].count??0,attention:rows[1].count??0,complaints:rows[2].count??0,resolved:rows[3].count??0};
   }
   async conversations(tenant:string,filter:InboxFilter='all',limit=50):Promise<Conversation[]>{
-    let query=this.db.from('conversations').select('id,automation_mode,status,last_inbound_at,updated_at,customer_id,attention_state,attention_reason,attention_summary,attention_since,resolved_at,is_complaint').eq('tenant_id',tenant);
+    let query=this.db.from('conversations').select('id,automation_mode,status,last_inbound_at,updated_at,customer_id,attention_state,attention_reason,attention_summary,attention_since,resolved_at,is_complaint,attention_message_id').eq('tenant_id',tenant);
     if(filter==='attention')query=query.in('attention_state',['waiting','in_progress']);
     if(filter==='complaints')query=query.eq('is_complaint',true);
     if(filter==='resolved')query=query.eq('attention_state','resolved');
@@ -43,6 +49,12 @@ export class InboxRepository {
     const {data,error}=await this.db.from('conversation_events').select('id,event_type,created_at')
       .eq('tenant_id',tenant).eq('conversation_id',conversation).order('created_at',{ascending:false}).limit(10);
     if(error)throw new Error('Could not load activity.');return data;
+  }
+  async attentionMessage(tenant:string,conversation:string,id:string):Promise<InboxMessage|null>{
+    const {data,error}=await this.db.from('messages').select('id,direction,body,message_type,delivery_status,created_at')
+      .eq('tenant_id',tenant).eq('conversation_id',conversation).eq('id',id).eq('direction','inbound').maybeSingle();
+    if(error)throw new Error('Could not load the unanswered question. Refresh and try again.');
+    return data;
   }
   async attention(conversation:Conversation,action:AttentionAction){
     const {error}=await this.db.rpc('manage_conversation_attention',{p_conversation:conversation.id,p_action:action,p_expected:conversation.updated_at});

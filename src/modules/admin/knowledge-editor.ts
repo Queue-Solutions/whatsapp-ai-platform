@@ -2,6 +2,12 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { branchSchema, starterFaqs, validateBranch, validateFaq, type Branch, type Faq } from '../knowledge/questionnaire';
 
 export type Membership = { tenant_id: string; role: string; name: string };
+export async function gapFaqId(tenant:string,message:string) {
+  const hash=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(`queue-gap-faq-v1:${tenant}:${message}`)));
+  hash[6]=(hash[6]&15)|80;hash[8]=(hash[8]&63)|128;
+  const hex=Array.from(hash.slice(0,16),n=>n.toString(16).padStart(2,'0')).join('');
+  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+}
 /** All calls use the signed-in user's client and database RLS, never a service key. */
 export class KnowledgeEditor {
   constructor(private readonly db: SupabaseClient) {}
@@ -40,6 +46,15 @@ export class KnowledgeEditor {
       .select('id,question,answer,is_published,updated_at').single();
     if (error || !data) throw new Error('Could not save. Check your connection and owner/admin access, then try again.');
     return data as Faq;
+  }
+  async faqForGap(tenant:string,message:string,question:string):Promise<Faq & {locale:string}>{
+    // Stable identity makes retries and reopening this editor update the same FAQ.
+    const id=await gapFaqId(tenant,message);
+    const {data,error}=await this.db.from('faqs').select('id,question,answer,is_published,updated_at,locale,deleted_at')
+      .eq('tenant_id',tenant).eq('id',id).maybeSingle();
+    if(error)throw new Error('Could not open this FAQ. Please try again.');
+    if(data?.deleted_at)throw new Error('The FAQ created from this question was deleted. You can add a new one from the FAQs menu.');
+    return data??{id,question:question.slice(0,1000),answer:'',is_published:false,locale:/[\u0600-\u06ff]/.test(question)?'ar':'en'};
   }
   async saveBranch(tenant: string, locale: string, branch: Branch, publish: boolean) {
     validateBranch(branch.value, publish);

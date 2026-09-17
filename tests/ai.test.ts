@@ -28,6 +28,41 @@ function fakeLedger() {
 }
 const modelResult = () => ({ decision: { text: answer.text, action: 'answer' as const, sourceLabels: ['K1'] }, input: 400, output: 70 });
 describe('grounded reply strategy', () => {
+  it('flags a model-confirmed knowledge gap with a bounded explanation, without a handoff', async () => {
+    const ledger=fakeLedger();
+    const result=await new GroundedStrategy(async()=>[source],ledger,{complete:async()=>({
+      decision:{action:'knowledge_gap',text:'An invented notification promise.',summary:'The customer asked about parking. The available branch information does not confirm parking availability.',sourceLabels:[]},input:400,output:70,
+    })}).reply({...context,text:'Is parking available at the test branch?'});
+    expect(result).toMatchObject({action:'unavailable',reason:'missing_business_information',sources:[],attentionSummary:expect.stringContaining('parking')});
+    expect(result.text).not.toContain('invented');expect(result.text).not.toContain('pause');
+    expect(ledger.finish).toHaveBeenCalledWith(tenant,expect.any(String),expect.objectContaining({state:'completed',decision:result}));
+  });
+  it('keeps clarification and unrelated requests out of the attention queue', async () => {
+    for(const action of ['clarify','unavailable'] as const){
+      const result=await new GroundedStrategy(async()=>[source],fakeLedger(),{complete:async()=>({
+        decision:{action,text:'Which branch do you mean?',sourceLabels:[],summary:''},input:100,output:20,
+      })}).reply(context);
+      expect(result.reason).not.toBe('missing_business_information');expect(result.attentionSummary).toBeUndefined();
+    }
+    const prompt=JSON.parse(buildRequest(context,[source])).instructions;
+    expect(prompt).toContain('ask one short clarification first');expect(prompt).toContain('avoid repeating a clarification');
+  });
+  it('does not flag retrieval, budget, provider or validation failures as missing business information', async () => {
+    const cases=[
+      new GroundedStrategy(async()=>{throw new Error('Unavailable');},fakeLedger(),{complete:vi.fn()}),
+      new GroundedStrategy(async()=>[source],{reserve:async()=>({status:'budget_exhausted'}),finish:vi.fn()},{complete:vi.fn()}),
+      new GroundedStrategy(async()=>[source],fakeLedger(),{complete:async()=>{throw new ModelFailure('openai_http_401');}}),
+      new GroundedStrategy(async()=>[source],fakeLedger(),{complete:async()=>({decision:{action:'knowledge_gap',text:'Unsupported',summary:'Missing information',sourceLabels:['unknown']},input:100,output:20})}),
+    ];
+    for(const strategy of cases){const result=await strategy.reply(context);expect(result.reason).not.toBe('missing_business_information');expect(result.attentionSummary).toBeUndefined();}
+  });
+  it('qualifies explanations when only a subset was reviewed and uses Arabic for the customer', async () => {
+    const result=await new GroundedStrategy(async()=>[source,{...source,id:'too-big',label:'K2',content:'x'.repeat(9000)}],fakeLedger(),{complete:async()=>({
+      decision:{action:'knowledge_gap',text:'No information',summary:'المعلومات المتاحة لا توضح إذا كان فيه ركنة عند الفرع.',sourceLabels:[]},input:100,output:20,
+    })}).reply({...context,text:'فيه ركنة عند الفرع؟'});
+    expect(result.reason).toBe('missing_business_information');expect(result.attentionSummary).toContain('معلومات مختارة');
+    expect(result.text).toMatch(/[\u0600-\u06ff]/);expect(result.attentionSummary!.length).toBeLessThanOrEqual(500);
+  });
   it('handles whole-message greetings and thanks consistently without knowledge or paid calls', async () => {
     const load = vi.fn(); const ledger = fakeLedger(); const complete = vi.fn();
     const strategy = new GroundedStrategy(load, ledger, { complete });
@@ -69,7 +104,7 @@ describe('grounded reply strategy', () => {
   });
   it('makes no paid calls for empty knowledge, ineligible messages, explicit human requests, unsupported media or oversized inputs', async () => {
     const complete = vi.fn(); const ledger = fakeLedger(); const strategy = new GroundedStrategy(async () => [],ledger,{ complete });
-    expect((await strategy.reply(context)).reason).toBe('no_approved_knowledge');
+    expect((await strategy.reply(context)).reason).toBe('missing_business_information');
     expect((await strategy.reply({...context,eligible:false})).action).toBe('suppress');
     expect((await strategy.reply({...context,text:'عايز أكلم موظف'})).action).toBe('handoff');
     expect((await strategy.reply({...context,type:'image',text:null})).reason).toBe('unsupported_message');

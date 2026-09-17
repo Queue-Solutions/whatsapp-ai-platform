@@ -21,3 +21,22 @@ Only text replies are supported in this version. Media bodies are represented by
 - A new inbound message after resolution reopens Needs attention and leaves the assistant paused. Duplicate or old delayed messages do not reopen it. Resolving never deletes or closes the underlying conversation. The Complaints filter includes both active and resolved complaints, with a visible status.
 - `manage_conversation_attention` checks membership, permissions and the expected row version, and records changes. Direct browser UPDATE remains denied. All existing send allowlist, channel, service-window, durable deduplication and uncertain-delivery guards remain in force.
 - Classification applies to new eligible AI-handled messages. Existing history is not retrospectively classified; already-paused conversations can be labeled by the client. AI summaries contain no promises of refunds, completed actions or response times.
+
+
+## Missing business information
+
+The `knowledge_gap` model action identifies a clear business question that the supplied approved sources cannot answer. Ambiguous questions should receive one clarification first, using recent history to avoid repeating it. Unrelated requests, prompt injection, provider/knowledge-load failures, exhausted budgets and source-validation failures do not create knowledge gaps. When no approved knowledge is published, a substantive text question receives a deterministic review flag without a paid call. The model's short explanation is an assessment of the supplied sources, not proof that every saved source lacks the answer. When retrieval omits records, the explanation explicitly says other saved knowledge may contain it.
+
+The strategy maps the gap to `unavailable` with reason `missing_business_information`. `prepare_inbox_reply` records the reply intent, `knowledge_gap` attention reason, explanation and exact inbound `attention_message_id` together, after the existing send guards. The flag persists even if delivery fails or is uncertain. It does not change automation mode or epoch. Known answers and social replies continue while the case remains in Needs attention. Later gaps update the latest unanswered question without resetting the original waiting time. Duplicate jobs cannot create duplicate events. Complaints and personal takeovers take priority.
+
+Resolving a gap keeps the current assistant mode. With the assistant on, ordinary new messages do not reopen a resolved review; another knowledge gap does. Resolving after personal takeover leaves the assistant paused, and the existing customer-follow-up rules still apply. Returning to the assistant clears the review as before. No old unanswered messages are replayed.
+
+The Inbox shows the explanation, exact question and suggested next step. Owners/admins can open **Add to FAQs**, edit the question, provide a confirmed answer and choose its language. The FAQ is published only on **Save FAQ**, using authenticated RLS-protected writes and a tenant/message-scoped stable ID so retries do not duplicate it. A previously deleted FAQ is not silently recreated. **Prepare personal reply** pauses the assistant and fills the composer; the owner must explicitly press **Send reply**. Saving a FAQ alone does not send a message or resolve the review. Questions and explanations are customer data and must never be written to application logs.
+
+### Release order and verification
+
+1. Apply `202609170001_knowledge_gap_attention.sql` to the existing database before deploying the updated app. It adds one nullable, tenant-scoped message reference and extends attention reasons/events. It preserves all messages, branches and FAQs. Applying it briefly locks the conversations/events tables while updating constraints.
+2. Deploy the application using prompt version `approved-knowledge-v5-knowledge-gaps`. Older application calls remain compatible with the updated RPC signature.
+3. Verify with an approved test recipient: a clear unanswered business question appears in Needs attention with the assistant on; a known question still gets an answer; save an approved FAQ and prepare a reply; resolve the review; confirm a normal message does not reopen it.
+
+Automated coverage includes tenant isolation, restricted RPC execution, stale work after takeover, duplicate events, uncertain send outcomes, technical/nonbusiness exclusions, resolution semantics, bounded explanations and scoped FAQ identities. UI preview checks use fictional data and never send WhatsApp messages. No BSUID or phone-number onboarding changes are part of this feature.

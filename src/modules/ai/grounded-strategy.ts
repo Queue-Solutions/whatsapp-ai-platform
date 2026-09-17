@@ -6,6 +6,7 @@ import type { AgentDecision, KnowledgeSource } from './contracts';
 import type { UsageLedger } from './ledger';
 import { AI_MODEL } from './config';
 import { selectKnowledge } from './knowledge-selection';
+import { knowledgeGap } from './knowledge-gap';
 import { buildRequest, ModelFailure, type ModelProvider } from './openai';
 export type SourceLoader = (tenant: string) => Promise<KnowledgeSource[]>;
 export function fallback(context: MessageContext, reason: string, action: AgentDecision['action'] = 'unavailable'): AgentDecision {
@@ -36,7 +37,9 @@ export class GroundedStrategy implements ReplyStrategy {
     let sources: KnowledgeSource[];
     try { sources = await this.loadSources(context.tenantId); }
     catch { return fallback(context, 'knowledge_unavailable'); }
-    if (!sources.length) return fallback(context, 'no_approved_knowledge');
+    if (!sources.length) return knowledgeGap(context, replyLanguage(context.text) === 'ar'
+      ? 'لا توجد معلومات معتمدة منشورة للمساعد. راجع سؤال العميل وأضف المعلومات المطلوبة.'
+      : 'No approved business information is published for the assistant. Review the customer’s question and add the required information.');
     const available = sources;
     const selection = selectKnowledge(context, available);
     sources = selection.sources;
@@ -64,6 +67,10 @@ export class GroundedStrategy implements ReplyStrategy {
     const invalidSources = selected.some(s => !s) || (result.decision.action === 'answer' && !selected.length);
     let decision: AgentDecision;
     if (invalidSources) decision = fallback(context, 'invalid_source_reference');
+    else if (result.decision.action === 'knowledge_gap') {
+      decision = result.decision.sourceLabels.length ? fallback(context, 'invalid_source_reference')
+        : knowledgeGap(context, result.decision.summary, selection.coverage.omittedSourceCount > 0);
+    }
     else if (result.decision.action === 'unavailable' || result.decision.action === 'handoff' || result.decision.action === 'complaint')
       decision = fallback(context, result.decision.action === 'complaint' ? 'complaint' : result.decision.action === 'handoff' ? 'human_requested' : 'answer_not_supported', result.decision.action === 'complaint' ? 'handoff' : result.decision.action);
     else decision = { text: result.decision.text, action: result.decision.action, reason: 'approved_knowledge',
