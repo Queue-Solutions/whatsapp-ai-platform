@@ -1,5 +1,6 @@
 import type { Environment } from "@/config/env";
 import type { MessageSender, PreparedReply } from "../messaging/types";
+import { allowedRecipient, bsuidPattern } from './identity';
 export class SendError extends Error {
   constructor(public readonly ambiguous: boolean, public readonly code: string) { super(code); }
 }
@@ -7,12 +8,13 @@ export class MetaMessageSender implements MessageSender {
   constructor(private env: Environment, private request: typeof fetch = fetch) {}
   async send(reply: PreparedReply): Promise<string> {
     if (this.env.WHATSAPP_MODE !== "test" || reply.phone_number_id !== this.env.WHATSAPP_TEST_PHONE_NUMBER_ID ||
-      !this.env.WHATSAPP_TEST_RECIPIENTS.includes(reply.recipient)) throw new SendError(false, "test_guard_rejected");
+      !allowedRecipient(reply.recipient,reply.recipient_aliases??[],this.env.WHATSAPP_TEST_RECIPIENTS)) throw new SendError(false, "test_guard_rejected");
     let response: Response;
     try {
       response = await this.request(`https://graph.facebook.com/${this.env.META_GRAPH_API_VERSION}/${reply.phone_number_id}/messages`, {
         method: "POST", headers: { Authorization: `Bearer ${this.env.WHATSAPP_ACCESS_TOKEN}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to: reply.recipient,
+        body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual",
+          ...(bsuidPattern.test(reply.recipient)?{recipient:reply.recipient}:{to:reply.recipient}),
           type: "text", text: { preview_url: false, body: reply.body } }),
         signal: AbortSignal.timeout(8000),
       });

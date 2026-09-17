@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 export type InboxFilter = 'all' | 'attention' | 'complaints' | 'resolved';
 export type AttentionAction = 'reply' | 'resolve' | 'resume' | 'flag' | 'complaint' | 'remove_complaint';
-export type Conversation = {id:string;automation_mode:'auto'|'human';status:string;last_inbound_at:string;updated_at:string;customer_id:string;name:string;
+export type Conversation = {id:string;automation_mode:'auto'|'human';status:string;last_inbound_at:string;updated_at:string;customer_id:string;name:string;phone:string|null;username:string|null;
   attention_state:'none'|'waiting'|'in_progress'|'resolved';attention_reason:string|null;attention_summary:string;attention_since:string|null;resolved_at:string|null;is_complaint:boolean;attention_message_id:string|null;followup_state:'none'|'collecting'|'ready'|'declined';followup_name:string|null;followup_phone:string|null};
 export type InboxCounts = Record<InboxFilter,number>;
 export const attentionReason = (reason:string|null) => ({human_requested:'Requested a person',complaint:'Complaint',manual:'Flagged by you',customer_follow_up:'Customer followed up',knowledge_gap:'Missing business information'}[reason??'']??'Personal attention');
@@ -36,9 +36,9 @@ export class InboxRepository {
     const {data,error}=await query.order(filter==='attention'?'attention_since':'last_inbound_at',{ascending:filter==='attention'}).order('id').limit(limit);
     if(error)throw new Error('Could not load conversations.');
     if(!data.length)return [];
-    const customers=await this.db.from('customers').select('id,display_name,whatsapp_id').eq('tenant_id',tenant).in('id',data.map(c=>c.customer_id));
+    const customers=await this.db.from('customers').select('id,display_name,whatsapp_id,whatsapp_username').eq('tenant_id',tenant).in('id',data.map(c=>c.customer_id));
     if(customers.error)throw new Error('Could not load customer details.');
-    return data.map(c=>{const customer=customers.data.find(x=>x.id===c.customer_id);return {...c,name:customer?.display_name||`+${customer?.whatsapp_id??'Unknown'}`};});
+    return data.map(c=>{const customer=customers.data.find(x=>x.id===c.customer_id);return {...c,name:customer?.display_name||(customer?.whatsapp_username?`@${customer.whatsapp_username}`:'WhatsApp customer'),phone:customer?.whatsapp_id??null,username:customer?.whatsapp_username??null};});
   }
   async messages(tenant:string,conversation:string,limit=100):Promise<InboxMessage[]>{
     const {data,error}=await this.db.from('messages').select('id,direction,body,message_type,delivery_status,created_at')

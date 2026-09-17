@@ -8,7 +8,7 @@ The first real English and Arabic echo flow was verified on 2026-09-12; see `VAL
 2. Add and verify your own WhatsApp number as an allowed test recipient in Meta. Do not add, migrate, register or deregister the client's existing number.
 3. Copy the temporary test Phone Number ID (not the displayed phone number or WABA ID), temporary access token, and the Graph API version shown in Meta's example request into `.env.local`.
 4. Copy the Meta App Secret from the app's basic settings. It is different from the access token and webhook verification token.
-5. Set `WHATSAPP_TEST_RECIPIENTS` to your verified recipient WhatsApp ID, digits with country code, no `+` or spaces. Comma-separate multiple verified recipients.
+5. Set `WHATSAPP_TEST_RECIPIENTS` to your verified recipient WhatsApp ID, digits with country code, no `+` or spaces. Comma-separate multiple verified recipients. A BSUID-only test user can instead be explicitly allowlisted using the exact case-sensitive identifier (for example `EG.Abc123`). Never put a username in this setting. A signed webhook that includes both an approved phone and BSUID establishes a channel-scoped alias, so later hidden-number messages from that same user keep working. Unknown BSUIDs are not automatically approved. See [BSUID support](BSUID.md).
 6. Generate separate random secrets for `WHATSAPP_VERIFY_TOKEN` and `CRON_SECRET` (at least 16 and 32 characters respectively). Set `WHATSAPP_MODE=test`.
 7. Run `npm run setup:test-tenant`. This maps the temporary number to the Queue Solutions development tenant. It does not call Meta or touch any phone account.
 

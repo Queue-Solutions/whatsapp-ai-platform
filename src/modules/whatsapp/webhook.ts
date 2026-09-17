@@ -28,9 +28,20 @@ export async function receiveWebhook(request: Request, options: {
   let parsed:ReturnType<typeof parseWebhook>;
   try{parsed=parseWebhook(JSON.parse(Buffer.from(raw).toString('utf8')));}catch{return new Response('Invalid payload',{status:400});}
   try {
-    for(const m of parsed.messages) {
-      if(m.phoneNumberId!==options.phoneNumberId || !options.recipients.includes(m.from)) continue;
-      await options.repository.ingest(m);
+    // Preserve Meta's order when identity changes and messages share one batch.
+    for(const event of parsed.events){
+      if(event.value.phoneNumberId!==options.phoneNumberId)continue;
+      if(event.kind==='identity'){
+        const change=event.value;
+        if(!options.recipients.includes(change.previousIdentifier)&&!await options.repository.isAllowedIdentity?.(change.previousIdentifier,options.recipients))continue;
+        if(!options.repository.updateIdentity)throw new Error('Identity persistence unavailable');
+        await options.repository.updateIdentity(change);
+      }else{
+        const m=event.value;
+        const direct=options.recipients.includes(m.from)||(!!m.userId&&options.recipients.includes(m.userId));
+        if(!direct&&!await options.repository.isAllowedIdentity?.(m.from,options.recipients))continue;
+        await options.repository.ingest(m);
+      }
     }
     for(const s of parsed.statuses) if(s.phoneNumberId===options.phoneNumberId) await options.repository.recordStatus(s);
   } catch {

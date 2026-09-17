@@ -6,7 +6,7 @@
 .dashboard-main{display:flex;flex-direction:column;min-height:100vh;min-width:0}
 .dashboard-main>.content{width:100%;margin:0 auto}
 .topbar{flex-shrink:0}
-.sidebar .brand{gap:10px;letter-spacing:normal;color:var(--ink)!important}
+.sidebar .brand{gap:4px;letter-spacing:normal;color:var(--ink)!important}
 .brand .brand-mark{display:flex;align-items:center;justify-content:center;width:46px;height:48px;flex-shrink:0;overflow:hidden}
 .brand-mark img,.footer-mark img{flex-shrink:0;max-width:none}
 .brand .brand-name{font-size:26px;letter-spacing:-1px;line-height:1}
@@ -65,3 +65,5 @@
 @media (max-width: 600px) { .gap-faq-editor { margin: 12px; padding: 14px; } .gap-faq-actions button { width: 100%; } }
 
 .followup-card{margin:16px 24px;padding:16px 18px;border:1px solid #ccdad0;background:#f4f8f5;border-radius:10px}.followup-card>strong{font-size:14px}.followup-card p{font-size:12px;line-height:1.6;color:#52675d}.followup-card dl{display:flex;gap:32px;flex-wrap:wrap;margin:14px 0}.followup-card dt{font-size:11px;color:#63766c}.followup-card dd{margin:4px 0 0;font-size:14px;font-weight:600;overflow-wrap:anywhere}.followup-card a{text-decoration:underline}@media(max-width:600px){.followup-card{margin:12px 18px}.followup-card dl{gap:14px;flex-direction:column}}
+
+.customer-number{display:block;font-size:11px;line-height:1.5;color:var(--muted);margin:4px 0 8px;overflow-wrap:anywhere}.customer-number a{text-decoration:none}.customer-number a:hover{text-decoration:underline}

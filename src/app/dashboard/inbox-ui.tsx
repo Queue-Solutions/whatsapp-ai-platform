@@ -57,7 +57,7 @@ export function Inbox({db}:{db:SupabaseClient}){
       <nav className="conversation-list" aria-label="Conversations"><div className="list-heading">{filters.find(f=>f.id===filter)!.label}<span>{counts[filter]}</span></div>
         {!conversations.length&&<p className="empty-inbox">{filters.find(f=>f.id===filter)!.empty}</p>}
         {conversations.map(c=><button key={c.id} aria-current={c.id===selected?'true':undefined} disabled={working} onClick={()=>{if(c.id===selected)return;if(discard()){setDraftDirty(false);setSelected(c.id);}}}>
-          <strong>{c.name}</strong><span className={`mode-label ${c.attention_state!=='none'?'human':''}`}>{conversationStateLabel(c)}</span>
+          <strong>{c.name}</strong><span className="customer-number" dir="ltr">{c.phone?`+${c.phone}`:c.username?`@${c.username} · Phone number not shared`:'Phone number not shared'}</span><span className={`mode-label ${c.attention_state!=='none'?'human':''}`}>{conversationStateLabel(c)}</span>
           {c.is_complaint&&<span className="complaint-chip">Complaint</span>}
           {c.attention_state!=='none'&&c.attention_reason!=='complaint'&&<span className="attention-reason">{attentionReason(c.attention_reason)}</span>}
           {c.attention_summary&&<span className="conversation-summary">{c.attention_summary}</span>}
@@ -110,7 +110,7 @@ function ConversationPanel({repository,knowledgeEditor,tenant,conversation:c,can
   function closeFaq(){if(!faqDirty||window.confirm('Discard the unsaved FAQ changes?')){setFaqTarget(null);setFaqDirty(false);}}
 
   return <section className="conversation-panel" aria-label={`Conversation with ${c.name}`}>
-    <div className="conversation-header"><div><h2>{c.name}</h2><span className={`mode-label ${c.automation_mode==='human'?'human':''}`}>{conversationStateLabel(c)}</span>{c.is_complaint&&<span className="complaint-chip">Complaint</span>}</div>
+    <div className="conversation-header"><div><h2>{c.name}</h2><span className="customer-number" dir="ltr">{c.phone?<a href={`tel:+${c.phone}`}>+{c.phone}</a>:c.username?`@${c.username} · Phone number not shared`:'Phone number not shared'}</span><span className={`mode-label ${c.automation_mode==='human'?'human':''}`}>{conversationStateLabel(c)}</span>{c.is_complaint&&<span className="complaint-chip">Complaint</span>}</div>
       <div className="conversation-controls">
         {c.attention_state!=='in_progress'&&<button className="primary" disabled={disabled} onClick={()=>void action('reply')}>Reply personally</button>}
         {c.attention_state!=='resolved'&&<button className="secondary" disabled={disabled} onClick={()=>void action('resolve')}>Resolve</button>}

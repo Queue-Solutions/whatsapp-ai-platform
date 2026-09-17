@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { recipientPattern } from '../modules/whatsapp/identity';
 
 const schema = z.object({
   SUPABASE_URL: z.url(),
@@ -9,7 +10,7 @@ const schema = z.object({
   WHATSAPP_ACCESS_TOKEN: z.string().min(20),
   WHATSAPP_TEST_PHONE_NUMBER_ID: z.string().regex(/^\d+$/),
   WHATSAPP_TEST_RECIPIENTS: z.string().transform(v => v.split(",").map(s => s.trim()).filter(Boolean))
-    .pipe(z.array(z.string().regex(/^\d{7,15}$/)).min(1)),
+    .pipe(z.array(z.string().regex(recipientPattern)).min(1)),
   WHATSAPP_MODE: z.literal("test"),
   CRON_SECRET: z.string().min(32),
 });

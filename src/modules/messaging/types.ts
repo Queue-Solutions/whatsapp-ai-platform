@@ -3,10 +3,20 @@ export interface IncomingMessage {
   phoneNumberId: string;
   providerMessageId: string;
   from: string;
+  userId?: string;
+  username?: string;
   displayName?: string;
   occurredAt: string;
   type: string;
   text: string | null;
+}
+export interface IdentityChange {
+  phoneNumberId:string;
+  providerMessageId:string;
+  previousIdentifier:string;
+  newPhone?:string;
+  newUserId:string;
+  occurredAt:string;
 }
 export interface DeliveryStatus {
   phoneNumberId: string;
@@ -26,6 +36,7 @@ export interface PreparedReply {
   outbound_id: string;
   phone_number_id: string;
   recipient: string;
+  recipient_aliases?: string[];
   body: string;
 }
 export interface MessageContext {
@@ -39,6 +50,8 @@ export interface MessageContext {
   type: string;
 }
 export interface MessagingRepository {
+  isAllowedIdentity?(identifier:string,allowed:string[]):Promise<boolean>;
+  updateIdentity?(change:IdentityChange):Promise<void>;
   ingest(message: IncomingMessage): Promise<void>;
   recordStatus(status: DeliveryStatus): Promise<void>;
   claim(): Promise<MessageJob | null>;

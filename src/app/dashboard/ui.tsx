@@ -21,7 +21,7 @@ export function Dashboard({ config, view='knowledge' }: { config: Config; view?:
     return () => { active = false; data.subscription.unsubscribe(); };
   }, [db]);
   return <div className="dashboard">
-    <aside className="sidebar"><a className="brand" href="/dashboard" aria-label="Queue Solutions home"><span className="brand-mark"><Image src="/queue-solutions-logo.png" alt="" width={80} height={80} priority /></span><span className="brand-name">queue<span className="brand-small">SOLUTIONS</span></span></a>
+    <aside className="sidebar"><a className="brand" href="/dashboard" aria-label="Queue Solutions home"><span className="brand-mark"><Image src="/queue-solutions-logo.png" alt="" width={80} height={80} priority /></span><span className="brand-name">ueue<span className="brand-small">SOLUTIONS</span></span></a>
       <div className="workspace-label">YOUR WORKSPACE</div><a href="/dashboard" className={view==='knowledge'?'nav-active':'nav-link'}><span aria-hidden="true">▤</span> Business knowledge</a><a href="/dashboard/inbox" className={view==='inbox'?'nav-active':'nav-link'}><span aria-hidden="true">☷</span> Inbox {userId && db && <AttentionLink key={userId} db={db} compact />}</a>
       <div className="sidebar-bottom"><span className="status-dot" /> Your business, in your words.<p>Give your assistant the answers your customers need.</p></div>
     </aside>

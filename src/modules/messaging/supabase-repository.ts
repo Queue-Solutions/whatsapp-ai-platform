@@ -1,6 +1,6 @@
 import type { AgentDecision } from '../ai/contracts';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { DeliveryStatus, IncomingMessage, MessageContext, MessageJob, MessagingRepository, PreparedReply } from './types';
+import type { DeliveryStatus, IdentityChange, IncomingMessage, MessageContext, MessageJob, MessagingRepository, PreparedReply } from './types';
 
 export class SupabaseMessagingRepository implements MessagingRepository {
   constructor(private db: SupabaseClient, private phoneNumberId: string) {}
@@ -11,8 +11,16 @@ export class SupabaseMessagingRepository implements MessagingRepository {
   }
   async ingest(m: IncomingMessage) {
     if(m.phoneNumberId!==this.phoneNumberId) throw new Error('Channel mismatch');
-    await this.rpc('ingest_whatsapp_message',{p_phone:m.phoneNumberId,p_provider_id:m.providerMessageId,
-      p_from:m.from,p_name:m.displayName??null,p_occurred:m.occurredAt,p_type:m.type,p_body:m.text});
+    await this.rpc('ingest_whatsapp_identity_message',{p_phone:m.phoneNumberId,p_provider_id:m.providerMessageId,
+      p_from:m.from,p_user_id:m.userId??null,p_username:m.username??null,p_name:m.displayName??null,p_occurred:m.occurredAt,p_type:m.type,p_body:m.text});
+  }
+  isAllowedIdentity(identifier:string,allowed:string[]){
+    return this.rpc<boolean>('is_allowed_whatsapp_identity',{p_phone:this.phoneNumberId,p_identifier:identifier,p_allowed:allowed});
+  }
+  async updateIdentity(change:IdentityChange){
+    if(change.phoneNumberId!==this.phoneNumberId)throw new Error('Channel mismatch');
+    await this.rpc('update_whatsapp_identity',{p_phone:change.phoneNumberId,p_provider_id:change.providerMessageId,p_previous:change.previousIdentifier,
+      p_new_phone:change.newPhone??null,p_new_user_id:change.newUserId,p_occurred:change.occurredAt});
   }
   async recordStatus(s: DeliveryStatus) {
     if(s.phoneNumberId!==this.phoneNumberId) throw new Error('Channel mismatch');
