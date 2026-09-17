@@ -1,5 +1,6 @@
 import type {AgentDecision} from './contracts';
 import type {MessageContext} from '../messaging/types';
+import {normalizeIntent} from './branch-scope';
 import {replyLanguage} from './language';
 
 export interface FollowUpDetails {state:'collecting'|'ready'|'declined';name:string|null;phone:string|null;purpose?:'career';role?:string|null}
@@ -64,7 +65,7 @@ export function continueFollowUp(context:MessageContext):AgentDecision|null {
   if(current.purpose==='career'&&!current.role){
     // A role is user-provided text, not an inferred vacancy. New questions can leave this flow.
     if(!text||text.length>120||/[?؟]/.test(text)||/\b(?:where|when|branches|hours|price)\b|(?:فروع|مواعيد|سعر|فين الفرع)/i.test(text))return null;
-    if(contactPhone(text)||/^(?:hi|hello|thanks|اهلا|شكرا|تمام)$/i.test(text))return reply(context,current.reason,current.summary,current);
+    if(isCareerEnquiry(text)||contactPhone(text)||/^(?:hi|hello|thanks|yes|yeah|sure|اه|آه|ايوه|أيوه|اهلا|شكرا|تمام)[.!؟? ]*$/i.test(text))return reply(context,current.reason,current.summary,current);
     const role=text.replace(/[;؛]/g,'،');
     return reply(context,'career_application',`Job enquiry: desired role “${role}”. Contact only if this role is needed.`,{...current,role});
   }
@@ -82,11 +83,18 @@ export function continueFollowUp(context:MessageContext):AgentDecision|null {
 }
 
 export function isCareerEnquiry(text:string):boolean {
-  const normalized=text.normalize('NFKC').replace(/[\u064b-\u065f\u0670]/g,'').replace(/[إأآ]/g,'ا');
+  const normalized=normalizeIntent(text);
   if(/(?:مش|لا)\s+(?:عايز|عاوز|محتاج)\s+(?:شغل|اشتغل)|\b(?:not looking for|don't want) (?:a )?(?:job|work)\b/i.test(normalized))return false;
-  return /(?:محتاج|عايز|عاوز|بدور على|ابحث عن)\s+(?:شغل|وظيفه|وظيفة|عمل)|(?:عايز|عاوز|حابب|ممكن)\s+اشتغل|(?:وظائف|وظايف|توظيف|فرص عمل)|\b(?:job|jobs|career|careers|vacanc(?:y|ies)|hiring|recruiting)\b|\b(?:want|like|looking|apply).{0,25}\bwork (?:at|with|for)\b/i.test(normalized);
+  return /(?:محتاجين|عايزين|عاوزين|بتحتاجوا|بتدوروا على|بتعينوا).{0,20}(?:عماله|عمال|موظفين|موظف|ناس|حد)|(?:فرصه شغل|تقديم شغل|طلبات توظيف)|\b(?:need|looking for|recruit).{0,20}(?:staff|workers|employees)\b|\bjoin (?:your|the) team\b|(?:محتاج|عايز|عاوز|بدور على|ابحث عن)\s+(?:شغل|وظيفه|وظيفة|عمل)|(?:عايز|عاوز|حابب|ممكن)\s+اشتغل|(?:وظائف|وظايف|توظيف|فرص عمل)|\b(?:job|jobs|employment|career|careers|vacanc(?:y|ies)|hiring|recruiting)\b|\b(?:want|like|looking|apply).{0,25}\bwork (?:at|with|for)\b/i.test(normalized);
 }
 export function beginCareer(context:MessageContext):AgentDecision {
-  return reply(context,'career_application','The customer wants to work at IRAM. Collect the desired role first, then name and phone. Contact only if the role is needed.',
+  return reply({...context,followUp:undefined},'career_application','The customer wants to work at IRAM. Collect the desired role first, then name and phone. Contact only if the role is needed.',
     {purpose:'career',role:null,state:'collecting',name:null,phone:null});
+}
+
+/** Recover a yes/no hiring clarification issued before a career flow was persisted. */
+export function confirmsCareer(context:MessageContext):boolean {
+  if(!/^(?:yes|yeah|yep|sure|correct|اه|ايوه|نعم|تمام)[.!؟? ]*$/i.test(normalizeIntent(context.text??'').trim()))return false;
+  const last=[...(context.history??[])].reverse().find(m=>m.role==='assistant')?.content??'';
+  return /(?:هل تقصد|تقصد انك|do you mean|are you (?:asking|looking)|would you like)/i.test(normalizeIntent(last))&&/(?:تشتغل|اشتغل|العمل|عماله|وظيفه|job|work|join|hiring)/i.test(normalizeIntent(last));
 }

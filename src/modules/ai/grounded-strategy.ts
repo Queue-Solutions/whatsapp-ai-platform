@@ -1,3 +1,4 @@
+import {unsolicitedBranches,scopeClarification} from './branch-scope';
 import { detectAttention, summarizeAttention } from './attention-detection';
 import { replyLanguage } from './language';
 import { socialReply } from './social-reply';
@@ -7,7 +8,7 @@ import type { UsageLedger } from './ledger';
 import { AI_MODEL } from './config';
 import { selectKnowledge } from './knowledge-selection';
 import { knowledgeGap } from './knowledge-gap';
-import { beginFollowUp, continueFollowUp, beginCareer, isCareerEnquiry } from './follow-up';
+import { beginFollowUp, continueFollowUp, beginCareer, isCareerEnquiry, confirmsCareer } from './follow-up';
 import { formatReply, formatBranchReply } from './reply-format';
 import { buildRequest, ModelFailure, type ModelProvider } from './openai';
 export type SourceLoader = (tenant: string) => Promise<KnowledgeSource[]>;
@@ -36,7 +37,7 @@ export class GroundedStrategy implements ReplyStrategy {
   }
   private async generate(context: MessageContext): Promise<AgentDecision> {
     if (context.eligible === false) return fallback(context, 'ineligible', 'suppress');
-    if(context.type==='text'&&context.text&&isCareerEnquiry(context.text)&&context.followUp?.purpose!=='career')return beginCareer(context);
+    if(context.type==='text'&&context.text&&(isCareerEnquiry(context.text)||confirmsCareer(context))&&context.followUp?.purpose!=='career')return beginCareer(context);
     const contactReply=continueFollowUp(context);
     if(contactReply)return contactReply;
     if (context.type !== 'text' || !context.text?.trim()) return fallback(context, 'unsupported_message');
@@ -55,7 +56,7 @@ export class GroundedStrategy implements ReplyStrategy {
     const available = sources;
     const selection = selectKnowledge(context, available);
     sources = selection.sources;
-    if (!sources.length) return fallback(context, 'knowledge_selection_empty');
+    if (!sources.length) return selection.excludedByScope===available.length?knowledgeGap(context):fallback(context,'knowledge_selection_empty');
     let request: string;
     try { request = buildRequest(context, sources, selection.coverage); } catch { return fallback(context, 'context_too_large'); }
     // Reservation commits before the external API call. No auto-retry of a reserved request.
@@ -63,7 +64,7 @@ export class GroundedStrategy implements ReplyStrategy {
     if (reservation.status === 'completed') {
       const decision = reservation.decision;
       if (!decision || !Array.isArray(decision.sources) || !sourcesCurrent(decision, available)) return fallback(context, 'cached_knowledge_changed');
-      return decision;
+      return unsolicitedBranches(context,decision,available)?scopeClarification(context):decision;
     }
     if (reservation.status !== 'new' || !reservation.id) return fallback(context, `ai_${reservation.status}`);
     const start = Date.now();
@@ -78,7 +79,8 @@ export class GroundedStrategy implements ReplyStrategy {
     const selected = [...new Set(result.decision.sourceLabels)].map(label => sources.find(s => s.label === label));
     const invalidSources = selected.some(s => !s) || (result.decision.action === 'answer' && !selected.length);
     let decision: AgentDecision;
-    if (invalidSources) decision = fallback(context, 'invalid_source_reference');
+    if(result.decision.action==='career')decision=beginCareer(context);
+    else if (invalidSources) decision = fallback(context, 'invalid_source_reference');
     else if (result.decision.action === 'knowledge_gap') {
       decision = result.decision.sourceLabels.length ? fallback(context, 'invalid_source_reference')
         : knowledgeGap(context, result.decision.summary, selection.coverage.omittedSourceCount > 0);
@@ -88,6 +90,7 @@ export class GroundedStrategy implements ReplyStrategy {
     else decision = { text: formatReply(formatBranchReply(result.decision.text,result.decision.branchLines),replyLanguage(context.text)==='ar'), action: result.decision.action, reason: 'approved_knowledge',
       sources: selected.map(s => ({ id: s!.id, kind: s!.kind, updatedAt: s!.updatedAt })) };
     if (decision.action === 'handoff' && result.decision.summary?.trim()) decision.attentionSummary = result.decision.summary.trim();
+    if(result.decision.action!=='career'&&unsolicitedBranches(context,decision,available,result.decision.branchLines))decision=scopeClarification(context);
     // Never let the model invent a link, even when it names a valid source.
     const urls = decision.text.match(/https?:\/\/[^\s<>]+/g) ?? [];
     if (urls.some(url => !selected.some(s => s && (s.content.includes(url) || s.content.includes(url.replace(/%3B/gi,';').replace(/%D8%9B/gi,'؛')))))) decision = fallback(context, 'unsupported_link');

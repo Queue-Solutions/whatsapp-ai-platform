@@ -6,6 +6,12 @@ Arabic and English job enquiries, including “محتاج شغل”, enter a ded
 
 The Inbox shows the desired role, contact details and a Job enquiry reason. Completing the details pauses the assistant for personal review. Existing human takeovers remain paused. A new business question can leave contact collection and use normal knowledge handling.
 
+## Reply scope
+
+Hiring phrases such as “مش محتاجين عمالة؟” and affirmative replies to a hiring clarification enter the role-first flow without a knowledge-generation request. The model can also classify other recruitment phrasing as a career enquiry.
+
+Unrelated questions exclude branch facts and directory FAQs from retrieval. A request scope also constrains branchLines in the structured response. Final and cached replies are checked for unsolicited listings, including known branch names/addresses in prose. Specific hours/payment questions remain concise rather than opening the directory. Invalid business source references are still rejected.
+
 ## Blacklist
 
 The sidebar's Blacklist page has Needs review, Kept blocked and Unblocked lists. A new automated flag immediately blocks dashboard/assistant replies for that customer. The admin can inspect the reason and original message, keep the block, or remove it. Image previews require an authenticated, tenant-scoped request and an explicit Reveal image click. The original message and review history are retained.

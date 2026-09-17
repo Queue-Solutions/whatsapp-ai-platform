@@ -1,6 +1,7 @@
 import type { KnowledgeSource } from './contracts';
 import type { MessageContext } from '../messaging/types';
 import { MAX_KNOWLEDGE_BYTES } from './config';
+import {branchScope,isBranchSource} from './branch-scope';
 import { buildRequest } from './openai';
 
 // Local ranking only: no additional model calls, embeddings or outside knowledge.
@@ -44,7 +45,8 @@ export function selectKnowledge(context: MessageContext, available: KnowledgeSou
   const expanded = expand(query);
   // Previous customer messages help resolve short follow-ups, but never outrank the latest question.
   const history = expand(tokens((context.history ?? []).filter(message => message.role === 'user').slice(-2).map(message => message.content).join(' ')));
-  const indexed = available.map(source => ({ source, ...searchable(source) }));
+  const scope=branchScope(context,available);
+  const indexed = available.filter(source=>scope!=='none'||!isBranchSource(source)).map(source => ({ source, ...searchable(source) }));
   const frequency = new Map<string, number>();
   for (const entry of indexed) for (const word of entry.words) frequency.set(word, (frequency.get(word) ?? 0) + 1);
   const branchQuery = [...query].some(word => topicTokens[0].has(word));
@@ -71,5 +73,5 @@ export function selectKnowledge(context: MessageContext, available: KnowledgeSou
     sources.push(entry.source);
   }
   // Keep whole records, versions and labels intact; never truncate a policy or its exceptions.
-  return { sources, coverage: coverage(sources) };
+  return { sources, coverage: coverage(sources), excludedByScope:available.length-indexed.length };
 }
