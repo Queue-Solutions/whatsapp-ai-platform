@@ -35,7 +35,7 @@ The Inbox shows the explanation, exact question and suggested next step. Owners/
 
 ## Personal contact collection and reply style
 
-English and Arabic greetings welcome the customer to IRAM / ارم. Generated replies use short paragraphs and tasteful emojis. Each branch is returned as a separate structured list item and rendered on its own line with a blank line between entries. A final formatter normalizes Arabic brand spelling and removes English/Arabic semicolons, including safely encoding those characters inside URLs. Sources and customer messages themselves are unchanged.
+English and Arabic greetings always write the brand as uppercase English `IRAM`. Generated replies use short paragraphs and tasteful emojis. Each branch is returned as a separate structured list item and rendered on its own line with a blank line between entries. A final formatter converts Arabic or inconsistently cased brand spellings to `IRAM` and removes English/Arabic semicolons, including safely encoding those characters inside URLs. Sources and customer messages themselves are unchanged.
 
 For complaints, explicit human requests, unsupported business actions and confirmed knowledge gaps:
 

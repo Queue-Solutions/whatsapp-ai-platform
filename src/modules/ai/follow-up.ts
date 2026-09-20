@@ -28,19 +28,19 @@ function reply(context:MessageContext,reason:string,summary:string,details:Follo
   const ar=replyLanguage(context.followUp?.state==='collecting'&&lastAssistant?lastAssistant:context.text??'')==='ar';
   let text:string;
   if(details.purpose==='career'&&!details.role&&details.state==='collecting')text=ar
-    ? 'أهلًا بيك 🤍 يسعدنا اهتمامك بالشغل مع ارم.\n\nإيه الوظيفة أو الدور اللي حابب تقدم عليه؟'
+    ? 'أهلًا بيك 🤍 يسعدنا اهتمامك بالشغل مع IRAM.\n\nإيه الوظيفة أو الدور اللي حابب تقدم عليه؟'
     : 'Thanks for your interest in joining IRAM 🤍\n\nWhat job role would you like to apply for?';
   else if(details.purpose==='career'&&details.state==='ready')text=ar
-    ? 'شكرًا ليك، سجلت الوظيفة اللي مهتم بيها واسمك ورقمك 🤍\n\nحد من فريق ارم هيتواصل معاك لو فيه احتياج للدور ده.'
+    ? 'شكرًا ليك، سجلت الوظيفة اللي مهتم بيها واسمك ورقمك 🤍\n\nحد من فريق IRAM هيتواصل معاك لو فيه احتياج للدور ده.'
     : 'Thank you, I’ve saved your desired role, name and phone number 🤍\n\nSomeone from IRAM will contact you if this role is needed.';
   else if(details.state==='ready')text=ar
-    ? 'شكرًا ليك، سجلت اسمك ورقم التواصل 🤍\n\nحد من فريق ارم هيتواصل معاك شخصيًا قريبًا.'
+    ? 'شكرًا ليك، سجلت اسمك ورقم التواصل 🤍\n\nحد من فريق IRAM هيتواصل معاك شخصيًا قريبًا.'
     : 'Thank you, I’ve saved your name and contact number 🤍\n\nSomeone from IRAM will contact you personally shortly.';
   else if(details.state==='declined')text=ar
     ? 'ولا يهمك، مشاركة بياناتك اختيارية 🤍\n\nهسيب المحادثة لصاحب النشاط علشان يراجع طلبك ويرد عليك هنا.'
     : 'No problem, sharing your details is optional 🤍\n\nI’ll leave this conversation for the business owner to review and respond here.';
   else {
-    const intro=details.purpose==='career'?(ar?'شكرًا لاهتمامك بالانضمام لفريق ارم 🤍':'Thank you for your interest in joining IRAM 🤍'):ar?'خلّينا نخلي حد من فريق ارم يتابع طلبك شخصيًا 🤍':'Let’s have someone from IRAM help you personally 🤍';
+    const intro=details.purpose==='career'?(ar?'شكرًا لاهتمامك بالانضمام لفريق IRAM 🤍':'Thank you for your interest in joining IRAM 🤍'):ar?'خلّينا نخلي حد من فريق IRAM يتابع طلبك شخصيًا 🤍':'Let’s have someone from IRAM help you personally 🤍';
     const question=!details.name&&!details.phone
       ? ar?'ممكن اسمك ورقم التليفون اللي تحب نتواصل معاك عليه؟':'Could you share your name and the best phone number to contact you on?'
       : !details.name?ar?'ممكن اسمك علشان نكمل طلب المتابعة؟':'Could you share your name to complete the follow-up request?'

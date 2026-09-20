@@ -21,7 +21,7 @@ describe('personal follow-up collection',()=>{
   const ledger={reserve:vi.fn(),finish:vi.fn()};const complete=vi.fn();
   const start=beginFollowUp({...context,text:'الطلب وصل غلط'},issue);
   const result=await new GroundedStrategy(vi.fn(),ledger,{complete}).reply({...context,text:'اسمي منى حسن، رقمي ٠١٠١٢٣٤٥٦٧٨',followUp:pending,history:[{role:'assistant',content:start.text}]});
-  expect(result.followUp).toEqual({state:'ready',name:'منى حسن',phone:'201012345678'});expect(result.text).toContain('ارم');expect(result.text).toContain('قريبًا');
+  expect(result.followUp).toEqual({state:'ready',name:'منى حسن',phone:'201012345678'});expect(result.text).toContain('IRAM');expect(result.text).toContain('قريبًا');
   expect(ledger.reserve).not.toHaveBeenCalled();expect(complete).not.toHaveBeenCalled();
  });
  it('supports phone first, re-prompts for invalid phone and handles refusal without a callback promise',()=>{
@@ -42,7 +42,7 @@ describe('personal follow-up collection',()=>{
  });
  it('keeps an Arabic contact flow in Arabic when the next reply is only digits',()=>{
   const result=continueFollowUp({...context,text:'01012345678',followUp:{...pending,name:'منى'},history:[{role:'assistant',content:'ممكن رقم تليفون صحيح للتواصل؟'}]})!;
-  expect(result.text).toContain('ارم');expect(result.text).toContain('قريبًا');
+  expect(result.text).toContain('IRAM');expect(result.text).toContain('قريبًا');
  });
  it('never collects or sends after a manual takeover invalidates the job',async()=>{
   const result=await new GroundedStrategy(vi.fn(),{reserve:vi.fn(),finish:vi.fn()},{complete:vi.fn()}).reply({...context,eligible:false,text:'Maya +201012345678',followUp:pending});
@@ -50,8 +50,8 @@ describe('personal follow-up collection',()=>{
  });
 });
 describe('WhatsApp reply presentation',()=>{
- it('normalizes Arabic branding and punctuation while retaining useful paragraph spacing',()=>{
-  expect(formatReply('أهلًا في إيرام؛  مع IRAM;\n\n\nتفضل',true)).toBe('أهلًا في ارم\nمع ارم\n\nتفضل');
+ it('normalizes all brand spellings to uppercase English while retaining useful paragraph spacing',()=>{
+  expect(formatReply('أهلًا في إيرام؛  مع iram و ارم;\n\n\nتفضل')).toBe('أهلًا في IRAM\nمع IRAM و IRAM\n\nتفضل');
   expect(formatReply('See https://example.test/a;b')).toBe('See https://example.test/a%3Bb');
  });
  it('places each branch on its own line with a blank line between entries',()=>{
@@ -68,7 +68,7 @@ describe('WhatsApp reply presentation',()=>{
  it('greets customers warmly and consistently in English and Arabic',async()=>{
   const strategy=new GroundedStrategy(vi.fn(),{reserve:vi.fn(),finish:vi.fn()},{complete:vi.fn()});
   const en=await strategy.reply({...context,text:'Hi'});const ar=await strategy.reply({...context,text:'السلام عليكم'});
-  expect(en.text).toContain('Welcome to IRAM');expect(en.text).toContain('\n\n');expect(ar.text).toContain('ارم');
+  expect(en.text).toContain('Welcome to IRAM');expect(en.text).toContain('\n\n');expect(ar.text).toContain('IRAM');expect(ar.text).not.toMatch(/ارم|إيرام/);
   for(const reply of [en,ar])expect(reply.text).not.toMatch(/[;؛]/);
  });
 });

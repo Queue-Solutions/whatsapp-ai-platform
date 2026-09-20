@@ -34,7 +34,7 @@ describe('product-aware branch navigation',()=>{
  });
  it.each(['IRAM Riverside','Alexandria','الاسكندرية'])('returns the selected branch address and stored map for %s without a paid model call',async text=>{
   const complete=vi.fn();const decision=await new GroundedStrategy(async()=>branches,ledger(),{complete}).reply({...base,text,history:history()});
-  expect(decision.action).toBe('answer');expect(decision.text).toMatch(/123 (?:IRAM|ارم) Riverside Street/);expect(decision.text).toContain('https://maps.app.goo.gl/B1');expect(complete).not.toHaveBeenCalled();
+  expect(decision.action).toBe('answer');expect(decision.text).toContain('123 IRAM Riverside Street');expect(decision.text).not.toMatch(/ارم|إيرام/);expect(decision.text).toContain('https://maps.app.goo.gl/B1');expect(complete).not.toHaveBeenCalled();
  });
  it('keeps multiple branches in a city as a directory and resolves a specific branch in that city',()=>{
   expect(branchScope({...base,text:'Hurghada address'},branches)).toBe('directory');

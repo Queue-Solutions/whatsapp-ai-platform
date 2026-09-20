@@ -45,8 +45,8 @@ export class GroundedStrategy implements ReplyStrategy {
     if(technicalFailure(decision.reason))return {...decision,text:'',action:'suppress',sources:[]};
     const followUp=decision.followUp?decision:decision.action==='handoff'||decision.reason==='missing_business_information'
       ? beginFollowUp(context,decision):decision;
-    return {...followUp,text:formatReply(followUp.text,replyLanguage(context.text??'')==='ar'),
-      ...(followUp.attentionSummary?{attentionSummary:formatReply(followUp.attentionSummary,replyLanguage(context.text??'')==='ar')}: {})};
+    return {...followUp,text:formatReply(followUp.text),
+      ...(followUp.attentionSummary?{attentionSummary:formatReply(followUp.attentionSummary)}: {})};
   }
   private async generate(context: MessageContext, recoveryReason?:string): Promise<AgentDecision> {
     if (context.eligible === false) return fallback(context, 'ineligible', 'suppress');
@@ -108,7 +108,7 @@ export class GroundedStrategy implements ReplyStrategy {
     }
     else if (result.decision.action === 'unavailable' || result.decision.action === 'handoff' || result.decision.action === 'complaint')
       decision = fallback(context, result.decision.action === 'complaint' ? 'complaint' : result.decision.action === 'handoff' ? 'human_requested' : 'answer_not_supported', result.decision.action === 'complaint' ? 'handoff' : result.decision.action);
-    else decision = { text: formatReply(formatBranchReply(result.decision.text,result.decision.branchLines),replyLanguage(context.text)==='ar'), action: result.decision.action, reason: 'approved_knowledge',
+    else decision = { text: formatReply(formatBranchReply(result.decision.text,result.decision.branchLines)), action: result.decision.action, reason: 'approved_knowledge',
       sources: selected.map(s => ({ id: s!.id, kind: s!.kind, updatedAt: s!.updatedAt })) };
     if (decision.action === 'handoff' && result.decision.summary?.trim()) decision.attentionSummary = result.decision.summary.trim();
     if(unsolicitedBranches(context,decision,available,result.decision.branchLines))decision=scopeClarification(context);
