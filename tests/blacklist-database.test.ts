@@ -62,6 +62,17 @@ describe('blacklist and careers PostgreSQL boundaries',()=>{
   await db.exec('set role anon');await expect(db.exec('select * from public.customer_blacklist')).rejects.toThrow();await expect(db.exec("select public.finish_content_check(gen_random_uuid(),gen_random_uuid(),'clear',array[]::text[])")).rejects.toThrow();
   await db.exec('reset role');await ingest('lease','201000000003');const j=await claim();await expect(moderate({...j,lease_token:owner})).rejects.toThrow('lease');
  });
+ it('counts active blacklist indicators through membership RLS, excluding removed and other-tenant blocks',async()=>{
+  const b=await block();
+  await ingest('other-flag','201000000002','9002');
+  const otherJob=(await rows<{id:string;lease_token:string;inbound_message_id:string}>("select * from public.claim_message_job('9002')"))[0];
+  await moderate(otherJob,'flagged',['sexual']);
+  const count=async()=>Number((await rows<{count:number}>("select count(*) from public.customer_blacklist where state in ('pending_review','kept')"))[0].count);
+  await asUser(owner);expect(await count()).toBe(1);
+  await review(b.customer_id,'kept',b.revision);expect(await count()).toBe(1);
+  await review(b.customer_id,'removed',b.revision+1);expect(await count()).toBe(0);
+  await db.exec('reset role');expect(await count()).toBe(1);
+ });
  it('keeps a block attached to a customer through verified BSUID identity changes',async()=>{
   const b=await block();await db.query("select public.update_whatsapp_identity('9001','change','201000000001',null,'EG.NewUser',now())");
   await ingest('hidden','EG.NewUser');expect(await moderate(await claim())).toBe(false);expect((await rows('select customer_id from public.customer_blacklist'))[0].customer_id).toBe(b.customer_id);

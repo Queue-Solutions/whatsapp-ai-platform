@@ -17,6 +17,7 @@ export const starterQuestions = [
 
 export const branchFields = [
   ['name', 'What is this branch called?'],
+  ['city', 'Which city is this branch in?'],
   ['address', 'What is the full street address?'],
   ['hours', 'What are the opening and closing times for each day?'],
   ['exceptions', 'Are there weekly closing days or special holiday hours?'],
@@ -26,7 +27,7 @@ export const branchFields = [
 
 const text = z.string().max(10000);
 export const branchSchema = z.object({
-  name: z.string().max(200), address: text, hours: text,
+  name: z.string().max(200), city: z.string().max(100).optional(), address: text, hours: text,
   exceptions: text, phone: z.string().max(100),
   mapsUrl: z.string().max(2048).refine(value => {
     if (!value.trim()) return true;
@@ -43,7 +44,7 @@ export const branchSchema = z.object({
 export type BranchValue = z.infer<typeof branchSchema>;
 export type Faq = { id: string; question: string; answer: string; is_published: boolean; updated_at?: string };
 export type Branch = { id: string; fact_key: string; value: BranchValue; is_published: boolean; updated_at?: string };
-export const emptyBranch = (): BranchValue => ({ name: '', address: '', hours: '', exceptions: '', phone: '', mapsUrl: '' });
+export const emptyBranch = (): BranchValue => ({ name: '', city: '', address: '', hours: '', exceptions: '', phone: '', mapsUrl: '' });
 
 export function validateFaq(faq: Faq, publish: boolean) {
   if (!faq.question.trim() || faq.question.length > 1000 || faq.answer.length > 10000)

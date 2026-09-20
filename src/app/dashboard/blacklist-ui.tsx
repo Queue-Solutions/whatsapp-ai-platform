@@ -12,7 +12,7 @@ export function Blacklist({db}:{db:SupabaseClient}){
   const canReview=['owner','admin'].includes(memberships.find(m=>m.tenant_id===tenant)?.role??'');
   async function review(entry:BlacklistEntry,action:'kept'|'removed'){
     setBusy(true);setError('');setNotice('');
-    try{await repository.review(tenant,entry,action);setNotice(action==='kept'?'Block kept. This customer will stay blocked.':'Block removed. New messages can be handled using the conversation’s existing assistant setting. Old messages will not be replayed.');setLoading(true);setRefresh(n=>n+1);}catch(e){setError((e as Error).message);}finally{setBusy(false);}
+    try{await repository.review(tenant,entry,action);window.dispatchEvent(new Event('blacklist-updated'));setNotice(action==='kept'?'Block kept. This customer will stay blocked.':'Block removed. New messages can be handled using the conversation’s existing assistant setting. Old messages will not be replayed.');setLoading(true);setRefresh(n=>n+1);}catch(e){setError((e as Error).message);}finally{setBusy(false);}
   }
   return <main className="content blacklist-content"><div className="eyebrow">CUSTOMER SAFETY</div><h1>Blacklist</h1><p className="intro">Review customers flagged for sexual content, threats or targeted abuse. Replies are blocked while a review is pending.</p>
     {memberships.length>1&&<label>Business<select value={tenant} disabled={busy} onChange={e=>{setLoading(true);setError('');setTenant(e.target.value);setNotice('');}}>{memberships.map(m=><option key={m.tenant_id} value={m.tenant_id}>{m.name}</option>)}</select></label>}

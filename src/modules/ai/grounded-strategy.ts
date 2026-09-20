@@ -1,4 +1,7 @@
-import {unsolicitedBranches,scopeClarification} from './branch-scope';
+import {hasUnsupportedLink,offeredLinks} from './approved-links';
+import {needsProductQuestion,productQuestion,renderBranchAnswer,directBranchDetail,productIntent,bullionPattern} from './branch-dialogue';
+import {resolveContinuation,isShortAcceptance} from './conversation-context';
+import {unsolicitedBranches,scopeClarification,branchScope,normalizeIntent,matchingBranches} from './branch-scope';
 import { detectAttention, summarizeAttention } from './attention-detection';
 import { replyLanguage } from './language';
 import { socialReply } from './social-reply';
@@ -29,7 +32,8 @@ export class GroundedStrategy implements ReplyStrategy {
   constructor(private loadSources: SourceLoader, private ledger: UsageLedger, private provider: ModelProvider,
     private purpose: 'whatsapp'|'acceptance' = 'whatsapp') {}
   async reply(context: MessageContext): Promise<AgentDecision> {
-    const decision=await this.generate(context);
+    const resolved=resolveContinuation(context);
+    const decision=await this.generate(resolved);
     const followUp=decision.followUp?decision:decision.action==='handoff'||decision.reason==='missing_business_information'
       ? beginFollowUp(context,decision):decision;
     return {...followUp,text:formatReply(followUp.text,replyLanguage(context.text??'')==='ar'),
@@ -39,7 +43,8 @@ export class GroundedStrategy implements ReplyStrategy {
     if (context.eligible === false) return fallback(context, 'ineligible', 'suppress');
     if(context.type==='text'&&context.text&&(isCareerEnquiry(context.text)||confirmsCareer(context))&&context.followUp?.purpose!=='career')return beginCareer(context);
     const contactReply=continueFollowUp(context);
-    if(contactReply)return contactReply;
+    const inferredName=contactReply?.followUp?.name&&!context.followUp?.name&&!/(?:my name is|name\s*:|اسمي|إسمي|الاسم\s*:)/i.test(context.text??'');
+    if(contactReply&&(!inferredName||context.followUp?.purpose==='career'))return contactReply;
     if (context.type !== 'text' || !context.text?.trim()) return fallback(context, 'unsupported_message');
     const attention = detectAttention(context.text);
     if (attention) return { ...fallback(context, attention, 'handoff'), attentionSummary: summarizeAttention(context.text,attention) };
@@ -49,11 +54,15 @@ export class GroundedStrategy implements ReplyStrategy {
     if (social) return social;
     let sources: KnowledgeSource[];
     try { sources = await this.loadSources(context.tenantId); }
-    catch { return fallback(context, 'knowledge_unavailable'); }
+    catch { return contactReply??fallback(context, 'knowledge_unavailable'); }
+    if(contactReply&&!matchingBranches(context.text??'',sources).length)return contactReply;
     if (!sources.length) return knowledgeGap(context, replyLanguage(context.text) === 'ar'
       ? 'لا توجد معلومات معتمدة منشورة للمساعد. راجع سؤال العميل وأضف المعلومات المطلوبة.'
       : 'No approved business information is published for the assistant. Review the customer’s question and add the required information.');
     const available = sources;
+    if(needsProductQuestion(context,available))return productQuestion(context);
+    const branchDetail=directBranchDetail(context,available);if(branchDetail)return branchDetail;
+    const links=offeredLinks(context,available);if(links)return links;
     const selection = selectKnowledge(context, available);
     sources = selection.sources;
     if (!sources.length) return selection.excludedByScope===available.length?knowledgeGap(context):fallback(context,'knowledge_selection_empty');
@@ -64,7 +73,7 @@ export class GroundedStrategy implements ReplyStrategy {
     if (reservation.status === 'completed') {
       const decision = reservation.decision;
       if (!decision || !Array.isArray(decision.sources) || !sourcesCurrent(decision, available)) return fallback(context, 'cached_knowledge_changed');
-      return unsolicitedBranches(context,decision,available)?scopeClarification(context):decision;
+      return unsolicitedBranches(context,decision,available)?scopeClarification(context):renderBranchAnswer(context,decision,available);
     }
     if (reservation.status !== 'new' || !reservation.id) return fallback(context, `ai_${reservation.status}`);
     const start = Date.now();
@@ -91,11 +100,15 @@ export class GroundedStrategy implements ReplyStrategy {
       sources: selected.map(s => ({ id: s!.id, kind: s!.kind, updatedAt: s!.updatedAt })) };
     if (decision.action === 'handoff' && result.decision.summary?.trim()) decision.attentionSummary = result.decision.summary.trim();
     if(result.decision.action!=='career'&&unsolicitedBranches(context,decision,available,result.decision.branchLines))decision=scopeClarification(context);
+    if(decision.action==='answer'&&productIntent(context)==='btc'&&branchScope(context,available)==='directory'&&!selected.some(s=>s?.kind==='faq'&&bullionPattern.test(normalizeIntent(s.content))))decision=knowledgeGap(context);
+    const lastAssistant=[...(context.history??[])].reverse().find(m=>m.role==='assistant')?.content;
+    if(lastAssistant&&isShortAcceptance(context.text??'')&&normalizeIntent(decision.text)===normalizeIntent(lastAssistant))decision=scopeClarification(context);
+    const rendered=renderBranchAnswer(context,decision,available);
+    const usedBranchRecord=rendered.text!==decision.text;decision=rendered;
     // Never let the model invent a link, even when it names a valid source.
-    const urls = decision.text.match(/https?:\/\/[^\s<>]+/g) ?? [];
-    if (urls.some(url => !selected.some(s => s && (s.content.includes(url) || s.content.includes(url.replace(/%3B/gi,';').replace(/%D8%9B/gi,'؛')))))) decision = fallback(context, 'unsupported_link');
+    if (hasUnsupportedLink(decision.text,selected.filter((s):s is KnowledgeSource=>!!s))) decision = fallback(context, 'unsupported_link');
     if (decision.text.length>4096) decision=fallback(context,'context_too_large');
-    if (replyLanguage(decision.text) !== replyLanguage(context.text)) decision = fallback(context, 'wrong_response_language');
+    if (!usedBranchRecord && replyLanguage(decision.text) !== replyLanguage(context.text)) decision = fallback(context, 'wrong_response_language');
     decision.usage = { model: AI_MODEL, inputTokens: result.input, outputTokens: result.output, costNano: result.input*400+result.output*1600 };
     await this.ledger.finish(context.tenantId, reservation.id, { state: 'completed', input: result.input,
       output: result.output, latency: Date.now()-start, decision, error: null });

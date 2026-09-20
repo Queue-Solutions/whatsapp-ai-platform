@@ -6,7 +6,7 @@ import { MAX_KNOWLEDGE_BYTES, MAX_REQUEST_BYTES } from '../src/modules/ai/config
 import type { KnowledgeSource } from '../src/modules/ai/contracts';
 import type { MessageContext } from '../src/modules/messaging/types';
 
-const context: MessageContext = { tenantId:'trusted-tenant', conversationId:'test', requestKey:'test', type:'text', text:'ur branches?', eligible:true };
+const context: MessageContext = { tenantId:'trusted-tenant', conversationId:'test', requestKey:'test', type:'text', text:'ur branches?', eligible:true, history:[{role:'user',content:'Jewelry'}] };
 const source = (n: number, data: object, kind: 'faq'|'fact' = 'faq'): KnowledgeSource => ({
   id:`source-${n}`, label:`K${n}`, kind, updatedAt:'2026-09-16T00:00:00Z', content:JSON.stringify(data),
 });

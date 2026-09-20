@@ -1,3 +1,4 @@
+import {boundedHistory} from '../ai/conversation-context';
 import type { AgentDecision } from '../ai/contracts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { DeliveryStatus, IdentityChange, IncomingMessage, MessageContext, MessageJob, MessagingRepository, PreparedReply } from './types';
@@ -40,7 +41,7 @@ export class SupabaseMessagingRepository implements MessagingRepository {
       this.db.from('conversations').select('customer_id,followup_purpose,followup_role,automation_mode,automation_epoch,status,last_inbound_at,followup_state,followup_name,followup_phone,attention_reason,attention_summary').eq('tenant_id', job.tenant_id).eq('id',data.conversation_id).single(),
       this.db.from('whatsapp_channels').select('enabled,mode,phone_number_id').eq('tenant_id',job.tenant_id).eq('id',data.channel_id).single(),
       this.db.from('messages').select('body,direction').eq('tenant_id',job.tenant_id).eq('conversation_id',data.conversation_id)
-        .lt('created_at',data.created_at).in('delivery_status',['received','sent','delivered','read']).order('created_at',{ascending:false}).limit(6),
+        .lt('created_at',data.created_at).in('delivery_status',['received','sent','delivered','read']).order('created_at',{ascending:false}).limit(16),
     ]);
     if (conversation.error || channel.error || history.error) throw new Error('Message context unavailable');
     const c = conversation.data; const ch = channel.data;
@@ -50,13 +51,7 @@ export class SupabaseMessagingRepository implements MessagingRepository {
     const eligible = !blocked && c.automation_mode === 'auto' && c.status === 'open' && ch.enabled && ch.mode === 'test'
       && job.automation_epoch === c.automation_epoch
       && ch.phone_number_id === this.phoneNumberId && Date.parse(c.last_inbound_at) >= Date.now() - (23*60+55)*60000;
-    let bytes = 0;
-    const boundedHistory = history.data.filter(m => typeof m.body === 'string' && m.body.trim()).flatMap(m => {
-      const content = m.body as string; const size = Buffer.byteLength(content,'utf8');
-      if (bytes + size > 2500) return []; bytes += size;
-      return [{ role: m.direction === 'inbound' ? 'user' as const : 'assistant' as const, content }];
-    }).reverse();
-    return {tenantId:data.tenant_id,conversationId:data.conversation_id,text:data.body,type:data.message_type,mediaId:data.media_id??undefined,moderationState:data.moderation_state,blocked,eligible,history:boundedHistory,
+    return {tenantId:data.tenant_id,conversationId:data.conversation_id,text:data.body,type:data.message_type,mediaId:data.media_id??undefined,moderationState:data.moderation_state,blocked,eligible,history:boundedHistory(history.data),
       followUp:c.followup_state==='collecting'?{state:'collecting',purpose:c.followup_purpose==='career'?'career':undefined,role:c.followup_role,name:c.followup_name,phone:c.followup_phone,
         reason:c.attention_reason==='knowledge_gap'?'missing_business_information':c.attention_reason,summary:c.attention_summary}:undefined};
   }

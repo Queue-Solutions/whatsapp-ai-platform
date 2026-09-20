@@ -56,12 +56,12 @@ describe('branch listings require a request',()=>{
   const payment={...faq,content:JSON.stringify({question:'What payment methods do your branches accept?',answer:'Cash or card.'})};
   expect(selectKnowledge({...context,text:'Can I pay by card?'},[...branches,payment]).sources).toContainEqual(payment);
   expect(branchScope({...context,text:'What are your branches opening hours?'},branches)).toBe('detail');
-  const result=await new GroundedStrategy(async()=>branches,ledger(),{complete:async()=>({decision:{action:'answer',text:'Both open from 9 to 5.',branchLines:[],sourceLabels:['B0','B1']},input:100,output:20})}).reply({...context,text:'What are your branches opening hours?'});
+  const result=await new GroundedStrategy(async()=>branches,ledger(),{complete:async()=>({decision:{action:'answer',text:'Both open from 9 to 5.',branchLines:[],sourceLabels:['B0','B1']},input:100,output:20})}).reply({...context,text:'What are your jewelry branches opening hours?'});
   expect(result.action).toBe('answer');
  });
  it('allows an explicitly requested directory and one directly requested branch detail',async()=>{
   const provider={complete:async()=>({decision:{action:'answer' as const,text:'Our branches',branchLines:['IRAM Riverside — Riverside Road','IRAM Garden — Garden Road'],sourceLabels:['B0','B1']},input:100,output:50})};
-  const result=await new GroundedStrategy(async()=>branches,ledger(),provider).reply({...context,text:'Your branches?'});expect(result.action).toBe('answer');expect(result.text).toContain('Riverside');
-  const detail=await new GroundedStrategy(async()=>branches,ledger(),{complete:async()=>({decision:{action:'answer',text:'Riverside opens at 9.',branchLines:[],sourceLabels:['B0']},input:100,output:30})}).reply({...context,text:'Riverside hours?'});expect(detail.action).toBe('answer');
+  const result=await new GroundedStrategy(async()=>branches,ledger(),provider).reply({...context,text:'Your jewelry branches?'});expect(result.action).toBe('answer');expect(result.text).toContain('Riverside');
+  const detail=await new GroundedStrategy(async()=>branches,ledger(),{complete:async()=>({decision:{action:'answer',text:'Riverside opens at 9.',branchLines:[],sourceLabels:['B0']},input:100,output:30})}).reply({...context,text:'Riverside jewelry hours?'});expect(detail.action).toBe('answer');
  });
 });

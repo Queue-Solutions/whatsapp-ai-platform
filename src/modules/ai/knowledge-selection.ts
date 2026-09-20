@@ -2,6 +2,8 @@ import type { KnowledgeSource } from './contracts';
 import type { MessageContext } from '../messaging/types';
 import { MAX_KNOWLEDGE_BYTES } from './config';
 import {branchScope,isBranchSource} from './branch-scope';
+import {bullionPattern,productIntent} from './branch-dialogue';
+import {normalizeIntent} from './branch-scope';
 import { buildRequest } from './openai';
 
 // Local ranking only: no additional model calls, embeddings or outside knowledge.
@@ -52,6 +54,7 @@ export function selectKnowledge(context: MessageContext, available: KnowledgeSou
   const branchQuery = [...query].some(word => topicTokens[0].has(word));
   const ranked = indexed.map(entry => {
     let score = branchQuery && entry.branch ? 1000 : 0;
+    if(productIntent(context)==='btc'&&entry.source.kind==='faq'&&bullionPattern.test(normalizeIntent(entry.source.content)))score+=10000;
     for (const word of entry.words) {
       const rarity = 1 + Math.log(1 + available.length / (frequency.get(word) ?? 1));
       score += rarity * (query.has(word) ? 30 : expanded.has(word) ? 8 : history.has(word) ? 1 : 0);
