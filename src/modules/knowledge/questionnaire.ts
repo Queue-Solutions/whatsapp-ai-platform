@@ -22,6 +22,8 @@ export const branchFields = [
   ['hours', 'What are the opening and closing times for each day?'],
   ['exceptions', 'Are there weekly closing days or special holiday hours?'],
   ['phone', 'What is the branch contact number?'],
+  ['latitude', 'Latitude (optional, for nearest-branch lookup)'],
+  ['longitude', 'Longitude (optional, for nearest-branch lookup)'],
   ['mapsUrl', 'What is the Google Maps link for this location?'],
 ] as const;
 
@@ -29,6 +31,8 @@ const text = z.string().max(10000);
 export const branchSchema = z.object({
   name: z.string().max(200), city: z.string().max(100).optional(), address: text, hours: text,
   exceptions: text, phone: z.string().max(100),
+  latitude: z.string().max(24).refine(v=>!v.trim()||(Number.isFinite(Number(v))&&Math.abs(Number(v))<=90), 'Latitude must be between -90 and 90.').optional(),
+  longitude: z.string().max(24).refine(v=>!v.trim()||(Number.isFinite(Number(v))&&Math.abs(Number(v))<=180), 'Longitude must be between -180 and 180.').optional(),
   mapsUrl: z.string().max(2048).refine(value => {
     if (!value.trim()) return true;
     try {
@@ -53,6 +57,7 @@ export function validateFaq(faq: Faq, publish: boolean) {
 }
 export function validateBranch(value: BranchValue, publish: boolean) {
   const parsed = branchSchema.safeParse(value);
+  if (!!value.latitude?.trim() !== !!value.longitude?.trim()) throw new Error('Provide both latitude and longitude, or leave both blank.');
   if (!parsed.success) throw new Error(parsed.error.issues[0].message);
   if (publish && (!value.name.trim() || !value.address.trim() || !value.hours.trim()))
     throw new Error('Add the branch name, address and opening hours before approving it.');

@@ -175,7 +175,7 @@ describe('OpenAI HTTP adapter', () => {
     const body=buildRequest({...context,history:[{role:'user',content:'I mean the test branch.'}]},[source]);
     expect(await new OpenAiProvider('fake-key',fetcher).complete(body)).toEqual(modelResult());
     const sent=JSON.parse(fetcher.mock.calls[0][1].body);
-    expect(sent).toMatchObject({model:AI_MODEL,store:false,max_output_tokens:650,text:{format:{type:'json_schema',strict:true}}});
+    expect(sent).toMatchObject({model:AI_MODEL,store:false,max_output_tokens:2000,text:{format:{type:'json_schema',strict:true}}});
     expect(sent.tools).toBeUndefined(); expect(sent.input).not.toContain(tenant); expect(sent.input).not.toContain(source.id);
     expect(sent.input).toContain('I mean the test branch.');
   });
@@ -227,19 +227,25 @@ describe('durable AI allowance and final send guards', () => {
     await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key);
       create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
       grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;`);
-    for(const file of ['202609120001_foundation.sql','202609120002_bounded_ai.sql']) await db.exec(await readFile(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));
+    for(const file of ['202609120001_foundation.sql','202609120002_bounded_ai.sql','202609200001_ai_capacity.sql']) await db.exec(await readFile(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));
   });
   afterAll(async()=>{await db?.close();});
   beforeEach(async()=>{
-    await db.exec('reset role;truncate public.tenants,auth.users cascade;update public.ai_budget set allocated_nano=0,cap_nano=250000000;');
+    await db.exec('reset role;truncate public.tenants,auth.users cascade;update public.ai_budget set allocated_nano=0,cap_nano=null;');
     await db.query('insert into public.tenants(id,name,slug) values($1,$2,$3),($4,$5,$6)',[tenant,'Dev','dev',otherTenant,'Other','other']);
   });
-  it('serializes concurrent reservations under one non-renewing $0.25 limit across tenants', async()=>{
+  it('does not stop concurrent tenant requests at the obsolete development cap', async()=>{
     const attempts=await Promise.all(Array.from({length:30},(_,i)=>reserve('test'+i,i%2?tenant:otherTenant)));
-    expect(attempts.filter(r=>r.status==='new')).toHaveLength(Math.floor(250000000/RESERVED_NANO));
-    expect(attempts.some(r=>r.status==='budget_exhausted')).toBe(true);
-    expect((await rows<{allocated_nano:number}>('select allocated_nano from public.ai_budget'))[0].allocated_nano).toBeLessThanOrEqual(250000000);
-    await expect(db.exec('update public.ai_budget set cap_nano=250000001')).rejects.toThrow();
+    expect(attempts.every(r=>r.status==='new')).toBe(true);
+    const budget=(await rows<{allocated_nano:number;cap_nano:number|null}>('select * from public.ai_budget'))[0];
+    expect(budget.cap_nano).toBeNull();expect(budget.allocated_nano).toBe(30*RESERVED_NANO);
+  });
+  it('still honors an explicitly configured future cap and allows 2000 output tokens', async()=>{
+    await db.exec('update public.ai_budget set cap_nano=12800000');
+    const first=await reserve('first');expect(first.status).toBe('new');
+    expect((await reserve('second')).status).toBe('budget_exhausted');
+    await finish(first.id!,500,2000);
+    expect((await rows<{charged_nano:number}>('select charged_nano from public.ai_requests'))[0].charged_nano).toBe(500*400+2000*1600);
   });
   it('deduplicates reservations, settles once and retains full exposure on uncertain failures', async()=>{
     const first=await reserve('same');expect((await reserve('same')).status).toBe('reserved');

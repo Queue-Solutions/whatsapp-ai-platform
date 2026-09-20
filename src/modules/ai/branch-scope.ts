@@ -31,7 +31,7 @@ export function matchingBranches(text:string,sources:KnowledgeSource[]){
     if(d.category!=='branch')return {source,score:0};
     const nameWords=locationWords(String(d.value?.name??''));
     const cityWords=locationWords(String(d.value?.city??''));
-    const meaningful=(word:string)=>word.length>2&&!['iram','ارم','ايرام','branch','mall','btc','tjh','the'].includes(word);
+    const meaningful=(word:string)=>word.length>2&&!['iram','ارم','ايرام','branch','mall','btc','tjh','the','city','town','new','مدينه','المدينه','الجديده'].includes(word);
     const score=[...new Set(nameWords.filter(meaningful))].filter(w=>words.has(w)).length*2
       +[...new Set(cityWords.filter(meaningful))].filter(w=>words.has(w)).length;
     return {source,score};
@@ -39,9 +39,18 @@ export function matchingBranches(text:string,sources:KnowledgeSource[]){
   const max=Math.max(0,...scored.map(s=>s.score));
   return max?scored.filter(s=>s.score===max).map(s=>s.source):[];
 }
+export function nearestIntent(context:MessageContext):boolean {
+  const text=normalizeIntent(context.text??'');
+  if(/\b(?:nearest|closest|near me|nearby)\b|اقرب|قريب مني|قريبه مني/.test(text)){
+    const previous=[...(context.history??[])].reverse().find(m=>m.role==='assistant')?.content??'';
+    return /\b(?:branch|store|shop|one|btc|bullion)\b|فرع|فروع|واحد|سبائك/.test(text)||/branches|branch|فروع|فرع/i.test(previous);
+  }
+  return false;
+}
 const namedBranch=(text:string,sources:KnowledgeSource[])=>matchingBranches(text,sources).length>0;
 export function branchScope(context:MessageContext,sources:KnowledgeSource[]=[]):'none'|'detail'|'directory'{
   const text=context.text??'',direct=directScope(text);
+  if(nearestIntent(context)||context.type==='location')return 'detail';
   if(direct!=='none')return direct==='detail'&&!focusedDetail.test(normalizeIntent(text))&&matchingBranches(text,sources).length>1?'directory':direct;
   if(namedBranch(text,sources)){
     const matches=matchingBranches(text,sources);

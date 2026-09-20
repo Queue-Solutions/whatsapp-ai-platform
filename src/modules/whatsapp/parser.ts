@@ -8,8 +8,9 @@ const message=z.object({
   id:z.string().min(1),from:phone.optional(),from_user_id:bsuid.optional(),timestamp,
   type:z.string().min(1),text:z.object({body:z.string().max(16384)}).optional(),
   image:z.object({id:z.string().regex(/^\d{1,100}$/),caption:z.string().max(16384).optional()}).optional(),
+  location:z.object({latitude:z.number().min(-90).max(90),longitude:z.number().min(-180).max(180)}).optional(),
   system:z.object({type:z.string(),wa_id:phone.optional(),user_id:bsuid.optional(),previous_user_id:bsuid.optional()}).optional(),
-}).refine(v=>v.type!=='text'||v.text!==undefined);
+}).refine(v=>(v.type!=='text'||v.text!==undefined)&&(v.type!=='location'||v.location!==undefined));
 const payload=z.object({object:z.literal('whatsapp_business_account'),entry:z.array(z.object({changes:z.array(z.object({
   field:z.string(),value:z.object({
     metadata:z.object({phone_number_id:z.string()}).optional(),
@@ -45,7 +46,7 @@ export function parseWebhook(input:unknown):{messages:IncomingMessage[];statuses
       if(contact&&((m.from&&contact.wa_id&&m.from!==contact.wa_id)||(m.from_user_id&&contact.user_id&&m.from_user_id!==contact.user_id)))throw new Error('Conflicting sender identity');
       const userId=m.from_user_id??contact?.user_id;
       const incoming={phoneNumberId,providerMessageId:m.id,from:m.from??contact?.wa_id??userId!,userId,
-        username:contact?.profile?.username,displayName:contact?.profile?.name,occurredAt,type:m.type,mediaId:m.type==='image'?m.image?.id:undefined,text:m.type==='text'?m.text!.body:m.type==='image'?m.image?.caption??null:null};
+        username:contact?.profile?.username,displayName:contact?.profile?.name,occurredAt,type:m.type,mediaId:m.type==='image'?m.image?.id:undefined,text:m.type==='location'?`geo:${m.location!.latitude},${m.location!.longitude}`:m.type==='text'?m.text!.body:m.type==='image'?m.image?.caption??null:null};
       messages.push(incoming);events.push({kind:'message',value:incoming});
     }
     for(const s of value.statuses??[]){

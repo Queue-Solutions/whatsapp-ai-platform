@@ -1,3 +1,5 @@
+import {nearestBranchReply} from './nearest-branch';
+import {GeoLocations,type LocationResolver} from './branch-location';
 import {btcBranchReply} from './btc-branches';
 import {technicalFailure,recoverableFailure} from './recovery';
 import {hasUnsupportedLink,offeredLinks} from './approved-links';
@@ -28,9 +30,10 @@ export function fallback(context: MessageContext, reason: string, action: AgentD
 function sourcesCurrent(decision: AgentDecision, available: KnowledgeSource[]) {
   return decision.sources.every(s => available.some(a => a.id === s.id && a.kind === s.kind && a.updatedAt === s.updatedAt));
 }
+const defaultLocations=new GeoLocations();
 export class GroundedStrategy implements ReplyStrategy {
   constructor(private loadSources: SourceLoader, private ledger: UsageLedger, private provider: ModelProvider,
-    private purpose: 'whatsapp'|'acceptance' = 'whatsapp') {}
+    private purpose: 'whatsapp'|'acceptance' = 'whatsapp', private locations:LocationResolver=defaultLocations) {}
   async reply(context: MessageContext): Promise<AgentDecision> {
     const resolved=resolveContinuation(context);
     let decision=await this.generate(resolved);
@@ -50,7 +53,7 @@ export class GroundedStrategy implements ReplyStrategy {
     const contactReply=continueFollowUp(context);
     const inferredName=contactReply?.followUp?.name&&!context.followUp?.name&&!/(?:my name is|name\s*:|اسمي|إسمي|الاسم\s*:)/i.test(context.text??'');
     if(contactReply&&(!inferredName||context.followUp?.purpose==='career'))return contactReply;
-    if (context.type !== 'text' || !context.text?.trim()) return fallback(context, 'unsupported_message');
+    if (!['text','location'].includes(context.type) || !context.text?.trim()) return fallback(context, 'unsupported_message');
     const attention = detectAttention(context.text);
     if (attention) return { ...fallback(context, attention, 'handoff'), attentionSummary: summarizeAttention(context.text,attention) };
     if (!context.requestKey) return fallback(context, 'missing_request_identity');
@@ -66,6 +69,7 @@ export class GroundedStrategy implements ReplyStrategy {
       : 'No approved business information is published for the assistant. Review the customer’s question and add the required information.');
     const available = sources;
     if(needsProductQuestion(context,available))return productQuestion(context);
+    const nearest=await nearestBranchReply(context,available,this.locations);if(nearest)return nearest;
     const btcReply=btcBranchReply(context,available);if(btcReply)return btcReply;
     const branchDetail=directBranchDetail(context,available);if(branchDetail)return branchDetail;
     const links=offeredLinks(context,available);if(links)return links;
