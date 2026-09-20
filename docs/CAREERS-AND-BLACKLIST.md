@@ -24,7 +24,7 @@ Blocks follow the internal customer, including verified phone/BSUID changes. The
 
 ## Content checks
 
-New text messages, image captions and images use OpenAI's free `omni-moderation-latest` endpoint with the existing server-side `OPENAI_API_KEY`. The paid response model and its budget do not change. Only sexual content, sexual content involving minors, harassment, harassment/threatening, hate and hate/threatening trigger blocks. Other categories, personal information and ordinary complaints are not a blacklist policy.
+New text messages, image captions and images use OpenAI's free `omni-moderation-latest` endpoint with the existing server-side `OPENAI_API_KEY`. The paid response model and its budget do not change. Explicit configured Egyptian Arabic abuse forms are matched locally first and classified as harassment, covering spacing, hamza and common elongation variants without relying on the provider's Arabic classification. Other content is checked by the provider. Only sexual content, sexual content involving minors, harassment, harassment/threatening, hate and hate/threatening trigger blocks. Other categories, personal information and ordinary complaints are not a blacklist policy.
 
 The provider supports sexual-content classification for images. Harassment and hate/threat categories are text-only, so those checks cover message text and captions, not reliable OCR or all threatening scenes in images. Automated assessments can be wrong and are presented as reviewable flags, not established facts. See [OpenAI moderation guide](https://developers.openai.com/api/docs/guides/moderation).
 

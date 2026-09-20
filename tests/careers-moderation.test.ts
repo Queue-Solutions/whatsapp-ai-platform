@@ -33,6 +33,16 @@ describe('job enquiries',()=>{
  });
 });
 describe('text and image moderation',()=>{
+ it.each(['كسمك','احا','يعم احا بقى كسمكم','كس أمك','ك س م ك','احاا'])('blocks configured Egyptian Arabic abuse locally: %s',async text=>{
+  const fetcher=vi.fn<typeof fetch>();
+  expect(await new OpenAiModerator('synthetic-key',env,fetcher).check({...context,text})).toEqual({state:'flagged',categories:['harassment']});
+  expect(fetcher).not.toHaveBeenCalled();
+ });
+ it.each(['احاول اوضح سؤالي','عايز اسأل عن الأسعار'])('does not confuse ordinary Arabic with local abuse: %s',async text=>{
+  const fetcher=vi.fn<typeof fetch>(async()=>result());
+  expect(await new OpenAiModerator('synthetic-key',env,fetcher).check({...context,text})).toEqual({state:'clear',categories:[]});
+  expect(fetcher).toHaveBeenCalledOnce();
+ });
  it('blocks only configured categories, not complaints, job details or unrelated sensitive categories',async()=>{
   for(const flag of [null,'self-harm','violence',...blockedCategories]){
    const fetcher=vi.fn<typeof fetch>(async()=>result(flag));const check=await new OpenAiModerator('synthetic-key',env,fetcher).check({...context,text:'Synthetic content'});

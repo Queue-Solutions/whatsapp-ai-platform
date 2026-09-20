@@ -7,6 +7,12 @@ export interface ContentModerator {check(context:MessageContext):Promise<Moderat
 const categoriesSchema=z.object(Object.fromEntries(blockedCategories.map(c=>[c,z.boolean()])));
 const responseSchema=z.object({results:z.array(z.object({categories:categoriesSchema})).length(1)});
 const metadataSchema=z.object({url:z.url(),mime_type:z.enum(['image/jpeg','image/png','image/webp']),file_size:z.number().int().positive().max(5*1024*1024)});
+function localAbuseCategories(text:string|null|undefined):string[]{
+  if(!text?.trim())return [];
+  const normalized=text.normalize('NFKC').toLowerCase().replace(/[\u064b-\u065f\u0670\u0640]/g,'').replace(/[إأآ]/g,'ا');
+  const arabic=normalized.replace(/[^\p{Script=Arabic}]+/gu,' ').replace(/\s+/g,' ').trim();
+  return /(?:^|\s)ا\s*ح\s*ا+(?:\s|$)/u.test(arabic)||/(?:^|\s)(?:و\s*)?ك\s*س\s*(?:ا\s*)?م\s*ك\s*م?(?:\s|$)/u.test(arabic)?['harassment']:[];
+}
 async function boundedBody(response:Response,max:number):Promise<Buffer>{
   if(!response.ok||!response.body||Number(response.headers.get('content-length'))>max)throw new Error('Content unavailable');
   const reader=response.body.getReader();const chunks:Uint8Array[]=[];let size=0;
@@ -18,6 +24,8 @@ export class OpenAiModerator implements ContentModerator {
   constructor(private key:string|undefined,private env:Environment,private fetcher:typeof fetch=fetch){}
   async check(context:MessageContext):Promise<ModerationResult>{
     if(context.type!=='text'&&context.type!=='image')return {state:'clear',categories:[]};
+    const localCategories=localAbuseCategories(context.text);
+    if(localCategories.length)return {state:'flagged',categories:localCategories};
     try{
       if(!this.key)throw new Error('Moderation not configured');
       const input:Array<{type:'text';text:string}|{type:'image_url';image_url:{url:string}}>=[];
