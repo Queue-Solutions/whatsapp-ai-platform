@@ -32,14 +32,18 @@ function sourcesCurrent(decision: AgentDecision, available: KnowledgeSource[]) {
   return decision.sources.every(s => available.some(a => a.id === s.id && a.kind === s.kind && a.updatedAt === s.updatedAt));
 }
 const defaultLocations=new GeoLocations();
+export const AI_RETRY_DELAY_MS=4000;
+const defaultRetryDelay=(milliseconds:number)=>new Promise<void>(resolve=>setTimeout(resolve,milliseconds));
 export class GroundedStrategy implements ReplyStrategy {
   constructor(private loadSources: SourceLoader, private ledger: UsageLedger, private provider: ModelProvider,
-    private purpose: 'whatsapp'|'acceptance' = 'whatsapp', private locations:LocationResolver=defaultLocations) {}
+    private purpose: 'whatsapp'|'acceptance' = 'whatsapp', private locations:LocationResolver=defaultLocations,
+    private retryDelay:(milliseconds:number)=>Promise<void>=defaultRetryDelay) {}
   async reply(context: MessageContext): Promise<AgentDecision> {
     const resolved=resolveContinuation(context);
     let decision=await this.generate(resolved);
-    if(context.requestKey&&context.eligible!==false&&recoverableFailure(decision.reason)){
-      decision=await this.generate(resolved,decision.reason);
+    for(let attempt=1;attempt<=2&&context.requestKey&&context.eligible!==false&&recoverableFailure(decision.reason);attempt++){
+      await this.retryDelay(AI_RETRY_DELAY_MS);
+      decision=await this.generate(resolved,decision.reason,attempt);
     }
     // Includes cached decisions from older deployments: never return their technical-error prose.
     if(technicalFailure(decision.reason))return {...decision,text:'',action:'suppress',sources:[]};
@@ -48,7 +52,7 @@ export class GroundedStrategy implements ReplyStrategy {
     return {...followUp,text:formatReply(followUp.text),
       ...(followUp.attentionSummary?{attentionSummary:formatReply(followUp.attentionSummary)}: {})};
   }
-  private async generate(context: MessageContext, recoveryReason?:string): Promise<AgentDecision> {
+  private async generate(context: MessageContext, recoveryReason?:string, recoveryAttempt=0): Promise<AgentDecision> {
     if (context.eligible === false) return fallback(context, 'ineligible', 'suppress');
     // Career collection was retired: ignore any legacy in-progress career form and answer from the approved FAQ instead.
     const contactReply=context.followUp?.purpose==='career'?null:continueFollowUp(context);
@@ -80,9 +84,9 @@ export class GroundedStrategy implements ReplyStrategy {
     sources = selection.sources;
     if (!sources.length) return selection.excludedByScope===available.length?knowledgeGap(context):fallback(context,'knowledge_selection_empty');
     let request: string;
-    try { request = buildRequest(context, sources, selection.coverage,recoveryReason); } catch { return fallback(context, 'context_too_large'); }
+    try { request = buildRequest(context, sources, selection.coverage,recoveryReason,recoveryAttempt); } catch { return fallback(context, 'context_too_large'); }
     // Each attempt has a stable, separately budgeted key. Replayed jobs reuse both attempts.
-    const reservation = await this.ledger.reserve(context.tenantId, recoveryReason?`${context.requestKey}:recovery:1`:context.requestKey, this.purpose);
+    const reservation = await this.ledger.reserve(context.tenantId, recoveryAttempt?`${context.requestKey}:recovery:${recoveryAttempt}`:context.requestKey, this.purpose);
     if (reservation.status === 'completed') {
       const decision = reservation.decision;
       if (!decision || !Array.isArray(decision.sources) || !sourcesCurrent(decision, available)) return fallback(context, 'cached_knowledge_changed');
@@ -91,7 +95,7 @@ export class GroundedStrategy implements ReplyStrategy {
     if (reservation.status !== 'new' || !reservation.id) return fallback(context, reservation.status==='failed'&&reservation.errorCode?reservation.errorCode:`ai_${reservation.status}`);
     const start = Date.now();
     let result: Awaited<ReturnType<ModelProvider['complete']>>;
-    try { result = await this.provider.complete(request); }
+    try { result = await this.provider.complete(request,{timeoutMs:recoveryAttempt?10000:16000}); }
     catch (error) {
       const known = error instanceof ModelFailure ? error : new ModelFailure('openai_unknown_failure');
       await this.ledger.finish(context.tenantId, reservation.id, { state: 'failed', input: known.usage?.input ?? null,

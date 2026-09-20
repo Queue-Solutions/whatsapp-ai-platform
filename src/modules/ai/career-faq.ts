@@ -3,6 +3,7 @@ import type {MessageContext} from '../messaging/types';
 import {normalizeIntent} from './branch-scope';
 import {sourceRef} from './branch-dialogue';
 import {confirmsCareer,isCareerEnquiry} from './follow-up';
+import {replyLanguage} from './language';
 
 function faq(source:KnowledgeSource):{question:string;answer:string}|null {
   if(source.kind!=='faq')return null;
@@ -17,11 +18,18 @@ function isCareerFaq(source:KnowledgeSource){
   return !!value&&/(?:\b(?:job|vacanc|career|employment|hiring|recruit)\w*\b|وظيف|وظائف|وظايف|توظيف|فرص عمل)/.test(normalizeIntent(value.question));
 }
 
+function localizedAnswer(answer:string,context:MessageContext){
+  if(replyLanguage(context.text??'')!=='ar')return answer.trim();
+  const email=answer.match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/i)?.[0];
+  if(email&&/\b(?:cv|resume|résumé)\b/i.test(answer))return `شكرًا لتواصلك مع IRAM Jewelry!\n\nمن فضلك ابعت السيرة الذاتية على إيميل الموارد البشرية:\n${email}\n\nمع أطيب التحيات،\nIRAM Jewelry`;
+  return answer.trim();
+}
+
 /** FAQ display numbers can change. Match the approved job-vacancy question that is currently shown as FAQ 9. */
 export function careerFaqReply(context:MessageContext,sources:KnowledgeSource[],force=false):AgentDecision|null {
   if(!force&&!(isCareerEnquiry(context.text??'')||confirmsCareer(context)))return null;
   const source=sources.find(isCareerFaq);
   const value=source&&faq(source);
   if(!source||!value)return null;
-  return {action:'answer',reason:'approved_knowledge',text:value.answer.trim(),sources:[sourceRef(source)]};
+  return {action:'answer',reason:'approved_knowledge',text:localizedAnswer(value.answer,context),sources:[sourceRef(source)]};
 }

@@ -14,6 +14,7 @@ import type {SupabaseClient} from '@supabase/supabase-js';
 const context:MessageContext={tenantId:'tenant',conversationId:'conversation',type:'text',text:'What payment methods do you accept?',requestKey:'message:one',eligible:true};
 const source:KnowledgeSource={id:'faq',kind:'faq',label:'K1',updatedAt:'2026-09-20',content:JSON.stringify({question:'Payment methods?',answer:'Cash or card.'})};
 const result=()=>({decision:{action:'answer' as const,text:'Cash or card.',sourceLabels:['K1']},input:100,output:20});
+const noDelay=async()=>{};
 function ledger(){
  const saved=new Map<string,Reservation>();
  return {saved,reserve:vi.fn(async(tenant:string,key:string)=>{
@@ -34,43 +35,45 @@ describe('BTC context from the screenshot',()=>{
 });
 describe('bounded and silent model recovery',()=>{
  it.each(['openai_incomplete','openai_network_unknown','openai_http_429','openai_http_503','openai_invalid_decision'])('recovers %s under a separate stable reservation and reuses the recovered answer on replay',async code=>{
-  const usage=ledger();const complete=vi.fn().mockRejectedValueOnce(new ModelFailure(code,{input:300,output:650})).mockResolvedValue(result());
-  const strategy=new GroundedStrategy(async()=>[source],usage,{complete});
+  const usage=ledger(),delay=vi.fn(noDelay);const complete=vi.fn().mockRejectedValueOnce(new ModelFailure(code,{input:300,output:650})).mockResolvedValue(result());
+  const strategy=new GroundedStrategy(async()=>[source],usage,{complete},'whatsapp',undefined,delay);
   expect((await strategy.reply(context)).text).toBe('Cash or card.');expect((await strategy.reply(context)).text).toBe('Cash or card.');expect(complete).toHaveBeenCalledTimes(2);
   expect(usage.saved.size).toBe(2);expect(usage.reserve).toHaveBeenCalledWith('tenant','message:one:recovery:1','whatsapp');
   expect(usage.finish.mock.calls[0][2]).toMatchObject({state:'failed',input:300,output:650});
-  const recovery=JSON.parse(complete.mock.calls[1][0]);expect(recovery.instructions).toContain('final internal recovery attempt');expect(recovery.text.format.schema.properties.text.maxLength).toBe(450);
+  const recovery=JSON.parse(complete.mock.calls[1][0]);expect(recovery.instructions).toContain('internal recovery attempt 1 of 2');expect(recovery.text.format.schema.properties.text.maxLength).toBe(450);
+  expect(delay).toHaveBeenCalledWith(4000);expect(complete.mock.calls[0][1]).toEqual({timeoutMs:16000});expect(complete.mock.calls[1][1]).toEqual({timeoutMs:10000});
  });
  it('reprocesses a rejected citation without ever returning its unsupported answer',async()=>{
   const usage=ledger(),complete=vi.fn().mockResolvedValueOnce({...result(),decision:{...result().decision,text:'Invented answer.',sourceLabels:['other-tenant']}}).mockResolvedValue(result());
-  const decision=await new GroundedStrategy(async()=>[source],usage,{complete}).reply(context);
+  const decision=await new GroundedStrategy(async()=>[source],usage,{complete},'whatsapp',undefined,noDelay).reply(context);
   expect(decision.text).toBe('Cash or card.');expect(usage.finish).toHaveBeenCalledTimes(2);
  });
  it('retries a temporary source-load failure without making an unreserved model call',async()=>{
   const load=vi.fn().mockRejectedValueOnce(new Error('network')).mockResolvedValue([source]),usage=ledger(),complete=vi.fn(async()=>result());
-  expect((await new GroundedStrategy(load,usage,{complete}).reply(context)).action).toBe('answer');
-  expect(load).toHaveBeenCalledTimes(2);expect(complete).toHaveBeenCalledOnce();expect(usage.reserve).toHaveBeenCalledOnce();
+  const delay=vi.fn(noDelay);expect((await new GroundedStrategy(load,usage,{complete},'whatsapp',undefined,delay).reply(context)).action).toBe('answer');
+  expect(load).toHaveBeenCalledTimes(2);expect(complete).toHaveBeenCalledOnce();expect(usage.reserve).toHaveBeenCalledOnce();expect(delay).toHaveBeenCalledOnce();
  });
- it('stops after two failures and never sends technical prose, including on replay',async()=>{
-  const usage=ledger(),complete=vi.fn().mockRejectedValue(new ModelFailure('openai_network_unknown'));
-  const strategy=new GroundedStrategy(async()=>[source],usage,{complete});
+ it('stops after two silent retries and never sends technical prose, including on replay',async()=>{
+  const usage=ledger(),delay=vi.fn(noDelay),complete=vi.fn().mockRejectedValue(new ModelFailure('openai_network_unknown'));
+  const strategy=new GroundedStrategy(async()=>[source],usage,{complete},'whatsapp',undefined,delay);
   for(let i=0;i<3;i++)expect(await strategy.reply(context)).toMatchObject({action:'suppress',text:'',reason:'openai_network_unknown'});
-  expect(complete).toHaveBeenCalledTimes(2);expect(usage.finish.mock.calls.every(c=>c[2].input===null&&c[2].output===null)).toBe(true);
+  expect(complete).toHaveBeenCalledTimes(3);expect(usage.reserve).toHaveBeenCalledWith('tenant','message:one:recovery:2','whatsapp');expect(delay).toHaveBeenCalledTimes(6);
+  expect(usage.finish.mock.calls.every(c=>c[2].input===null&&c[2].output===null)).toBe(true);
  });
  it.each(['openai_http_401','openai_http_403','openai_refusal'])('does not retry permanent or policy failure %s',async code=>{
   const complete=vi.fn().mockRejectedValue(new ModelFailure(code));
-  expect(await new GroundedStrategy(async()=>[source],ledger(),{complete}).reply(context)).toMatchObject({action:'suppress',text:''});expect(complete).toHaveBeenCalledOnce();
+  expect(await new GroundedStrategy(async()=>[source],ledger(),{complete},'whatsapp',undefined,noDelay).reply(context)).toMatchObject({action:'suppress',text:''});expect(complete).toHaveBeenCalledOnce();
  });
  it('honors exhausted budgets and does not open another reservation while the first is still running',async()=>{
   for(const status of ['budget_exhausted','reserved'] as const){
    const usage={reserve:vi.fn(async()=>({status})),finish:vi.fn()},complete=vi.fn();
-   expect(await new GroundedStrategy(async()=>[source],usage,{complete}).reply(context)).toMatchObject({action:'suppress',text:''});expect(usage.reserve).toHaveBeenCalledOnce();expect(complete).not.toHaveBeenCalled();
+   expect(await new GroundedStrategy(async()=>[source],usage,{complete},'whatsapp',undefined,noDelay).reply(context)).toMatchObject({action:'suppress',text:''});expect(usage.reserve).toHaveBeenCalledOnce();expect(complete).not.toHaveBeenCalled();
   }
  });
  it('cannot recover when the second budget reservation is denied',async()=>{
   const usage=ledger();usage.reserve.mockResolvedValueOnce({status:'new',id:'first'}).mockResolvedValueOnce({status:'budget_exhausted'});
   const complete=vi.fn().mockRejectedValue(new ModelFailure('openai_network_unknown'));
-  expect(await new GroundedStrategy(async()=>[source],usage,{complete}).reply(context)).toMatchObject({action:'suppress',text:'',reason:'ai_budget_exhausted'});expect(complete).toHaveBeenCalledOnce();
+  expect(await new GroundedStrategy(async()=>[source],usage,{complete},'whatsapp',undefined,noDelay).reply(context)).toMatchObject({action:'suppress',text:'',reason:'ai_budget_exhausted'});expect(complete).toHaveBeenCalledOnce();
  });
  it('suppresses technical prose in decisions cached by an older deployment',async()=>{
   const complete=vi.fn();const usage={reserve:async()=>({status:'completed' as const,decision:{action:'unavailable' as const,text:'Sorry, a technical issue occurred.',reason:'openai_http_401',sources:[]}}),finish:vi.fn()};
@@ -82,9 +85,10 @@ describe('bounded and silent model recovery',()=>{
   const prepareDecision=vi.fn(async()=>({outbound_id:'out',phone_number_id:'9001',recipient:'allowed',body:'Cash or card.'}));
   const fail=vi.fn(),send=vi.fn().mockRejectedValue(new SendError(true,'timeout'));
   const repository={context:async()=>context,prepareDecision,fail} as unknown as MessagingRepository;
-  expect(await processIncomingMessage(job,{repository,sender:{send},strategy:new GroundedStrategy(async()=>[source],ledger(),{complete})})).toBe('needs_review');expect(send).toHaveBeenCalledOnce();expect(fail).toHaveBeenCalledWith(job,'needs_review','timeout');
-  const suppress=vi.fn(async()=>null);send.mockClear();
-  expect(await processIncomingMessage(job,{repository:{...repository,prepareDecision:suppress},sender:{send},strategy:new GroundedStrategy(async()=>[source],ledger(),{complete:vi.fn().mockRejectedValue(new ModelFailure('openai_incomplete'))})})).toBe('skipped');
+  expect(await processIncomingMessage(job,{repository,sender:{send},strategy:new GroundedStrategy(async()=>[source],ledger(),{complete},'whatsapp',undefined,noDelay)})).toBe('needs_review');expect(send).toHaveBeenCalledOnce();expect(fail).toHaveBeenCalledWith(job,'needs_review','timeout');
+  const suppress=vi.fn(async()=>null),failedComplete=vi.fn().mockRejectedValue(new ModelFailure('openai_incomplete')),delay=vi.fn(noDelay);send.mockClear();
+  expect(await processIncomingMessage(job,{repository:{...repository,prepareDecision:suppress},sender:{send},strategy:new GroundedStrategy(async()=>[source],ledger(),{complete:failedComplete},'whatsapp',undefined,delay)})).toBe('skipped');
+  expect(failedComplete).toHaveBeenCalledTimes(3);expect(delay).toHaveBeenCalledTimes(2);expect(suppress).toHaveBeenCalledOnce();
   expect(suppress).toHaveBeenCalledWith(job,expect.objectContaining({action:'suppress',text:''}));expect(send).not.toHaveBeenCalled();
  });
 });

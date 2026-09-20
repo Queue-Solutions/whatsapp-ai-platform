@@ -10,6 +10,8 @@ FAQ display positions are editable, so runtime matching uses the approved job-va
 
 Hiring phrases such as “مش محتاجين عمالة؟”, CV/resume wording and affirmative replies to an old hiring clarification use the approved FAQ without a paid generation request. If the bounded model classifies less common recruitment phrasing as a career enquiry, the application discards its prose and substitutes the approved FAQ answer.
 
+The deterministic FAQ reply follows the latest customer message language. English enquiries receive the approved English answer. Arabic enquiries receive the equivalent Egyptian Arabic CV/email wording while preserving the approved email address and the `IRAM` brand spelling.
+
 Unrelated questions exclude branch facts and directory FAQs from retrieval. A request scope also constrains branchLines in the structured response. Final and cached replies are checked for unsolicited listings, including known branch names/addresses in prose. Specific hours/payment questions remain concise rather than opening the directory. Invalid business source references are still rejected.
 
 ## Blacklist

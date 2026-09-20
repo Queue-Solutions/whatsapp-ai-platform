@@ -15,6 +15,8 @@ describe('hiring intent uses only the approved vacancy FAQ',()=>{
  it.each(['مش محتاجين عمالة ؟','محتاجين موظفين؟','مش عايزين عمال؟','هل بتعينوا ناس؟','Do you need staff?','I would like to join your team'])('answers %s directly from FAQ 9 without an AI request',async text=>{
   const load=vi.fn(async()=>[faq,careers]),complete=vi.fn(),usage=ledger();const reply=await new GroundedStrategy(load,usage,{complete}).reply({...context,text});
   expect(reply).toMatchObject({reason:'approved_knowledge',action:'answer',sources:[{id:'careers'}]});expect(reply.text).toContain('hr@example.test');expect(reply.followUp).toBeUndefined();expect(load).toHaveBeenCalledOnce();expect(usage.reserve).not.toHaveBeenCalled();expect(complete).not.toHaveBeenCalled();
+  if(/[\u0600-\u06ff]/.test(text)){expect(reply.text).toContain('السيرة الذاتية');expect(reply.text).not.toContain('Please send');}
+  else expect(reply.text).toContain('Please send');
  });
  it('recovers an affirmative reply to an old hiring clarification by sending FAQ 9',async()=>{
   const result=await new GroundedStrategy(async()=>[careers],ledger(),{complete:vi.fn()}).reply({...context,text:'اه',history:[{role:'user',content:'مش محتاجين عمالة ؟'},{role:'assistant',content:'هل تقصد إنك عايز تشتغل مع ارم كعامل؟ ممكن توضح أكتر طلبك؟'}]});
