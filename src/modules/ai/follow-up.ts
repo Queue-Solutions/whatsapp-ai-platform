@@ -20,7 +20,7 @@ function contactName(text:string,allowPlain:boolean):string|null {
   const candidate=(explicit??(allowPlain?text.replace(/(?:\+|00)?[\d٠-٩۰-۹][\d٠-٩۰-۹ ()-]{5,}[\d٠-٩۰-۹]/g,'').replace(/[,،\n]/g,' ').trim():''))
     .replace(/\s+(?:and|phone|number|رقمي|ورقمي|رقم|تليفوني).*$/iu,'').trim();
   if(!/^[\p{L}\p{M}][\p{L}\p{M}'’ -]{1,79}$/u.test(candidate)||candidate.split(/\s+/).length>5)return null;
-  if(/\b(?:hi|hello|thanks|no|yes|branches|branch|price|where|when|what|how|please|help|online|website|links?|send|sure|jewelry|bullion|btc|don't|not)\b|(?:فروع|سعر|فين|امتي|متى|ازاي|شكرا|اهلا|عايز|عاوز|مش|رقم|تمام|اون ?لاين|ابعت|ياريت|يا ريت|ماشي|ايوه|روابط|موقع|سبائك|مجوهرات|الاسكندريه|الاسكندرية|الغردقه|الغردقة)/iu.test(candidate))return null;
+  if(/\b(?:hi|hello|thanks|no|yes|branches|branch|price|where|when|what|how|please|help|online|website|links?|send|sure|jewelry|bullion|btc|don't|not)\b|(?:فروع|سعر|فين|امتي|متى|ازاي|شكرا|اهلا|عايز|عاوز|مش|رقم|تمام|اون ?لاين|ابعت|ياريت|يا ريت|ماشي|ايوه|روابط|موقع|سبائك|سبايك|مجوهرات|الاسكندريه|الاسكندرية|الغردقه|الغردقة)/iu.test(candidate))return null;
   return candidate;
 }
 function reply(context:MessageContext,reason:string,summary:string,details:FollowUpDetails):AgentDecision {

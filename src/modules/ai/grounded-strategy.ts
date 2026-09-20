@@ -1,3 +1,4 @@
+import {technicalFailure,recoverableFailure} from './recovery';
 import {hasUnsupportedLink,offeredLinks} from './approved-links';
 import {needsProductQuestion,productQuestion,renderBranchAnswer,directBranchDetail,productIntent,bullionPattern} from './branch-dialogue';
 import {resolveContinuation,isShortAcceptance} from './conversation-context';
@@ -17,12 +18,10 @@ import { buildRequest, ModelFailure, type ModelProvider } from './openai';
 export type SourceLoader = (tenant: string) => Promise<KnowledgeSource[]>;
 export function fallback(context: MessageContext, reason: string, action: AgentDecision['action'] = 'unavailable'): AgentDecision {
   const ar = replyLanguage(context.text ?? '') === 'ar';
-  const technical = /^(knowledge_unavailable|knowledge_selection_empty|context_too_large|missing_request_identity|cached_knowledge_changed|invalid_source_reference|unsupported_link|wrong_response_language|openai_|ai_)/.test(reason);
+  if(technicalFailure(reason))return {text:'',action:'suppress',reason,sources:[]};
   const text = action === 'handoff'
     ? ar ? 'طلبك محتاج متابعة شخصية من صاحب النشاط. هوقف الردود الآلية هنا علشان يقدر يراجع المحادثة ويرد عليك.' : 'Your message needs personal attention from the business owner. I’ll pause automated replies here so they can review the conversation and respond.'
-    : technical
-      ? ar ? 'آسف، مش قادر أجاوبك دلوقتي بسبب مشكلة تقنية. حاول تاني بعد شوية، أو اطلب تتكلم مع صاحب النشاط.' : 'Sorry, I can’t answer right now because of a technical issue. Please try again later, or ask to speak to the business owner.'
-      : ar ? 'المعلومة دي مش متاحة عندي بشكل مؤكد حالياً. من فضلك وضّح سؤالك أو تواصل مع فريق العمل مباشرة.' : 'I do not have confirmed information for this right now. Please clarify your question or contact the business team directly.';
+    : ar ? 'المعلومة دي مش متاحة عندي بشكل مؤكد حالياً. من فضلك وضّح سؤالك أو تواصل مع فريق العمل مباشرة.' : 'I do not have confirmed information for this right now. Please clarify your question or contact the business team directly.';
   return { text, action, reason, sources: [] };
 }
 function sourcesCurrent(decision: AgentDecision, available: KnowledgeSource[]) {
@@ -33,13 +32,18 @@ export class GroundedStrategy implements ReplyStrategy {
     private purpose: 'whatsapp'|'acceptance' = 'whatsapp') {}
   async reply(context: MessageContext): Promise<AgentDecision> {
     const resolved=resolveContinuation(context);
-    const decision=await this.generate(resolved);
+    let decision=await this.generate(resolved);
+    if(context.requestKey&&context.eligible!==false&&recoverableFailure(decision.reason)){
+      decision=await this.generate(resolved,decision.reason);
+    }
+    // Includes cached decisions from older deployments: never return their technical-error prose.
+    if(technicalFailure(decision.reason))return {...decision,text:'',action:'suppress',sources:[]};
     const followUp=decision.followUp?decision:decision.action==='handoff'||decision.reason==='missing_business_information'
       ? beginFollowUp(context,decision):decision;
     return {...followUp,text:formatReply(followUp.text,replyLanguage(context.text??'')==='ar'),
       ...(followUp.attentionSummary?{attentionSummary:formatReply(followUp.attentionSummary,replyLanguage(context.text??'')==='ar')}: {})};
   }
-  private async generate(context: MessageContext): Promise<AgentDecision> {
+  private async generate(context: MessageContext, recoveryReason?:string): Promise<AgentDecision> {
     if (context.eligible === false) return fallback(context, 'ineligible', 'suppress');
     if(context.type==='text'&&context.text&&(isCareerEnquiry(context.text)||confirmsCareer(context))&&context.followUp?.purpose!=='career')return beginCareer(context);
     const contactReply=continueFollowUp(context);
@@ -67,15 +71,15 @@ export class GroundedStrategy implements ReplyStrategy {
     sources = selection.sources;
     if (!sources.length) return selection.excludedByScope===available.length?knowledgeGap(context):fallback(context,'knowledge_selection_empty');
     let request: string;
-    try { request = buildRequest(context, sources, selection.coverage); } catch { return fallback(context, 'context_too_large'); }
-    // Reservation commits before the external API call. No auto-retry of a reserved request.
-    const reservation = await this.ledger.reserve(context.tenantId, context.requestKey, this.purpose);
+    try { request = buildRequest(context, sources, selection.coverage,recoveryReason); } catch { return fallback(context, 'context_too_large'); }
+    // Each attempt has a stable, separately budgeted key. Replayed jobs reuse both attempts.
+    const reservation = await this.ledger.reserve(context.tenantId, recoveryReason?`${context.requestKey}:recovery:1`:context.requestKey, this.purpose);
     if (reservation.status === 'completed') {
       const decision = reservation.decision;
       if (!decision || !Array.isArray(decision.sources) || !sourcesCurrent(decision, available)) return fallback(context, 'cached_knowledge_changed');
       return unsolicitedBranches(context,decision,available)?scopeClarification(context):renderBranchAnswer(context,decision,available);
     }
-    if (reservation.status !== 'new' || !reservation.id) return fallback(context, `ai_${reservation.status}`);
+    if (reservation.status !== 'new' || !reservation.id) return fallback(context, reservation.status==='failed'&&reservation.errorCode?reservation.errorCode:`ai_${reservation.status}`);
     const start = Date.now();
     let result: Awaited<ReturnType<ModelProvider['complete']>>;
     try { result = await this.provider.complete(request); }

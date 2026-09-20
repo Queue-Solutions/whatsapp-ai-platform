@@ -1,3 +1,4 @@
+import {technicalFailure,AI_RECOVERY_SUMMARY} from '../ai/recovery';
 import {boundedHistory} from '../ai/conversation-context';
 import type { AgentDecision } from '../ai/contracts';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -61,7 +62,25 @@ export class SupabaseMessagingRepository implements MessagingRepository {
   prepare(job: MessageJob, text: string) {
     return this.rpc<PreparedReply|null>('prepare_message_reply',{p_job:job.id,p_lease:job.lease_token,p_body:text});
   }
-  prepareDecision(job: MessageJob, decision: AgentDecision) {
+  async prepareDecision(job: MessageJob, decision: AgentDecision) {
+    if(technicalFailure(decision.reason)){
+      // The existing RPC validates the lease and terminally suppresses this job without an outbound row.
+      await this.rpc('prepare_followup_reply',{p_job:job.id,p_lease:job.lease_token,p_body:'',p_action:'suppress',p_sources:[],p_reason:decision.reason,p_summary:null,p_contact:null});
+      const jobUpdate=await this.db.from('message_jobs').update({error_code:'ai_reply_unavailable'})
+        .eq('tenant_id',job.tenant_id).eq('id',job.id).eq('lease_token',job.lease_token).eq('state','skipped');
+      if(jobUpdate.error)throw new Error('AI review status unavailable');
+      const message=await this.db.from('messages').select('conversation_id').eq('tenant_id',job.tenant_id).eq('id',job.inbound_message_id).single();
+      if(message.error)throw new Error('AI review context unavailable');
+      // Conditional server-side metadata update using existing grants. Never overwrite a human takeover or an active issue.
+      if(job.automation_epoch!==undefined){
+        const review=await this.db.from('conversations').update({attention_state:'waiting',attention_reason:'manual',
+          attention_summary:AI_RECOVERY_SUMMARY,attention_message_id:job.inbound_message_id,attention_since:new Date().toISOString(),resolved_at:null})
+          .eq('tenant_id',job.tenant_id).eq('id',message.data.conversation_id).eq('automation_epoch',job.automation_epoch)
+          .eq('automation_mode','auto').eq('status','open').in('attention_state',['none','resolved']);
+        if(review.error)throw new Error('AI review flag unavailable');
+      }
+      return null;
+    }
     return this.rpc<PreparedReply|null>('prepare_followup_reply', { p_job: job.id, p_lease: job.lease_token,
       p_body: decision.text, p_action: decision.action, p_sources: decision.sources, p_reason: decision.reason, p_summary: decision.attentionSummary ?? null, p_contact:decision.followUp??null });
   }

@@ -1,7 +1,7 @@
 import type {KnowledgeSource,AgentDecision} from './contracts';
 import type {MessageContext} from '../messaging/types';
 import {replyLanguage} from './language';
-export const normalizeIntent=(text:string)=>text.normalize('NFKC').toLowerCase().replace(/[\u064b-\u065f\u0670\u0640]/g,'').replace(/[إأآ]/g,'ا').replace(/ة/g,'ه');
+export const normalizeIntent=(text:string)=>text.normalize('NFKC').toLowerCase().replace(/[\u064b-\u065f\u0670\u0640]/g,'').replace(/[إأآ]/g,'ا').replace(/ة/g,'ه').replace(/سبايك/g,'سبائك');
 const focusedDetail=/\b(?:hours|opening|closing|payment|cards?|delivery|prices?|refund|warranty|parking)\b|(?:مواعيد|ساعات|دفع|فيزا|اسعار|سعر|استرجاع|استبدال|ضمان|ركنه)/;
 export function isBranchSource(source:KnowledgeSource):boolean {
   try{const data=JSON.parse(source.content);return data.category==='branch'||(source.kind==='faq'&&directScope(String(data.question??''))==='directory');}catch{return false;}

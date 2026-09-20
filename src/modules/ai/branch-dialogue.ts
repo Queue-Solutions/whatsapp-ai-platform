@@ -54,7 +54,9 @@ export function renderBranchAnswer(context:MessageContext,decision:AgentDecision
   }
   if(scope==='directory'&&productIntent(context)==='btc'){
     const footer=ar?'اكتب اسم الفرع اللي يناسبك علشان أبعتلك العنوان الكامل ورابط الموقع.':'Type the branch you want for its full address and location link.';
-    return {...decision,text:decision.text.endsWith(footer)?decision.text:`${decision.text}\n\n${footer}`};
+    const intro=ar?'لو بتسأل على السبائك، فدي الفروع المتاحة لخدمة BTC:':'For BTC / bullion, these are the branches offering this service:';
+    const body=decision.text.startsWith(intro)?decision.text:`${intro}\n\n${decision.text}`;
+    return {...decision,text:body.endsWith(footer)?body:`${body}\n\n${footer}`};
   }
   if(scope==='detail'&&isLocationRequest(context,sources)&&records.length===1){
     const d=branchData(records[0])!;

@@ -7,3 +7,4 @@
 - Keep business logic independent of Next.js route handlers; resolve tenants from trusted channel mappings or authenticated membership.
 - Do not bypass the send allowlist, database grants, RLS, or durable deduplication.
 - Run npm run check after substantive changes. Tests must cover tenant isolation, webhook authentication, duplicate events, and uncertain send outcomes.
+- After pushing requested fixes to GitHub, leave Vercel deployment verification to the user unless they explicitly ask for it.

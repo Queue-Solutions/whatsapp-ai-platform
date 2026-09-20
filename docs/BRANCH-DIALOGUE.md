@@ -15,3 +15,12 @@ The sidebar Blacklist indicator counts pending and kept blocks using authenticat
 Read-only test-channel diagnostics on 2026-09-20 found four incomplete model responses, all using the full 650 output tokens, eleven invalid-source decisions and four unsupported-link decisions among the latest 108 AI requests. These counts identify failure categories, not the exact screenshot messages. No message bodies were read for these diagnostics. Regression tests use synthetic business records and conversation examples.
 
 This change needs no SQL migration. It preserves existing chats, send deduplication, ambiguous-send handling, tenant isolation, test-number restrictions and the AI allowance. Hosted rollout and new test-number conversations are required to verify the changed model behavior in the running service.
+
+
+## BTC continuity and silent recovery (2026-09-20)
+
+Colloquial `سبايك` normalizes to `سبائك` throughout intent detection and branch routing. When the customer's recent context is BTC, asking for branches continues that choice instead of asking for jewelry/BTC again. BTC directories open with “لو بتسأل على السبائك، فدي الفروع المتاحة لخدمة BTC:” and retain FAQ-specific hours.
+
+Technical failures never create customer-facing technical-error messages, including cached fallback decisions from earlier deployments. Recoverable model/network/validation failures get one additional internal attempt, with a shorter response instruction and a separate durable `:recovery:1` reservation. Both attempts retain normal budget accounting and source/link validation. Permanent authorization failures, exhausted budgets and still-running reservations do not retry. WhatsApp sends and uncertain send outcomes are never retried by this mechanism.
+
+After failed recovery, the existing lease-validated suppress RPC terminally skips the job without creating an outbound row. The repository records `ai_reply_unavailable` on that job and flags eligible conversations for dashboard review through tenant-, automation-epoch-, mode- and attention-state-filtered metadata updates. Active complaints, existing reviews and human takeovers are preserved. These metadata writes follow the suppression transaction; a database failure there can leave the job suppressed without a new dashboard flag, while the AI attempt remains in the durable ledger. New customer messages can still use the assistant. No new SQL migration or grant change is required.

@@ -1,10 +1,11 @@
+import {AI_RECOVERY_SUMMARY} from '../ai/recovery';
 import type { SupabaseClient } from '@supabase/supabase-js';
 export type InboxFilter = 'all' | 'attention' | 'complaints' | 'resolved';
 export type AttentionAction = 'reply' | 'resolve' | 'resume' | 'flag' | 'complaint' | 'remove_complaint';
 export type Conversation = {id:string;automation_mode:'auto'|'human';status:string;last_inbound_at:string;updated_at:string;customer_id:string;name:string;phone:string|null;username:string|null;
   attention_state:'none'|'waiting'|'in_progress'|'resolved';attention_reason:string|null;attention_summary:string;attention_since:string|null;resolved_at:string|null;is_complaint:boolean;attention_message_id:string|null;followup_state:'none'|'collecting'|'ready'|'declined';followup_name:string|null;followup_phone:string|null;followup_purpose?:string;followup_role?:string|null;blocked?:boolean};
 export type InboxCounts = Record<InboxFilter,number>;
-export const attentionReason = (reason:string|null) => ({career_application:'Job enquiry',moderation_review:'Content check needs review',human_requested:'Requested a person',complaint:'Complaint',manual:'Flagged by you',customer_follow_up:'Customer followed up',knowledge_gap:'Missing business information'}[reason??'']??'Personal attention');
+export const attentionReason = (reason:string|null,summary?:string) => summary===AI_RECOVERY_SUMMARY?'Assistant reply needs review':({career_application:'Job enquiry',moderation_review:'Content check needs review',human_requested:'Requested a person',complaint:'Complaint',manual:'Flagged by you',customer_follow_up:'Customer followed up',knowledge_gap:'Missing business information'}[reason??'']??'Personal attention');
 export function conversationStateLabel(c:Pick<Conversation,'attention_state'|'automation_mode'|'blocked'>) {
   if(c.blocked)return 'Blacklisted · Replies blocked';
   if(c.attention_state==='resolved')return c.automation_mode==='auto'?'Resolved · Assistant on':'Resolved · Assistant paused';

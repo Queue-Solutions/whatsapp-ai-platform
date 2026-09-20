@@ -73,6 +73,13 @@ describe('blacklist and careers PostgreSQL boundaries',()=>{
   await review(b.customer_id,'removed',b.revision+1);expect(await count()).toBe(0);
   await db.exec('reset role');expect(await count()).toBe(1);
  });
+ it('suppresses exhausted AI recovery without creating a blank outbound row or replaying the inbound job',async()=>{
+  const id=await ingest('ai-failure');const job=await claim();await moderate(job);
+  expect((await rows<{v:unknown}>("select public.prepare_followup_reply($1,$2,'','suppress','[]','openai_incomplete',null,null) as v",[job.id,job.lease_token]))[0].v).toBeNull();
+  expect(await rows("select id from public.messages where direction='outbound'")).toEqual([]);
+  expect((await rows('select state from public.message_jobs'))[0].state).toBe('skipped');
+  expect(await ingest('ai-failure')).toBe(id);expect(await claim()).toBeUndefined();
+ });
  it('keeps a block attached to a customer through verified BSUID identity changes',async()=>{
   const b=await block();await db.query("select public.update_whatsapp_identity('9001','change','201000000001',null,'EG.NewUser',now())");
   await ingest('hidden','EG.NewUser');expect(await moderate(await claim())).toBe(false);expect((await rows('select customer_id from public.customer_blacklist'))[0].customer_id).toBe(b.customer_id);
