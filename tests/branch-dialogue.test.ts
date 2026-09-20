@@ -11,7 +11,7 @@ import type {MessageContext} from '../src/modules/messaging/types';
 const base:MessageContext={tenantId:'tenant',conversationId:'chat',requestKey:'test',type:'text',text:'branches?'};
 const branch=(name:string,city:string,label:string):KnowledgeSource=>({id:label,label,kind:'fact',updatedAt:'2026-09-20',content:JSON.stringify({category:'branch',value:{name,city,address:`123 ${name} Street`,hours:'Jewelry: 9am–10pm',phone:'1234567',mapsUrl:`https://maps.app.goo.gl/${label}`}})});
 const branches=[branch('IRAM Riverside','Alexandria','B1'),branch('IRAM Senzo Mall','Hurghada','B2'),branch('IRAM El Kawthar','Hurghada','B3')];
-const btc:KnowledgeSource={id:'btc-faq',label:'F1',kind:'faq',updatedAt:'2026-09-20',content:JSON.stringify({question:'Where can I buy BTC bullion?',answer:'BTC service is only at IRAM Riverside in Alexandria, Saturday–Thursday 11am–4pm, Friday closed.'})};
+const btc:KnowledgeSource={id:'btc-faq',label:'F1',kind:'faq',updatedAt:'2026-09-20',content:JSON.stringify({question:'Where can I buy BTC bullion?',answer:'IRAM Riverside: 01200000001\nBTC working hours: Saturday–Thursday 11am–4pm, Friday closed.'})};
 const ledger=()=>({reserve:vi.fn(async()=>({status:'new' as const,id:'reservation'})),finish:vi.fn()});
 const history=(product='Jewelry'):MessageContext['history']=>[{role:'user',content:product},{role:'assistant',content:'Type the branch you want for its full address and location link.'}];
 
@@ -58,12 +58,12 @@ describe('product-aware branch navigation',()=>{
   }
  });
  it('does not accept general branch citations as proof of BTC availability',async()=>{
-  const decision=await new GroundedStrategy(async()=>[...branches,btc],ledger(),{complete:async()=>({decision:{action:'answer',text:'All branches offer BTC.',sourceLabels:['B1','B2','B3']},input:100,output:30})}).reply({...base,text:'BTC branches?'});
+  const decision=await new GroundedStrategy(async()=>branches,ledger(),{complete:async()=>({decision:{action:'answer',text:'All branches offer BTC.',sourceLabels:['B1','B2','B3']},input:100,output:30})}).reply({...base,text:'BTC branches?'});
   expect(decision.reason).toBe('missing_business_information');expect(decision.text).not.toContain('All branches');
  });
  it('answers BTC lists with FAQ-specific hours and no addresses',async()=>{
   const decision=await new GroundedStrategy(async()=>[...branches,btc],ledger(),{complete:async()=>({decision:{action:'answer',text:'BTC service: Saturday–Thursday 11am–4pm, Friday closed. Type the branch for its full address.',branchLines:['IRAM Riverside — Alexandria'],sourceLabels:['F1']},input:100,output:30})}).reply({...base,text:'BTC branches?'});
-  expect(decision.action).toBe('answer');expect(decision.text).toContain('11am–4pm');expect(decision.text).not.toMatch(/9am|123|https:|Senzo/);expect(decision.text).toMatch(/Type the branch.*location link\.$/);
+  expect(decision.action).toBe('answer');expect(decision.text).toContain('11am–4pm');expect(decision.text).not.toMatch(/9am|123|https:|Senzo/);expect(decision.text).toMatch(/Type the branch.*BTC phone number\.$/);
  });
 });
 

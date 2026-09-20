@@ -1,3 +1,4 @@
+import {constrainBtcSources} from './btc-branches';
 import type { KnowledgeSource } from './contracts';
 import type { MessageContext } from '../messaging/types';
 import { MAX_KNOWLEDGE_BYTES } from './config';
@@ -48,7 +49,7 @@ export function selectKnowledge(context: MessageContext, available: KnowledgeSou
   // Previous customer messages help resolve short follow-ups, but never outrank the latest question.
   const history = expand(tokens((context.history ?? []).filter(message => message.role === 'user').slice(-2).map(message => message.content).join(' ')));
   const scope=branchScope(context,available);
-  const indexed = available.filter(source=>scope!=='none'||!isBranchSource(source)).map(source => ({ source, ...searchable(source) }));
+  const indexed = constrainBtcSources(context,available).filter(source=>scope!=='none'||!isBranchSource(source)).map(source => ({ source, ...searchable(source) }));
   const frequency = new Map<string, number>();
   for (const entry of indexed) for (const word of entry.words) frequency.set(word, (frequency.get(word) ?? 0) + 1);
   const branchQuery = [...query].some(word => topicTokens[0].has(word));

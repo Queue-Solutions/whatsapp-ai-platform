@@ -1,3 +1,4 @@
+import {btcBranchReply} from './btc-branches';
 import {technicalFailure,recoverableFailure} from './recovery';
 import {hasUnsupportedLink,offeredLinks} from './approved-links';
 import {needsProductQuestion,productQuestion,renderBranchAnswer,directBranchDetail,productIntent,bullionPattern} from './branch-dialogue';
@@ -65,6 +66,7 @@ export class GroundedStrategy implements ReplyStrategy {
       : 'No approved business information is published for the assistant. Review the customer’s question and add the required information.');
     const available = sources;
     if(needsProductQuestion(context,available))return productQuestion(context);
+    const btcReply=btcBranchReply(context,available);if(btcReply)return btcReply;
     const branchDetail=directBranchDetail(context,available);if(branchDetail)return branchDetail;
     const links=offeredLinks(context,available);if(links)return links;
     const selection = selectKnowledge(context, available);

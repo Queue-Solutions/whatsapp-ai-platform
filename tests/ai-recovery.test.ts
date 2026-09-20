@@ -22,14 +22,14 @@ function ledger(){
  }),finish:vi.fn(async(_tenant:string,id:string,value:Parameters<UsageLedger['finish']>[2])=>{saved.set(id,{id,status:value.state,decision:value.decision??undefined,errorCode:value.error??undefined});})};
 }
 describe('BTC context from the screenshot',()=>{
- const btc={...source,content:JSON.stringify({question:'BTC services?',answer:'BTC bullion is available at Riverside only, 12pm–8:30pm, Fridays 2pm–8:30pm.'})};
+ const btc={...source,content:JSON.stringify({question:'BTC services?',answer:'Riverside: 01200000001\nBTC working hours: Daily from 12:00 PM to 8:30 PM, except Friday from 2:00 PM to 8:30 PM.'})};
  const branch:KnowledgeSource={id:'branch',label:'B1',kind:'fact',updatedAt:'2026-09-20',content:JSON.stringify({category:'branch',value:{name:'Riverside',city:'Cairo',address:'123 Street',hours:'9am–10pm'}})};
  it.each(['سبايك','السبايك','سبائك','السبائك','سبيكة','BTC','bullion'])('retains %s as BTC when the customer subsequently asks for branches',async product=>{
   const c={...context,text:'ايه الفروع ؟',history:[{role:'user' as const,content:product},{role:'assistant' as const,content:'لو حابب أعرفك على أقرب فرع لخدمة سبائك الذهب، ممكن تقول لي مكانك؟'}]};
   expect(productIntent(c)).toBe('btc');
   const complete=vi.fn(async()=>({decision:{action:'answer' as const,text:'مواعيد خدمة السبائك من ١٢ ظهرًا لحد ٨:٣٠ مساءً، والجمعة من ٢ لحد ٨:٣٠ مساءً.',branchLines:['Riverside — Cairo'],sourceLabels:['K1']},input:100,output:80}));
   const decision=await new GroundedStrategy(async()=>[btc,branch],ledger(),{complete}).reply(c);
-  expect(decision.action).toBe('answer');expect(decision.text).toContain('لو بتسأل على السبائك، فدي الفروع المتاحة');expect(decision.text).not.toMatch(/المجوهرات ولا|123 Street|9am/);expect(complete).toHaveBeenCalledOnce();
+  expect(decision.action).toBe('answer');expect(decision.text).toContain('لو بتسأل على السبائك، فدي الفروع المتاحة');expect(decision.text).not.toMatch(/المجوهرات ولا|123 Street|9am/);expect(complete).not.toHaveBeenCalled();
  });
 });
 describe('bounded and silent model recovery',()=>{
