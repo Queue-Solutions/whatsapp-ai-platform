@@ -1,6 +1,6 @@
 import {describe,it,expect,vi} from 'vitest';
 import {GroundedStrategy} from '../src/modules/ai/grounded-strategy';
-import {branchScope} from '../src/modules/ai/branch-scope';
+import {branchScope,matchingBranches} from '../src/modules/ai/branch-scope';
 import {buildRequest} from '../src/modules/ai/openai';
 import {boundedHistory,resolveContinuation} from '../src/modules/ai/conversation-context';
 import {productIntent} from '../src/modules/ai/branch-dialogue';
@@ -25,7 +25,21 @@ describe('product-aware branch navigation',()=>{
  it('keeps the latest customer product choice, ignoring product choices in assistant prose',()=>{
   expect(productIntent({...base,text:'Jewelry',history:[{role:'user',content:'BTC'}]})).toBe('jewelry');
   expect(productIntent({...base,history:[{role:'assistant',content:'Jewelry or BTC?'}]})).toBeNull();
+  expect(productIntent({...base,text:'معادي',history:[{role:'assistant',content:'فروع المجوهرات:\n\n• TJH Maadi — Maadi'},{role:'assistant',content:'ممكن توضح طلبك؟'}]})).toBe('jewelry');
   expect(productIntent({...base,text:'BTC or jewelry?'})).toBeNull();
+ });
+ it.each(['معادي','المعادي','المعادى','معندكوش فرع في المعادي؟'])('resolves the Arabic Maadi selection locally on the first try: %s',async text=>{
+  const maadi=branch('TJH Maadi','Maadi','MAADI'),complete=vi.fn(),usage=ledger();
+  const directory='فروع المجوهرات:\n\n• TJH Maadi — Maadi\n\nاكتب اسم الفرع اللي يناسبك علشان أبعتلك العنوان الكامل ورابط الموقع.';
+  expect(matchingBranches(text,[maadi])).toEqual([maadi]);
+  const decision=await new GroundedStrategy(async()=>[maadi],usage,{complete}).reply({...base,text,history:[{role:'assistant',content:directory},{role:'user',content:'معادي'}]});
+  expect(decision.action).toBe('answer');expect(decision.text).toContain('TJH Maadi — Maadi');expect(decision.text).toContain('123 TJH Maadi Street');expect(complete).not.toHaveBeenCalled();expect(usage.reserve).not.toHaveBeenCalled();
+ });
+ it.each([
+  ['كوربة','IRAM Korba'],['سيتي ستارز','TJH City Stars'],['ميفيدا','TJH Mivida'],['الكوثر','TJH El Kawthar'],
+  ['نوكس','IRAM Nox'],['اركان','IRAM Arkan'],['زيا','IRAM ZIA'],['كمبنسكي','TJH Kempinski Hotel'],['سنزو','TJH Senzo Mall'],
+ ] as const)('matches the Arabic branch alias %s to %s', (text,name)=>{
+  const source=branch(name,'Cairo','ALIAS');expect(matchingBranches(text,[source])).toEqual([source]);
  });
  it('renders the directory without model-generated addresses, hours, or links and ends with a selection request',async()=>{
   const decision=await new GroundedStrategy(async()=>branches,ledger(),{complete:async()=>({decision:{action:'answer',text:'Our branches are at 123 Riverside Street.',branchLines:['IRAM Riverside: https://maps.app.goo.gl/B1'],sourceLabels:['B1','B2','B3']},input:100,output:30})}).reply({...base,history:history()});

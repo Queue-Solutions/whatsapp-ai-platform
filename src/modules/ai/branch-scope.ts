@@ -16,6 +16,20 @@ function directScope(text:string):'none'|'detail'|'directory'{
 export function locationWords(text:string){
   let t=normalizeIntent(text);
   for(const [pattern,replacement] of [
+    [/المعادي|المعادى|معادي|معادى|\bmaadi\b/g,'maadi'],
+    [/كوربه|كوربا|\bcorba\b|\bkorba\b/g,'korba'],
+    [/سيتي\s*ستارز?|سيتى\s*ستارز?|\bcity\s+stars?\b/g,'stars'],
+    [/ميفيدا|\bmivida\b/g,'mivida'],
+    [/الكوثر|كوثر|\bkawthar\b/g,'kawthar'],
+    [/نوكس|\bnox\b/g,'nox'],
+    [/اركان|\barkan\b/g,'arkan'],
+    [/زيا|زايا|\bzia\b/g,'zia'],
+    [/كمبنسكي|كمبينسكي|\bkempinski\b/g,'kempinski'],
+    [/سنزو|\bsenzo\b/g,'senzo'],
+    [/مصر الجديده|\bheliopolis\b/g,'heliopolis'],
+    [/مدينه نصر|مدينة نصر|\bnasr(?: city)?\b/g,'nasr'],
+    [/اكتوبر|أكتوبر|\boctober\b/g,'october'],
+    [/رشدي|رشدى|\broshdy\b/g,'roshdy'],
     [/الاسكندريه|اسكندريه|alexandria|\balex\b/g,'alexandria'],
     [/الغردقه|غردقه|hurghada/g,'hurghada'],
     [/القاهره|قاهره|cairo/g,'cairo'],

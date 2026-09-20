@@ -11,6 +11,12 @@ export function productIntent(context:MessageContext):'btc'|'jewelry'|null {
     if(btc&&jewelry)return null;
     if(btc)return 'btc';if(jewelry)return 'jewelry';
   }
+  // These exact headings are emitted only after product routing has already been resolved.
+  for(const message of [...(context.history??[])].reverse().filter(m=>m.role==='assistant')){
+    const assistant=normalizeIntent(message.content);
+    if(/(?:^|\n)فروع المجوهرات:|(?:^|\n)jewelry branches:/.test(assistant))return 'jewelry';
+    if(/(?:الفروع المتاحه لخدمه btc|for btc \/ bullion, these are the branches offering this service)/.test(assistant))return 'btc';
+  }
   return null;
 }
 export function branchData(source:KnowledgeSource):Record<string,string>|null {
@@ -77,7 +83,7 @@ export function directBranchDetail(context:MessageContext,sources:KnowledgeSourc
   if(matches.length!==1||!branchData(matches[0])?.address)return null;
   // A named branch inside a product question is not an address selection.
   const value=branchData(matches[0])!;
-  const allowed=new Set([...locationWords(`${value.name} ${value.city??''}`),...locationWords('address location directions branch store the in at to where is are your please send me full and what about jewelry jewellery عنوان العنوان موقع الموقع لوكيشن فرع الفرع في فين ممكن ابعت ابعتلي مجوهرات المجوهرات')]);
+  const allowed=new Set([...locationWords(`${value.name} ${value.city??''}`),...locationWords('address location directions branch store the in at to where is are your please send me full and what about do you have is there jewelry jewellery عنوان العنوان موقع الموقع لوكيشن فرع الفرع في فين موجود فيه هل عندكم عندكو عندكوا معندكوش ممكن ابعت ابعتلي مجوهرات المجوهرات')]);
   if(locationWords(context.text??'').some(word=>!allowed.has(word)))return null;
   return renderBranchAnswer(context,{action:'answer',reason:'approved_knowledge',text:'',sources:matches.map(sourceRef)},sources);
 }
