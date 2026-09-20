@@ -17,6 +17,7 @@ import { selectKnowledge } from './knowledge-selection';
 import { knowledgeGap } from './knowledge-gap';
 import { beginFollowUp, continueFollowUp } from './follow-up';
 import {careerFaqReply} from './career-faq';
+import {isRepairEnquiry,repairFaqReply} from './repair-faq';
 import { formatReply, formatBranchReply } from './reply-format';
 import { buildRequest, ModelFailure, type ModelProvider } from './openai';
 export type SourceLoader = (tenant: string) => Promise<KnowledgeSource[]>;
@@ -60,7 +61,7 @@ export class GroundedStrategy implements ReplyStrategy {
     if(contactReply&&!inferredName)return contactReply;
     if (!['text','location'].includes(context.type) || !context.text?.trim()) return fallback(context, 'unsupported_message');
     const attention = detectAttention(context.text);
-    if (attention) return { ...fallback(context, attention, 'handoff'), attentionSummary: summarizeAttention(context.text,attention) };
+    if (attention&&!isRepairEnquiry(context.text)) return { ...fallback(context, attention, 'handoff'), attentionSummary: summarizeAttention(context.text,attention) };
     if (!context.requestKey) return fallback(context, 'missing_request_identity');
     if (Buffer.byteLength(context.text, 'utf8') > 3500) return fallback(context, 'message_too_long');
     const social = socialReply(context.text);
@@ -74,6 +75,7 @@ export class GroundedStrategy implements ReplyStrategy {
       : 'No approved business information is published for the assistant. Review the customer’s question and add the required information.');
     const available = sources;
     const career=careerFaqReply(context,available);if(career)return career;
+    const repair=repairFaqReply(context,available);if(repair)return repair;
     const links=offeredLinks(context,available);if(links)return links;
     if(needsProductQuestion(context,available))return productQuestion(context);
     const nearest=await nearestBranchReply(context,available,this.locations);if(nearest)return nearest;
@@ -85,7 +87,7 @@ export class GroundedStrategy implements ReplyStrategy {
     if (!sources.length) return selection.excludedByScope===available.length?knowledgeGap(context):fallback(context,'knowledge_selection_empty');
     let request: string;
     try { request = buildRequest(context, sources, selection.coverage,recoveryReason,recoveryAttempt); } catch { return fallback(context, 'context_too_large'); }
-    // Each attempt has a stable, separately budgeted key. Replayed jobs reuse both attempts.
+    // Each attempt has a stable, separately budgeted key. Replayed jobs reuse all attempts.
     const reservation = await this.ledger.reserve(context.tenantId, recoveryAttempt?`${context.requestKey}:recovery:${recoveryAttempt}`:context.requestKey, this.purpose);
     if (reservation.status === 'completed') {
       const decision = reservation.decision;

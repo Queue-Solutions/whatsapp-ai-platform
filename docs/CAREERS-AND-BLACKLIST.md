@@ -12,6 +12,8 @@ Hiring phrases such as “مش محتاجين عمالة؟”, CV/resume wording
 
 The deterministic FAQ reply follows the latest customer message language. English enquiries receive the approved English answer. Arabic enquiries receive the equivalent Egyptian Arabic CV/email wording while preserving the approved email address and the `IRAM` brand spelling.
 
+Clear repair and maintenance requests also bypass generic model clarification. They use the approved technical-care FAQ directly; Arabic requests receive its hours, service-location list and other-branch drop-off rule in Egyptian Arabic while preserving approved names and times. If the FAQ format cannot be translated safely, normal grounded selection is used instead of inventing or omitting policy.
+
 Unrelated questions exclude branch facts and directory FAQs from retrieval. A request scope also constrains branchLines in the structured response. Final and cached replies are checked for unsolicited listings, including known branch names/addresses in prose. Specific hours/payment questions remain concise rather than opening the directory. Invalid business source references are still rejected.
 
 ## Blacklist

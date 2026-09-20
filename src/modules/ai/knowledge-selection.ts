@@ -18,6 +18,7 @@ const topics = [
   'appointment appointments book booking reservation حجز موعد',
   'payment payments pay cash card دفع كاش فيزا',
   'offer offers discount discounts sale عروض خصم خصومات',
+  'repair repairs repaired repairing maintenance technical care fix fixing اصلاح اصلح تصليح صيانه يتصلح تتصلح',
   'service services product products خدمه خدمات منتج منتجات',
 ];
 const stopWords = new Set('a an the is are do does i we you your ur our and or to for of in on at it what which can please about me my this that اي ايه هو هي هل من في علي لو انا انت عندكم ممكن'.split(' '));
