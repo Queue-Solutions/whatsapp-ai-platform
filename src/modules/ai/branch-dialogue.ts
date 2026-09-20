@@ -55,7 +55,7 @@ export function renderBranchAnswer(context:MessageContext,decision:AgentDecision
   const scope=branchScope(context,sources),ar=replyLanguage(context.text??'')==='ar';
   const records=sources.filter(s=>branchData(s)&&decision.sources.some(ref=>ref.id===s.id&&ref.kind===s.kind));
   if(scope==='directory'&&productIntent(context)==='jewelry'&&records.length){
-    const lines=records.map(s=>{const d=branchData(s)!;return `• ${d.name}${d.city?` — ${d.city}`:''}`;});
+    const lines=records.map(s=>{const d=branchData(s)!;return `• ${d.name.trim()}${d.city?.trim()?` — ${d.city.trim()}`:''}`;});
     return {...decision,text:`${ar?'فروع المجوهرات:':'Jewelry branches:'}\n\n${lines.join('\n')}\n\n${ar?'اكتب اسم الفرع اللي يناسبك علشان أبعتلك العنوان الكامل ورابط الموقع.':'Type the branch you want for its full address and location link.'}`};
   }
   if(scope==='directory'&&productIntent(context)==='btc'){
@@ -67,23 +67,40 @@ export function renderBranchAnswer(context:MessageContext,decision:AgentDecision
   if(scope==='detail'&&isLocationRequest(context,sources)&&records.length===1){
     const d=branchData(records[0])!;
     if(!d.address?.trim())return decision;
-    return {...decision,text:`${d.name}${d.city?` — ${d.city}`:''}\n\n${d.address}\n\n${d.mapsUrl|| (ar?'رابط الموقع مش متاح حالياً للفرع ده.':'A location link is not currently available for this branch.')}`};
+    return {...decision,text:branchDetailText(d,ar)};
   }
   return decision;
 }
 
-/** Exact location selection can be answered without waiting for a model or consuming its output budget. */
+function branchDetailText(value:Record<string,string>,ar:boolean){
+  const name=value.name.trim(),city=value.city?.trim(),address=value.address.trim(),mapsUrl=value.mapsUrl?.trim();
+  return `${name}${city?` — ${city}`:''}\n\n${address}\n\n${mapsUrl|| (ar?'رابط الموقع مش متاح حالياً للفرع ده.':'A location link is not currently available for this branch.')}`;
+}
+
+/** Complete jewelry directories never depend on the model's knowledge-size selection. */
+export function directJewelryDirectory(context:MessageContext,sources:KnowledgeSource[]):AgentDecision|null {
+  if(branchScope(context,sources)!=='directory'||productIntent(context)!=='jewelry'||matchingBranches(context.text??'',sources).length)return null;
+  const records=sources.filter(source=>branchData(source));
+  if(!records.length)return null;
+  return renderBranchAnswer(context,{action:'answer',reason:'approved_knowledge',text:'',sources:records.map(sourceRef)},sources);
+}
+
+/** Exact branch or area selections can be answered without waiting for a model or consuming its output budget. */
 export function directBranchDetail(context:MessageContext,sources:KnowledgeSource[]):AgentDecision|null {
-  if(branchScope(context,sources)!=='detail'||!isLocationRequest(context,sources)||productIntent(context)!=='jewelry')return null;
+  const scope=branchScope(context,sources);
+  if(!['detail','directory'].includes(scope)||!isLocationRequest(context,sources)||productIntent(context)!=='jewelry')return null;
   let matches=matchingBranches(context.text??'',sources);
   if(!matches.length&&/^(?:btc|bullion|jewel(?:ry|lery)|سبائك|السبائك|مجوهرات|المجوهرات)[.!؟? ]*$/i.test(normalizeIntent(context.text??''))) {
     const previous=[...(context.history??[])].reverse().find(m=>m.role==='user');
     if(previous)matches=matchingBranches(previous.content,sources);
   }
-  if(matches.length!==1||!branchData(matches[0])?.address)return null;
+  if(!matches.length||matches.some(source=>!branchData(source)?.address?.trim()))return null;
   // A named branch inside a product question is not an address selection.
-  const value=branchData(matches[0])!;
-  const allowed=new Set([...locationWords(`${value.name} ${value.city??''}`),...locationWords('address location directions branch store the in at to where is are your please send me full and what about do you have is there jewelry jewellery عنوان العنوان موقع الموقع لوكيشن فرع الفرع في فين موجود فيه هل عندكم عندكو عندكوا معندكوش ممكن ابعت ابعتلي مجوهرات المجوهرات')]);
+  const values=matches.map(source=>branchData(source)!);
+  const allowed=new Set([...values.flatMap(value=>locationWords(`${value.name} ${value.city??''}`)),...locationWords('address location directions branch store the in at to where is are your please send me full and what about do you have is there jewelry jewellery عنوان العنوان موقع الموقع لوكيشن فرع الفرع في فين موجود فيه هل عندكم عندكو عندكوا معندكوش ممكن ابعت ابعتلي مجوهرات المجوهرات طب طيب')]);
   if(locationWords(context.text??'').some(word=>!allowed.has(word)))return null;
-  return renderBranchAnswer(context,{action:'answer',reason:'approved_knowledge',text:'',sources:matches.map(sourceRef)},sources);
+  const decision={action:'answer' as const,reason:'approved_knowledge',text:'',sources:matches.map(sourceRef)};
+  if(matches.length===1)return renderBranchAnswer(context,decision,sources);
+  const ar=replyLanguage(context.text??'')==='ar';
+  return {...decision,text:`${ar?'فروع المجوهرات المتاحة في المنطقة دي:':'Jewelry branches available in this area:'}\n\n${values.map(value=>branchDetailText(value,ar)).join('\n\n')}`};
 }

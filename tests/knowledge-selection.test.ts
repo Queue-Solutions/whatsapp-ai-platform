@@ -24,15 +24,16 @@ describe('bounded approved knowledge selection', () => {
     expect(Buffer.byteLength(buildRequest({...context,text},selection.sources,selection.coverage))).toBeLessThanOrEqual(MAX_REQUEST_BYTES);
   });
   it('reaches the provider and cites original versions when the full corpus is too large', async () => {
+    const productContext={...context,text:'What are the Product 0 details?',history:[]};
     const complete=vi.fn(async(request:string)=>{
       const input=JSON.parse(JSON.parse(request).input);
-      expect(input.approvedSources).toHaveLength(selectKnowledge(context,[...faqs,...branches]).sources.length);
-      return {decision:{action:'answer' as const,text:'Test area 0 is at 0 Fictional Street.',sourceLabels:['K1']},input:1500,output:50};
+      expect(input.approvedSources).toHaveLength(selectKnowledge(productContext,[...faqs,...branches]).sources.length);
+      return {decision:{action:'answer' as const,text:'Approved Product 0 details.',sourceLabels:['K10']},input:1500,output:50};
     });
     const load=vi.fn(async()=>[...faqs,...branches]);
     const ledger={reserve:vi.fn(async()=>({status:'new' as const,id:'reservation'})),finish:vi.fn()};
-    const result=await new GroundedStrategy(load,ledger,{complete}).reply(context);
-    expect(result).toMatchObject({action:'answer',reason:'approved_knowledge',sources:[{id:branches[0].id,kind:'fact',updatedAt:branches[0].updatedAt}]});
+    const result=await new GroundedStrategy(load,ledger,{complete}).reply(productContext);
+    expect(result).toMatchObject({action:'answer',reason:'approved_knowledge',sources:[{id:faqs[0].id,kind:'faq',updatedAt:faqs[0].updatedAt}]});
     expect(load).toHaveBeenCalledWith('trusted-tenant');expect(complete).toHaveBeenCalledOnce();expect(ledger.finish).toHaveBeenCalledOnce();
   });
   it('ranks an Arabic price question above unrelated content across more than 40 sources', () => {
@@ -67,13 +68,14 @@ describe('bounded approved knowledge selection', () => {
   });
   it('checks cached citations against all current approved sources, and rejects omitted-source citations from new answers', async () => {
     const available=[...faqs,...branches];
-    const omitted=faqs.find(s=>!selectKnowledge(context,available).sources.includes(s))!;
+    const productContext={...context,text:'What are the Product 0 details?',history:[]};
+    const omitted=faqs.find(s=>!selectKnowledge(productContext,available).sources.includes(s))!;
     const cached={action:'answer' as const,text:'An earlier answer.',reason:'approved_knowledge',sources:[{id:omitted.id,kind:omitted.kind,updatedAt:omitted.updatedAt}]};
     const complete=vi.fn();
-    expect(await new GroundedStrategy(async()=>available,{reserve:async()=>({status:'completed',decision:cached}),finish:vi.fn()},{complete}).reply(context)).toEqual(cached);
+    expect(await new GroundedStrategy(async()=>available,{reserve:async()=>({status:'completed',decision:cached}),finish:vi.fn()},{complete}).reply(productContext)).toEqual(cached);
     expect(complete).not.toHaveBeenCalled();
     const result=await new GroundedStrategy(async()=>available,{reserve:async()=>({status:'new',id:'test'}),finish:vi.fn()},
-      {complete:async()=>({decision:{action:'answer',text:'Unsupported.',sourceLabels:[omitted.label]},input:100,output:10})}).reply(context);
+      {complete:async()=>({decision:{action:'answer',text:'Unsupported.',sourceLabels:[omitted.label]},input:100,output:10})}).reply(productContext);
     expect(result.reason).toBe('invalid_source_reference');
   });
 });

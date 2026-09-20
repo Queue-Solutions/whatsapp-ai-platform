@@ -3,7 +3,7 @@ import {GroundedStrategy} from '../src/modules/ai/grounded-strategy';
 import {branchScope,matchingBranches} from '../src/modules/ai/branch-scope';
 import {buildRequest} from '../src/modules/ai/openai';
 import {boundedHistory,resolveContinuation} from '../src/modules/ai/conversation-context';
-import {productIntent} from '../src/modules/ai/branch-dialogue';
+import {branchData,productIntent} from '../src/modules/ai/branch-dialogue';
 import {selectKnowledge} from '../src/modules/ai/knowledge-selection';
 import {continueFollowUp} from '../src/modules/ai/follow-up';
 import {requestsApprovedLinks} from '../src/modules/ai/approved-links';
@@ -11,6 +11,7 @@ import type {KnowledgeSource} from '../src/modules/ai/contracts';
 import type {MessageContext} from '../src/modules/messaging/types';
 const base:MessageContext={tenantId:'tenant',conversationId:'chat',requestKey:'test',type:'text',text:'branches?'};
 const branch=(name:string,city:string,label:string):KnowledgeSource=>({id:label,label,kind:'fact',updatedAt:'2026-09-20',content:JSON.stringify({category:'branch',value:{name,city,address:`123 ${name} Street`,hours:'Jewelry: 9am–10pm',phone:'1234567',mapsUrl:`https://maps.app.goo.gl/${label}`}})});
+const branchDataName=(source:KnowledgeSource)=>branchData(source)!.name;
 const branches=[branch('IRAM Riverside','Alexandria','B1'),branch('IRAM Senzo Mall','Hurghada','B2'),branch('IRAM El Kawthar','Hurghada','B3')];
 const btc:KnowledgeSource={id:'btc-faq',label:'F1',kind:'faq',updatedAt:'2026-09-20',content:JSON.stringify({question:'Where can I buy BTC bullion?',answer:'IRAM Riverside: 01200000001\nBTC working hours: Saturday–Thursday 11am–4pm, Friday closed.'})};
 const ledger=()=>({reserve:vi.fn(async()=>({status:'new' as const,id:'reservation'})),finish:vi.fn()});
@@ -42,9 +43,39 @@ describe('product-aware branch navigation',()=>{
   const source=branch(name,'Cairo','ALIAS');expect(matchingBranches(text,[source])).toEqual([source]);
  });
  it('renders the directory without model-generated addresses, hours, or links and ends with a selection request',async()=>{
-  const decision=await new GroundedStrategy(async()=>branches,ledger(),{complete:async()=>({decision:{action:'answer',text:'Our branches are at 123 Riverside Street.',branchLines:['IRAM Riverside: https://maps.app.goo.gl/B1'],sourceLabels:['B1','B2','B3']},input:100,output:30})}).reply({...base,history:history()});
+  const complete=vi.fn();const usage=ledger();
+  const decision=await new GroundedStrategy(async()=>branches,usage,{complete}).reply({...base,history:history()});
   expect(decision.action).toBe('answer');expect(decision.text).toContain('IRAM Riverside — Alexandria');expect(decision.text).toContain('IRAM Senzo Mall — Hurghada');
   expect(decision.text).not.toMatch(/123|Street|https:|9am/);expect(decision.text).toMatch(/Type the branch.*location link\.$/);
+  expect(complete).not.toHaveBeenCalled();expect(usage.reserve).not.toHaveBeenCalled();
+ });
+ it('renders all 12 published branches even when their full records exceed model context selection',async()=>{
+  const allBranches=[
+   branch('IRAM Korba','Heliopolis','KORBA'),branch('IRAM Alex','Alexandria','ALEX'),branch('IRAM Mansoura','Mansoura','MANSOURA'),
+   branch('IRAM Arkan','6th of October City','ARKAN'),branch('IRAM Nox','New Cairo','NOX'),branch('IRAM ZIA','New Cairo','ZIA'),
+   branch('TJH Maadi','Maadi','MAADI'),branch('TJH Mivida','New Cairo','MIVIDA'),branch('TJH City stars','Nasr City','STARS'),
+   branch('TJH El Kawthar','Hurghada','KAWTHAR'),branch('TJH Senzo Mall','Hurghada','SENZO'),branch('TJH Kempinski Hotel','Hurghada','KEMPINSKI'),
+  ];
+  const complete=vi.fn(),usage=ledger();
+  const decision=await new GroundedStrategy(async()=>allBranches,usage,{complete}).reply({...base,text:'مجوهرات',history:[{role:'assistant',content:'مهتم بالمجوهرات ولا منتجات BTC والسبائك؟'}]});
+  expect(decision.action).toBe('answer');expect(decision.sources).toHaveLength(12);
+  for(const source of allBranches)expect(decision.text).toContain(branchDataName(source));
+  expect((decision.text.match(/^• /gm)??[])).toHaveLength(12);
+  expect(decision.text).not.toMatch(/123|https:/);expect(complete).not.toHaveBeenCalled();expect(usage.reserve).not.toHaveBeenCalled();
+ });
+ it.each(['التجمع','فرع التجمع'])('returns all three New Cairo branches with full details for %s',async text=>{
+  const newCairo=[branch('IRAM Nox','New Cairo','NOX'),branch('IRAM ZIA','New Cairo','ZIA'),branch('TJH Mivida','New Cairo','MIVIDA')];
+  const complete=vi.fn(),usage=ledger();
+  expect(matchingBranches(text,newCairo)).toHaveLength(3);
+  const decision=await new GroundedStrategy(async()=>newCairo,usage,{complete}).reply({...base,text,history:[{role:'assistant',content:'فروع المجوهرات:\n\n• IRAM Nox — New Cairo'}]});
+  for(const source of newCairo){const name=branchDataName(source);expect(decision.text).toContain(name);expect(decision.text).toContain(`123 ${name} Street`);expect(decision.text).toContain(`https://maps.app.goo.gl/${source.label}`);}
+  expect(decision.sources).toHaveLength(3);expect(complete).not.toHaveBeenCalled();expect(usage.reserve).not.toHaveBeenCalled();
+ });
+ it('maps مصر الجديدة only to the Heliopolis branch even with a conversational prefix',async()=>{
+  const korba=branch('IRAM Korba','Heliopolis','KORBA'),mivida=branch('TJH Mivida','New Cairo','MIVIDA'),complete=vi.fn(),usage=ledger();
+  const decision=await new GroundedStrategy(async()=>[korba,mivida],usage,{complete}).reply({...base,text:'طب فرع مصر الجديدة',history:[{role:'assistant',content:'فروع المجوهرات:\n\n• IRAM Korba — Heliopolis\n• TJH Mivida — New Cairo'}]});
+  expect(decision.text).toContain('IRAM Korba — Heliopolis');expect(decision.text).toContain('123 IRAM Korba Street');expect(decision.text).toContain('https://maps.app.goo.gl/KORBA');
+  expect(decision.text).not.toMatch(/Mivida|MIVIDA/);expect(complete).not.toHaveBeenCalled();expect(usage.reserve).not.toHaveBeenCalled();
  });
  it.each(['IRAM Riverside','Alexandria','الاسكندرية'])('returns the selected branch address and stored map for %s without a paid model call',async text=>{
   const complete=vi.fn();const decision=await new GroundedStrategy(async()=>branches,ledger(),{complete}).reply({...base,text,history:history()});

@@ -3,7 +3,7 @@ import {GeoLocations,type LocationResolver} from './branch-location';
 import {btcBranchReply} from './btc-branches';
 import {technicalFailure,recoverableFailure} from './recovery';
 import {hasUnsupportedLink,offeredLinks} from './approved-links';
-import {needsProductQuestion,productQuestion,renderBranchAnswer,directBranchDetail,productIntent,bullionPattern} from './branch-dialogue';
+import {needsProductQuestion,productQuestion,renderBranchAnswer,directBranchDetail,directJewelryDirectory,productIntent,bullionPattern} from './branch-dialogue';
 import {resolveContinuation,isShortAcceptance} from './conversation-context';
 import {unsolicitedBranches,scopeClarification,branchScope,normalizeIntent,matchingBranches} from './branch-scope';
 import { detectAttention, summarizeAttention } from './attention-detection';
@@ -75,6 +75,7 @@ export class GroundedStrategy implements ReplyStrategy {
     const nearest=await nearestBranchReply(context,available,this.locations);if(nearest)return nearest;
     const btcReply=btcBranchReply(context,available);if(btcReply)return btcReply;
     const branchDetail=directBranchDetail(context,available);if(branchDetail)return branchDetail;
+    const branchDirectory=directJewelryDirectory(context,available);if(branchDirectory)return branchDirectory;
     const selection = selectKnowledge(context, available);
     sources = selection.sources;
     if (!sources.length) return selection.excludedByScope===available.length?knowledgeGap(context):fallback(context,'knowledge_selection_empty');
