@@ -6,6 +6,7 @@ import {boundedHistory,resolveContinuation} from '../src/modules/ai/conversation
 import {productIntent} from '../src/modules/ai/branch-dialogue';
 import {selectKnowledge} from '../src/modules/ai/knowledge-selection';
 import {continueFollowUp} from '../src/modules/ai/follow-up';
+import {requestsApprovedLinks} from '../src/modules/ai/approved-links';
 import type {KnowledgeSource} from '../src/modules/ai/contracts';
 import type {MessageContext} from '../src/modules/messaging/types';
 const base:MessageContext={tenantId:'tenant',conversationId:'chat',requestKey:'test',type:'text',text:'branches?'};
@@ -90,10 +91,17 @@ describe('short replies act on the last assistant offer',()=>{
 });
 
 describe('approved links and source labels',()=>{
- const website:KnowledgeSource={id:'web',kind:'faq',label:'W1',updatedAt:'2026-09-20',content:JSON.stringify({question:'How can I buy online?',answer:'Visit our website: https://shop.example.test/collection.\nInstagram: https://instagram.com/example'})};
+ const website:KnowledgeSource={id:'web',kind:'faq',label:'W1',updatedAt:'2026-09-20',content:JSON.stringify({question:'Could you provide more product photos or additional design options?',answer:'Website: https://shop.example.test/collection.\nInstagram: https://instagram.com/example\nFacebook: https://facebook.com/example'})};
  it('fulfills the screenshot link acceptance from approved FAQs without another offer or model call',async()=>{
   const complete=vi.fn();const decision=await new GroundedStrategy(async()=>[...branches,website],ledger(),{complete}).reply({...base,text:'ابعت',history:[{role:'assistant',content:'تقدر تشتري أونلاين من الموقع الرسمي. تحب أبعتلك الروابط؟'}]});
   expect(decision.action).toBe('answer');expect(decision.text).toContain('https://shop.example.test/collection');expect(decision.text).toContain('https://instagram.com/example');expect(decision.text).not.toContain('تحب');expect(complete).not.toHaveBeenCalled();
+ });
+ it.each(['عندكم مجوهرات؟','ممكن أشوف الكوليكشن؟','What is your Instagram?','Can I see your jewelry collection?'])('sends all approved collection/social links on the first request: %s',async text=>{
+  const complete=vi.fn();const decision=await new GroundedStrategy(async()=>[...branches,website],ledger(),{complete}).reply({...base,text,history:[]});
+  expect(decision.action).toBe('answer');expect(decision.text).toContain('https://shop.example.test/collection');expect(decision.text).toContain('https://instagram.com/example');expect(decision.text).toContain('https://facebook.com/example');expect(complete).not.toHaveBeenCalled();
+ });
+ it('does not turn a jewelry branch request into a collection-links reply',async()=>{
+  expect(requestsApprovedLinks('Where is your jewelry branch?')).toBe(false);
  });
  it('does not mistake punctuation or Markdown around approved URLs for an invented link',async()=>{
   const decision=await new GroundedStrategy(async()=>[website],ledger(),{complete:async()=>({decision:{action:'answer',text:'Visit [our website](https://shop.example.test/collection).',sourceLabels:['W1']},input:100,output:30})}).reply({...base,text:'Where can I buy online?'});

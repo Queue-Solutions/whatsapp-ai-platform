@@ -15,7 +15,8 @@ import type { UsageLedger } from './ledger';
 import { AI_MODEL } from './config';
 import { selectKnowledge } from './knowledge-selection';
 import { knowledgeGap } from './knowledge-gap';
-import { beginFollowUp, continueFollowUp, beginCareer, isCareerEnquiry, confirmsCareer } from './follow-up';
+import { beginFollowUp, continueFollowUp } from './follow-up';
+import {careerFaqReply} from './career-faq';
 import { formatReply, formatBranchReply } from './reply-format';
 import { buildRequest, ModelFailure, type ModelProvider } from './openai';
 export type SourceLoader = (tenant: string) => Promise<KnowledgeSource[]>;
@@ -49,10 +50,10 @@ export class GroundedStrategy implements ReplyStrategy {
   }
   private async generate(context: MessageContext, recoveryReason?:string): Promise<AgentDecision> {
     if (context.eligible === false) return fallback(context, 'ineligible', 'suppress');
-    if(context.type==='text'&&context.text&&(isCareerEnquiry(context.text)||confirmsCareer(context))&&context.followUp?.purpose!=='career')return beginCareer(context);
-    const contactReply=continueFollowUp(context);
+    // Career collection was retired: ignore any legacy in-progress career form and answer from the approved FAQ instead.
+    const contactReply=context.followUp?.purpose==='career'?null:continueFollowUp(context);
     const inferredName=contactReply?.followUp?.name&&!context.followUp?.name&&!/(?:my name is|name\s*:|اسمي|إسمي|الاسم\s*:)/i.test(context.text??'');
-    if(contactReply&&(!inferredName||context.followUp?.purpose==='career'))return contactReply;
+    if(contactReply&&!inferredName)return contactReply;
     if (!['text','location'].includes(context.type) || !context.text?.trim()) return fallback(context, 'unsupported_message');
     const attention = detectAttention(context.text);
     if (attention) return { ...fallback(context, attention, 'handoff'), attentionSummary: summarizeAttention(context.text,attention) };
@@ -68,11 +69,12 @@ export class GroundedStrategy implements ReplyStrategy {
       ? 'لا توجد معلومات معتمدة منشورة للمساعد. راجع سؤال العميل وأضف المعلومات المطلوبة.'
       : 'No approved business information is published for the assistant. Review the customer’s question and add the required information.');
     const available = sources;
+    const career=careerFaqReply(context,available);if(career)return career;
+    const links=offeredLinks(context,available);if(links)return links;
     if(needsProductQuestion(context,available))return productQuestion(context);
     const nearest=await nearestBranchReply(context,available,this.locations);if(nearest)return nearest;
     const btcReply=btcBranchReply(context,available);if(btcReply)return btcReply;
     const branchDetail=directBranchDetail(context,available);if(branchDetail)return branchDetail;
-    const links=offeredLinks(context,available);if(links)return links;
     const selection = selectKnowledge(context, available);
     sources = selection.sources;
     if (!sources.length) return selection.excludedByScope===available.length?knowledgeGap(context):fallback(context,'knowledge_selection_empty');
@@ -98,7 +100,7 @@ export class GroundedStrategy implements ReplyStrategy {
     const selected = [...new Set(result.decision.sourceLabels)].map(label => sources.find(s => s.label === label));
     const invalidSources = selected.some(s => !s) || (result.decision.action === 'answer' && !selected.length);
     let decision: AgentDecision;
-    if(result.decision.action==='career')decision=beginCareer(context);
+    if(result.decision.action==='career')decision=careerFaqReply(context,available,true)??fallback(context,'answer_not_supported');
     else if (invalidSources) decision = fallback(context, 'invalid_source_reference');
     else if (result.decision.action === 'knowledge_gap') {
       decision = result.decision.sourceLabels.length ? fallback(context, 'invalid_source_reference')
@@ -109,7 +111,7 @@ export class GroundedStrategy implements ReplyStrategy {
     else decision = { text: formatReply(formatBranchReply(result.decision.text,result.decision.branchLines),replyLanguage(context.text)==='ar'), action: result.decision.action, reason: 'approved_knowledge',
       sources: selected.map(s => ({ id: s!.id, kind: s!.kind, updatedAt: s!.updatedAt })) };
     if (decision.action === 'handoff' && result.decision.summary?.trim()) decision.attentionSummary = result.decision.summary.trim();
-    if(result.decision.action!=='career'&&unsolicitedBranches(context,decision,available,result.decision.branchLines))decision=scopeClarification(context);
+    if(unsolicitedBranches(context,decision,available,result.decision.branchLines))decision=scopeClarification(context);
     if(decision.action==='answer'&&productIntent(context)==='btc'&&branchScope(context,available)==='directory'&&!selected.some(s=>s?.kind==='faq'&&bullionPattern.test(normalizeIntent(s.content))))decision=knowledgeGap(context);
     const lastAssistant=[...(context.history??[])].reverse().find(m=>m.role==='assistant')?.content;
     if(lastAssistant&&isShortAcceptance(context.text??'')&&normalizeIntent(decision.text)===normalizeIntent(lastAssistant))decision=scopeClarification(context);

@@ -7,28 +7,23 @@ import type {Environment} from '../src/config/env';
 import {processIncomingMessage} from '../src/modules/messaging/process-incoming-message';
 import {handleBlacklistImage} from '../src/modules/admin/blacklist-image';
 import {parseWebhook} from '../src/modules/whatsapp/parser';
-const context:MessageContext={tenantId:'tenant',conversationId:'conversation',type:'text',text:'محتاج شغل'};
+const context:MessageContext={tenantId:'tenant',conversationId:'conversation',requestKey:'message:job',type:'text',text:'محتاج شغل'};
+const careerFaq={id:'career-faq',kind:'faq' as const,label:'F9',updatedAt:'2026-09-20',content:JSON.stringify({question:'Do you have any job vacancies?',answer:'Please send your CV to hr@example.test.'})};
 const env={WHATSAPP_ACCESS_TOKEN:'synthetic-token',META_GRAPH_API_VERSION:'v24.0',WHATSAPP_TEST_PHONE_NUMBER_ID:'9001'} as Environment;
 const categories=(flag:string|null=null)=>Object.fromEntries([...blockedCategories,'self-harm','violence'].map(c=>[c,c===flag]));
 const result=(flag:string|null=null)=>Response.json({results:[{categories:categories(flag)}]});
 describe('job enquiries',()=>{
- it('collects role first, then name and phone, and only promises contact if the role is needed',async()=>{
-  const load=vi.fn(),complete=vi.fn(),reserve=vi.fn();const strategy=new GroundedStrategy(load,{reserve,finish:vi.fn()},{complete});
-  for(const text of ['محتاج شغل','عايز اشتغل عندكم','فيه وظائف؟','Are you hiring?','I want to work at IRAM']){
-   const first=await strategy.reply({...context,text});expect(first).toMatchObject({reason:'career_application',followUp:{purpose:'career',role:null,state:'collecting',name:null,phone:null}});expect(first.text).not.toMatch(/phone|رقم/);
-   const role=await strategy.reply({...context,text:text.includes('IRAM')?'Sales assistant':'موظف مبيعات',followUp:{...first.followUp!,reason:first.reason,summary:first.attentionSummary!},history:[{role:'assistant',content:first.text}]});
-   expect(role.followUp?.role).toBeTruthy();expect(role.followUp?.name).toBeNull();expect(role.text).toMatch(/name|اسمك/);
-   const name=await strategy.reply({...context,text:'Maya Hassan',followUp:{...role.followUp!,reason:role.reason,summary:role.attentionSummary!},history:[{role:'assistant',content:role.text}]});expect(name.followUp?.name).toBe('Maya Hassan');
-   const ready=await strategy.reply({...context,text:'01000000001',followUp:{...name.followUp!,reason:name.reason,summary:name.attentionSummary!},history:[{role:'assistant',content:name.text}]});
-   expect(ready).toMatchObject({action:'handoff',followUp:{state:'ready',purpose:'career',phone:'201000000001',role:role.followUp!.role}});
-   expect(ready.text).toMatch(/if this role is needed|لو فيه احتياج/);expect(ready.text).not.toMatch(/shortly|قريب|[;؛]/);
+ it('answers from FAQ 9 immediately without collecting role or contact details',async()=>{
+  const load=vi.fn(async()=>[careerFaq]),complete=vi.fn(),reserve=vi.fn();const strategy=new GroundedStrategy(load,{reserve,finish:vi.fn()},{complete});
+  for(const text of ['محتاج شغل','عايز اشتغل عندكم','فيه وظائف؟','Are you hiring?','I want to work at IRAM','i wanna work with u guyz']){
+   const reply=await strategy.reply({...context,text,requestKey:`message:${text}`});expect(reply).toMatchObject({reason:'approved_knowledge',action:'answer',sources:[{id:'career-faq'}]});expect(reply.text).toContain('hr@example.test');expect(reply.followUp).toBeUndefined();
   }
-  expect(load).not.toHaveBeenCalled();expect(complete).not.toHaveBeenCalled();expect(reserve).not.toHaveBeenCalled();
+  expect(load).toHaveBeenCalledTimes(6);expect(complete).not.toHaveBeenCalled();expect(reserve).not.toHaveBeenCalled();
  });
  it('does not confuse opening hours or a refusal to look for work with applications',()=>{
   for(const text of ['What are your working hours?','مواعيد الشغل ايه؟','فين فروعكم','مش عايز شغل','I am not looking for a job'])expect(isCareerEnquiry(text)).toBe(false);
  });
- it('leaves unrelated questions available during role collection and respects ineligibility',async()=>{
+ it('ignores a legacy role-collection state and leaves unrelated questions on normal handling',async()=>{
   const provider={complete:vi.fn()};const strategy=new GroundedStrategy(async()=>[],{reserve:vi.fn(),finish:vi.fn()},provider);
   expect((await strategy.reply({...context,eligible:false})).action).toBe('suppress');
   const r=await strategy.reply({...context,text:'فين فروعكم؟',followUp:{purpose:'career',role:null,state:'collecting',name:null,phone:null,reason:'career_application',summary:'Job enquiry'}});

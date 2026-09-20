@@ -2,13 +2,13 @@
 
 ## Job enquiries
 
-Arabic and English job enquiries, including “محتاج شغل”, enter a dedicated flow before business-knowledge retrieval. The assistant asks for the desired role first, then the applicant's name and contact number. The confirmation promises contact **only if the role is needed**. It does not invent vacancies or promise a response time.
+Arabic and English job enquiries, including “محتاج شغل”, are answered directly from the approved job-vacancy FAQ currently displayed as FAQ 9. The assistant returns that saved answer and its HR contact instructions on the first message. It does not ask for a desired role, name or phone number, create an application follow-up, invent vacancies or substitute model-written application guidance.
 
-The Inbox shows the desired role, contact details and a Job enquiry reason. Completing the details pauses the assistant for personal review. Existing human takeovers remain paused. A new business question can leave contact collection and use normal knowledge handling.
+FAQ display positions are editable, so runtime matching uses the approved job-vacancy question rather than a hardcoded row number. Existing database fields for the retired application-collection workflow remain for backward compatibility, but the assistant ignores a legacy in-progress career form and uses normal knowledge handling.
 
 ## Reply scope
 
-Hiring phrases such as “مش محتاجين عمالة؟” and affirmative replies to a hiring clarification enter the role-first flow without a knowledge-generation request. The model can also classify other recruitment phrasing as a career enquiry.
+Hiring phrases such as “مش محتاجين عمالة؟”, CV/resume wording and affirmative replies to an old hiring clarification use the approved FAQ without a paid generation request. If the bounded model classifies less common recruitment phrasing as a career enquiry, the application discards its prose and substitutes the approved FAQ answer.
 
 Unrelated questions exclude branch facts and directory FAQs from retrieval. A request scope also constrains branchLines in the structured response. Final and cached replies are checked for unsolicited listings, including known branch names/addresses in prose. Specific hours/payment questions remain concise rather than opening the directory. Invalid business source references are still rejected.
 
@@ -32,4 +32,4 @@ A provider/download/configuration failure pauses the affected conversation and a
 
 Apply `202609170004_careers_blacklist.sql` before deploying this code. It adds fields/tables and replaces guarded procedures without deleting customers, messages, branches or FAQs. New ingest and moderation procedures are service-only. Browser users retain RLS-scoped reads, and only owners/admins can review blocks with a current revision.
 
-Run `npm run check`. Tests cover job collection and conditional confirmation, selected moderation categories, image retrieval restrictions, failed checks, authenticated previews, tenant isolation, duplicate events, blocked manual/automatic sends, BSUID continuity, unblocking without backlog replay, and stale in-flight verdicts. Existing signature and uncertain-send tests remain in the full suite. Provider results and media are simulated in tests, with no live customer messages or paid API calls.
+Run `npm run check`. Tests cover direct job-FAQ answers, selected moderation categories, image retrieval restrictions, failed checks, authenticated previews, tenant isolation, duplicate events, blocked manual/automatic sends, BSUID continuity, unblocking without backlog replay, and stale in-flight verdicts. Existing signature and uncertain-send tests remain in the full suite. Provider results and media are simulated in tests, with no live customer messages or paid API calls.

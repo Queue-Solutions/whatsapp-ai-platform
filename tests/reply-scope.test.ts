@@ -8,22 +8,25 @@ import type {MessageContext} from '../src/modules/messaging/types';
 const context:MessageContext={tenantId:'tenant',conversationId:'conversation',requestKey:'message:synthetic',type:'text',text:'مش محتاجين عمالة ؟'};
 const branches:KnowledgeSource[]=['Riverside','Garden'].map((name,i)=>({id:'branch'+i,kind:'fact',label:'B'+i,updatedAt:'2026-09-17',content:JSON.stringify({category:'branch',value:{name:'IRAM '+name,address:name+' Road',hours:'9–5'}})}));
 const faq:KnowledgeSource={id:'faq',kind:'faq',label:'F1',updatedAt:'2026-09-17',content:JSON.stringify({question:'How can I pay?',answer:'Cash or card.'})};
+const careers:KnowledgeSource={id:'careers',kind:'faq',label:'F9',updatedAt:'2026-09-20',content:JSON.stringify({question:'Do you have any job vacancies?',answer:'Please send your CV to hr@example.test.'})};
 const directory:KnowledgeSource={...faq,id:'directory',label:'F2',content:JSON.stringify({question:'Where are your branches?',answer:'Riverside and Garden.'})};
 const ledger=()=>({reserve:vi.fn(async()=>({status:'new' as const,id:'reservation'})),finish:vi.fn()});
-describe('hiring intent and immediate confirmations',()=>{
- it.each(['مش محتاجين عمالة ؟','محتاجين موظفين؟','مش عايزين عمال؟','هل بتعينوا ناس؟','Do you need staff?','I would like to join your team'])('takes %s straight to the role question without retrieval or an AI request',async text=>{
-  const load=vi.fn(),complete=vi.fn(),usage=ledger();const reply=await new GroundedStrategy(load,usage,{complete}).reply({...context,text});
-  expect(reply).toMatchObject({reason:'career_application',followUp:{purpose:'career',role:null,state:'collecting'}});expect(reply.text).not.toMatch(/فروع|branches|مشكلة تقنية/);expect(load).not.toHaveBeenCalled();expect(usage.reserve).not.toHaveBeenCalled();
+describe('hiring intent uses only the approved vacancy FAQ',()=>{
+ it.each(['مش محتاجين عمالة ؟','محتاجين موظفين؟','مش عايزين عمال؟','هل بتعينوا ناس؟','Do you need staff?','I would like to join your team'])('answers %s directly from FAQ 9 without an AI request',async text=>{
+  const load=vi.fn(async()=>[faq,careers]),complete=vi.fn(),usage=ledger();const reply=await new GroundedStrategy(load,usage,{complete}).reply({...context,text});
+  expect(reply).toMatchObject({reason:'approved_knowledge',action:'answer',sources:[{id:'careers'}]});expect(reply.text).toContain('hr@example.test');expect(reply.followUp).toBeUndefined();expect(load).toHaveBeenCalledOnce();expect(usage.reserve).not.toHaveBeenCalled();expect(complete).not.toHaveBeenCalled();
  });
- it('recovers the exact screenshot clarification followed by اه',async()=>{
-  const result=await new GroundedStrategy(vi.fn(),ledger(),{complete:vi.fn()}).reply({...context,text:'اه',history:[{role:'user',content:'مش محتاجين عمالة ؟'},{role:'assistant',content:'هل تقصد إنك عايز تشتغل مع ارم كعامل؟ ممكن توضح أكتر طلبك؟'}]});
-  expect(result.followUp).toMatchObject({purpose:'career',role:null});expect(result.text).toContain('الوظيفة');
-  const again=await new GroundedStrategy(vi.fn(),ledger(),{complete:vi.fn()}).reply({...context,text:'اه',followUp:{...result.followUp!,reason:result.reason,summary:result.attentionSummary!}});
-  expect(again.followUp?.role).toBeNull();
+ it('recovers an affirmative reply to an old hiring clarification by sending FAQ 9',async()=>{
+  const result=await new GroundedStrategy(async()=>[careers],ledger(),{complete:vi.fn()}).reply({...context,text:'اه',history:[{role:'user',content:'مش محتاجين عمالة ؟'},{role:'assistant',content:'هل تقصد إنك عايز تشتغل مع ارم كعامل؟ ممكن توضح أكتر طلبك؟'}]});
+  expect(result.action).toBe('answer');expect(result.text).toContain('hr@example.test');expect(result.followUp).toBeUndefined();
  });
- it('uses model career classification for less common wording without sending model prose or invented references',async()=>{
-  const result=await new GroundedStrategy(async()=>[faq],ledger(),{complete:async()=>({decision:{action:'career',text:'Call all our branches.',branchLines:[],sourceLabels:[]},input:100,output:20})}).reply({...context,text:'Can I send you my CV?'});
-  expect(result.followUp?.purpose).toBe('career');expect(result.text).not.toContain('branches');
+ it('recognizes CV wording locally and never sends model prose or invented references',async()=>{
+  const complete=vi.fn();const result=await new GroundedStrategy(async()=>[faq,careers],ledger(),{complete}).reply({...context,text:'Can I send you my CV?'});
+  expect(result.action).toBe('answer');expect(result.text).toContain('hr@example.test');expect(result.text).not.toContain('branches');expect(complete).not.toHaveBeenCalled();
+ });
+ it('substitutes FAQ 9 when the model identifies less-common recruitment wording',async()=>{
+  const result=await new GroundedStrategy(async()=>[faq,careers],ledger(),{complete:async()=>({decision:{action:'career',text:'Invented application steps.',branchLines:[],sourceLabels:[]},input:100,output:20})}).reply({...context,text:'Could there be a place for me on your team?'});
+  expect(result.action).toBe('answer');expect(result.text).toContain('hr@example.test');expect(result.text).not.toContain('Invented');expect(result.sources).toEqual([{id:'careers',kind:'faq',updatedAt:'2026-09-20'}]);
  });
 });
 describe('branch listings require a request',()=>{
