@@ -4,7 +4,7 @@ import {useSearchParams} from 'next/navigation';
 import {GapFaqEditor} from './gap-faq-editor';
 import type {SupabaseClient} from '@supabase/supabase-js';
 import {KnowledgeEditor,type Membership} from '@/modules/admin/knowledge-editor';
-import {InboxRepository,attentionReason,conversationStateLabel,waitingLabel,type AttentionAction,type Conversation,type InboxCounts,type InboxFilter,type InboxMessage,type InboxEvent} from '@/modules/admin/inbox';
+import {InboxRepository,attentionReason,conversationStateLabel,waitingLabel,type AssistantAvailability,type AssistantScope,type AttentionAction,type Conversation,type InboxCounts,type InboxFilter,type InboxMessage,type InboxEvent} from '@/modules/admin/inbox';
 
 const filters: {id:InboxFilter;label:string;empty:string}[] = [
   {id:'all',label:'All',empty:'No conversations yet. New WhatsApp messages will appear here.'},
@@ -51,6 +51,7 @@ export function Inbox({db}:{db:SupabaseClient}){
   return <main className="content inbox-content">
     <div className="page-title"><div><div className="eyebrow">YOUR CUSTOMER CONVERSATIONS</div><h1>Inbox</h1><p className="intro">See who needs you, reply personally, and keep every issue in view.</p></div><button className="text-button" disabled={working} onClick={()=>{if(discard())void db.auth.signOut({scope:'local'});}}>Sign out</button></div>
     <div className="toolbar"><label>Business<select value={tenant} disabled={loading||working} onChange={e=>{if(!discard())return;setDraftDirty(false);setTenant(e.target.value);setConversations([]);setSelected('');setCounts({all:0,attention:0,complaints:0,resolved:0});setLimit(50);setLoading(true);}}>{memberships.map(m=><option key={m.tenant_id} value={m.tenant_id}>{m.name}</option>)}</select></label><span className="draft-count">Updates every 10 seconds</span><button className="secondary" disabled={working} onClick={()=>setRefresh(n=>n+1)}>Refresh</button></div>
+    {tenant&&<AssistantAvailabilityControl key={tenant} repository={repository} tenant={tenant} disabled={working} onWorking={setWorking}/>}
     <div className="inbox-filters" role="group" aria-label="Filter conversations">{filters.map(f=><button key={f.id} aria-pressed={filter===f.id} disabled={working} onClick={()=>changeFilter(f.id)}>{f.label}<span>{counts[f.id]}</span></button>)}</div>
     {error&&<p className="error" role="alert">{error}</p>}
     {loading?<p role="status">Loading conversations…</p>:!memberships.length?<p className="notice">Your account needs business access.</p>:<div className="inbox-grid">
@@ -68,6 +69,44 @@ export function Inbox({db}:{db:SupabaseClient}){
       {current?<ConversationPanel key={`${tenant}:${current.id}`} repository={repository} knowledgeEditor={knowledgeEditor} tenant={tenant} conversation={current} canEdit={canEdit} canEditFaq={canEditFaq} onDraft={setDraftDirty} onWorking={setWorking} onRefresh={()=>setRefresh(n=>n+1)}/>:<div className="empty-conversation"><span aria-hidden="true">✓</span><h2>{filter==='attention'?'Nothing needs your attention':'Your conversations, in one place'}</h2><p>{filters.find(f=>f.id===filter)!.empty}</p></div>}
     </div>}
   </main>;
+}
+
+function AssistantAvailabilityControl({repository,tenant,disabled,onWorking}:{repository:InboxRepository;tenant:string;disabled:boolean;onWorking:(working:boolean)=>void}){
+  const [saved,setSaved]=useState<AssistantAvailability|null>(null);const [scope,setScope]=useState<AssistantScope>('all');
+  const [selected,setSelected]=useState<string[]>([]);const [candidates,setCandidates]=useState<Conversation[]>([]);const [search,setSearch]=useState('');
+  const [loading,setLoading]=useState(true);const [saving,setSaving]=useState(false);const [error,setError]=useState('');const [notice,setNotice]=useState('');
+  useEffect(()=>{let active=true;
+    void Promise.all([repository.assistantAvailability(tenant),repository.conversations(tenant,'all',500)]).then(([availability,rows])=>{
+      if(!active)return;setSaved(availability);setScope(availability.scope);setSelected(availability.selectedConversationIds);setCandidates(rows);
+    }).catch(()=>{if(active)setError('Could not load assistant availability. Refresh and try again.');}).finally(()=>{if(active)setLoading(false);});
+    return()=>{active=false;};
+  },[repository,tenant]);
+  const normalized=[...selected].sort();const savedSelected=[...(saved?.selectedConversationIds??[])].sort();
+  const dirty=!!saved&&(scope!==saved.scope||normalized.join(',')!==savedSelected.join(','));
+  const visible=candidates.filter(c=>`${c.name} ${c.phone??''} ${c.username??''}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
+  function toggle(id:string){setSelected(ids=>ids.includes(id)?ids.filter(value=>value!==id):[...ids,id]);setNotice('');}
+  async function save(){if(!saved||saving||!dirty)return;if(scope==='selected'&&!selected.length){setError('Select at least one chat before saving.');return;}
+    setSaving(true);onWorking(true);setError('');setNotice('');
+    try{await repository.setAssistantAvailability(saved.channelId,scope,selected);const next={...saved,scope,selectedConversationIds:[...selected]};setSaved(next);setNotice('Assistant availability updated. The new setting applies to future messages.');}
+    catch(e){setError((e as Error).message);}finally{setSaving(false);onWorking(false);}
+  }
+  const labels:Record<AssistantScope,{title:string;description:string}>={
+    all:{title:'Assistant on',description:'Reply automatically in every eligible chat. Individually paused chats stay paused.'},
+    off:{title:'Assistant off',description:'Keep receiving messages in the inbox without automatic replies.'},
+    selected:{title:'Selected chats only',description:'Reply only in the chats you choose below.'},
+  };
+  return <section className="assistant-availability" aria-labelledby="assistant-availability-title">
+    <div className="assistant-availability-heading"><div><span className={`availability-status ${scope}`}>{labels[scope].title}</span><h2 id="assistant-availability-title">Assistant availability</h2><p>Choose where the AI is allowed to answer. This does not change Meta recipient verification.</p></div>{dirty&&<span className="unsaved-indicator">Unsaved changes</span>}</div>
+    {loading?<p role="status">Loading assistant settings…</p>:<fieldset disabled={disabled||saving}>
+      <legend className="sr-only">Assistant availability mode</legend>
+      <div className="availability-options">{(['all','off','selected'] as AssistantScope[]).map(value=><label className={scope===value?'selected':''} key={value}><input type="radio" name={`assistant-scope-${tenant}`} value={value} checked={scope===value} onChange={()=>{setScope(value);setNotice('');}}/><span><strong>{labels[value].title}</strong><small>{labels[value].description}</small></span></label>)}</div>
+      {scope==='selected'&&<div className="chat-selector"><div className="chat-selector-heading"><label>Choose chats<input type="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by name or number"/></label><span>{selected.length} selected</span></div>
+        <div className="chat-options" role="group" aria-label="Chats allowed to use the assistant">{visible.length?visible.map(c=><label key={c.id}><input type="checkbox" checked={selected.includes(c.id)} onChange={()=>toggle(c.id)}/><span><strong>{c.name}</strong><small dir="ltr">{c.phone?`+${c.phone}`:c.username?`@${c.username}`:'Phone number not shared'}</small></span></label>):<p>No matching chats.</p>}</div>
+      </div>}
+      <div className="availability-actions"><button className="primary" type="button" disabled={!dirty||saving} onClick={()=>void save()}>{saving?'Saving…':'Save availability'}</button><span>A reply already being sent may still arrive.</span></div>
+    </fieldset>}
+    {error&&<p className="error" role="alert">{error}</p>}{notice&&<p className="success" role="status">{notice}</p>}
+  </section>;
 }
 function ConversationPanel({repository,knowledgeEditor,tenant,conversation:c,canEdit,canEditFaq,onRefresh,onDraft,onWorking}:{repository:InboxRepository;knowledgeEditor:KnowledgeEditor;tenant:string;conversation:Conversation;canEdit:boolean;canEditFaq:boolean;onRefresh:()=>void;onDraft:(dirty:boolean)=>void;onWorking:(busy:boolean)=>void}){
   const messageList=useRef<HTMLDivElement>(null);const firstMessages=useRef(true);

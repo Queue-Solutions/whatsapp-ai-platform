@@ -7,7 +7,7 @@ const tenant='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-82
 const owner='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',viewer='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',agent='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const requestId='dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 describe('inbox PostgreSQL boundaries',()=>{
-  let db:PGlite;let conversation:string;
+  let db:PGlite;let conversation:string;let channel:string;
   async function rows<T=Record<string,unknown>>(sql:string,args:unknown[]=[]){return(await db.query<T>(sql,args)).rows;}
   async function asUser(id:string){await db.exec('reset role');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[id]);await db.exec('set role authenticated');}
   async function mode(value:string,id=conversation){const [c]=await rows<{version:string}>('select updated_at::text as version from public.conversations where id=$1',[id]);return db.query('select public.set_conversation_mode($1,$2,$3)',[id,value,c?.version??new Date().toISOString()]);}
@@ -15,8 +15,9 @@ describe('inbox PostgreSQL boundaries',()=>{
     return(await rows<{v:{state:string;reply?:{outbound_id:string}}}>('select public.prepare_manual_reply($1,$2,$3,$4,$5,$6) as v',[overrides.actor??owner,overrides.conversation??conversation,overrides.id??requestId,overrides.body??'Synthetic staff reply',overrides.phone??'9001',overrides.allowed??['201000000001']]))[0].v;
   }
   async function claim(){return(await rows<{id:string;lease_token:string;automation_epoch:number}>("select * from public.claim_message_job('9001')"))[0];}
+  async function availability(scope:string,selected:string[]=[]){return db.query('select public.set_assistant_availability($1,$2,$3::uuid[])',[channel,scope,selected]);}
   beforeAll(async()=>{db=new PGlite();await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;`);
-    for(const file of ['202609120001_foundation.sql','202609120002_bounded_ai.sql','202609130001_inbox.sql','202609150001_faq_deletion.sql','202609160001_inbox_attention.sql','202609170001_knowledge_gap_attention.sql','202609170002_contact_followup.sql','202609170003_bsuid.sql','202609170004_careers_blacklist.sql'])await db.exec(await readFile(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));
+    for(const file of ['202609120001_foundation.sql','202609120002_bounded_ai.sql','202609130001_inbox.sql','202609150001_faq_deletion.sql','202609160001_inbox_attention.sql','202609170001_knowledge_gap_attention.sql','202609170002_contact_followup.sql','202609170003_bsuid.sql','202609170004_careers_blacklist.sql','202609220001_assistant_availability.sql'])await db.exec(await readFile(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));
   });
   afterAll(async()=>{await db?.close();});
   beforeEach(async()=>{await db.exec('reset role;truncate public.tenants,auth.users cascade;');
@@ -26,6 +27,27 @@ describe('inbox PostgreSQL boundaries',()=>{
     await db.query("insert into public.whatsapp_channels(tenant_id,phone_number_id) values($1,'9001'),($2,'9002')",[tenant,other]);
     await db.exec("select public.ingest_whatsapp_message('9001','fixture','201000000001',null,now(),'text','Synthetic test question');select public.ingest_whatsapp_message('9002','other-fixture','201000000002',null,now(),'text','Other private fixture');");
     conversation=(await rows<{id:string}>('select id from public.conversations where tenant_id=$1',[tenant]))[0].id;
+    channel=(await rows<{id:string}>("select id from public.whatsapp_channels where phone_number_id='9001'"))[0].id;
+  });
+  it('lets every signed-in tenant member control availability without exposing direct writes',async()=>{
+    await asUser(viewer);await availability('off');
+    expect((await rows<{assistant_scope:string}>('select assistant_scope from public.whatsapp_channels where id=$1',[channel]))[0].assistant_scope).toBe('off');
+    expect(await rows('select id from public.assistant_availability_events')).toHaveLength(1);
+    await expect(db.query("update public.whatsapp_channels set assistant_scope='all' where id=$1",[channel])).rejects.toThrow();
+    await expect(availability('selected')).rejects.toThrow('Select at least one');
+    await db.exec('reset role');const otherChannel=(await rows<{id:string}>("select id from public.whatsapp_channels where phone_number_id='9002'"))[0].id;
+    await asUser(owner);await expect(db.query("select public.set_assistant_availability($1,'off',array[]::uuid[])",[otherChannel])).rejects.toThrow('access denied');
+  });
+  it('answers only selected chats and suppresses stale or disabled work before sending',async()=>{
+    await asUser(viewer);await availability('selected',[conversation]);await db.exec('reset role');
+    await db.exec("select public.ingest_whatsapp_message('9001','selected-new','201000000001',null,now(),'text','Selected chat');select public.ingest_whatsapp_message('9001','not-selected-new','201000000003',null,now(),'text','Other chat');");
+    const job=await claim();
+    expect((await rows<{provider_message_id:string}>('select provider_message_id from public.messages where id=(select inbound_message_id from public.message_jobs where id=$1)',[job.id]))[0].provider_message_id).toBe('selected-new');
+    expect(await claim()).toBeUndefined();
+    expect((await rows<{state:string;error_code:string}>("select j.state,j.error_code from public.message_jobs j join public.messages m on m.id=j.inbound_message_id where m.provider_message_id='not-selected-new'"))[0]).toEqual({state:'skipped',error_code:'assistant_availability_disabled'});
+    await asUser(viewer);await availability('off',[conversation]);await db.exec('reset role');
+    expect((await rows<{v:unknown}>("select public.prepare_message_reply($1,$2,'Suppressed reply') as v",[job.id,job.lease_token]))[0].v).toBeNull();
+    expect(await rows("select id from public.messages where direction='outbound' and reply_to_message_id=(select inbound_message_id from public.message_jobs where id=$1)",[job.id])).toHaveLength(0);
   });
   it('limits reads and audited mode changes to the authenticated tenant and permitted roles',async()=>{
     await asUser(viewer);expect(await rows('select id from public.conversations')).toHaveLength(1);expect(await rows('select id from public.messages')).toHaveLength(1);

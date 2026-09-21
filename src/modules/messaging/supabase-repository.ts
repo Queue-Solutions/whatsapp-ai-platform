@@ -40,16 +40,20 @@ export class SupabaseMessagingRepository implements MessagingRepository {
     if(error || !data) throw new Error('Message context unavailable');
     const [conversation, channel, history] = await Promise.all([
       this.db.from('conversations').select('customer_id,followup_purpose,followup_role,automation_mode,automation_epoch,status,last_inbound_at,followup_state,followup_name,followup_phone,attention_reason,attention_summary').eq('tenant_id', job.tenant_id).eq('id',data.conversation_id).single(),
-      this.db.from('whatsapp_channels').select('enabled,mode,phone_number_id').eq('tenant_id',job.tenant_id).eq('id',data.channel_id).single(),
+      this.db.from('whatsapp_channels').select('enabled,mode,phone_number_id,assistant_scope').eq('tenant_id',job.tenant_id).eq('id',data.channel_id).single(),
       this.db.from('messages').select('body,direction').eq('tenant_id',job.tenant_id).eq('conversation_id',data.conversation_id)
         .lt('created_at',data.created_at).in('delivery_status',['received','sent','delivered','read']).order('created_at',{ascending:false}).limit(16),
     ]);
     if (conversation.error || channel.error || history.error) throw new Error('Message context unavailable');
     const c = conversation.data; const ch = channel.data;
+    const selected=ch.assistant_scope==='selected'?await this.db.from('assistant_selected_conversations').select('conversation_id')
+      .eq('tenant_id',job.tenant_id).eq('channel_id',data.channel_id).eq('conversation_id',data.conversation_id).maybeSingle():null;
+    if(selected?.error)throw new Error('Assistant availability unavailable');
+    const assistantAvailable=ch.assistant_scope==='all'||(ch.assistant_scope==='selected'&&!!selected?.data);
     const block=await this.db.from('customer_blacklist').select('state').eq('tenant_id',job.tenant_id).eq('customer_id',c.customer_id).maybeSingle();
     if(block.error)throw new Error('Block status unavailable');
     const blocked=!!block.data&&block.data.state!=='removed';
-    const eligible = !blocked && c.automation_mode === 'auto' && c.status === 'open' && ch.enabled && ch.mode === 'test'
+    const eligible = assistantAvailable && !blocked && c.automation_mode === 'auto' && c.status === 'open' && ch.enabled && ch.mode === 'test'
       && job.automation_epoch === c.automation_epoch
       && ch.phone_number_id === this.phoneNumberId && Date.parse(c.last_inbound_at) >= Date.now() - (23*60+55)*60000;
     return {tenantId:data.tenant_id,conversationId:data.conversation_id,text:data.body,type:data.message_type,mediaId:data.media_id??undefined,moderationState:data.moderation_state,blocked,eligible,history:boundedHistory(history.data),

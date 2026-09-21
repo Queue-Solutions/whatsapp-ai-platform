@@ -21,6 +21,8 @@ export function waitingLabel(since:string|null,now=Date.now()) {
 
 export type InboxMessage = {id:string;direction:string;body:string|null;message_type:string;delivery_status:string;created_at:string};
 export type InboxEvent = {id:string;event_type:string;created_at:string};
+export type AssistantScope = 'all'|'off'|'selected';
+export type AssistantAvailability = {channelId:string;scope:AssistantScope;selectedConversationIds:string[]};
 /** Reads and mode controls run as the signed-in member and remain protected by RLS. */
 export class InboxRepository {
   constructor(private db:SupabaseClient){}
@@ -63,6 +65,17 @@ export class InboxRepository {
   async attention(conversation:Conversation,action:AttentionAction){
     const {error}=await this.db.rpc('manage_conversation_attention',{p_conversation:conversation.id,p_action:action,p_expected:conversation.updated_at});
     if(error)throw new Error('Could not update this conversation. Refresh it and check your access before trying again.');
+  }
+  async assistantAvailability(tenant:string):Promise<AssistantAvailability>{
+    const channel=await this.db.from('whatsapp_channels').select('id,assistant_scope').eq('tenant_id',tenant).eq('enabled',true).order('created_at').limit(1).maybeSingle();
+    if(channel.error||!channel.data)throw new Error('Could not load assistant availability.');
+    const selected=await this.db.from('assistant_selected_conversations').select('conversation_id').eq('tenant_id',tenant).eq('channel_id',channel.data.id);
+    if(selected.error)throw new Error('Could not load selected chats.');
+    return {channelId:channel.data.id,scope:channel.data.assistant_scope as AssistantScope,selectedConversationIds:(selected.data??[]).map(row=>row.conversation_id)};
+  }
+  async setAssistantAvailability(channelId:string,scope:AssistantScope,selectedConversationIds:string[]){
+    const {error}=await this.db.rpc('set_assistant_availability',{p_channel:channelId,p_scope:scope,p_selected:selectedConversationIds});
+    if(error)throw new Error(scope==='selected'&&!selectedConversationIds.length?'Select at least one chat before saving.':'Could not update assistant availability. Refresh and try again.');
   }
   async send(conversationId:string,requestId:string,text:string){
     const {data,error}=await this.db.auth.getSession();if(error||!data.session)throw new Error('Please sign in again.');
