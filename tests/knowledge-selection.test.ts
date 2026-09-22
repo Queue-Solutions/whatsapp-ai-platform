@@ -42,6 +42,14 @@ describe('bounded approved knowledge selection', () => {
     const selection=selectKnowledge({...context,text:'الاسعار كام؟'},[...many,relevant]);
     expect(selection.sources[0]).toEqual(relevant);expect(selection.sources.length).toBeLessThanOrEqual(40);
   });
+  it.each([
+    ['What is your delivry policy?','What is your delivery policy?'],
+    ['ايه سياسه الاسترجاغ؟','ما هي سياسة الاسترجاع؟'],
+  ])('uses typo-tolerant retrieval for %s without changing approved facts', (text,question) => {
+    const relevant=source(100,{question,answer:'Approved policy text.'});
+    const many=Array.from({length:80},(_,i)=>source(i+1,{question:`Unrelated topic ${i}`,answer:'Other approved content.'}));
+    expect(selectKnowledge({...context,text},[...many,relevant]).sources[0]).toEqual(relevant);
+  });
   it('uses the named branch and recent customer history for a short follow-up', () => {
     const target=source(100,{category:'branch',value:{name:'Riverside',address:'River Road',hours:'10am–6pm'}},'fact');
     const available=[...faqs,...branches,target];

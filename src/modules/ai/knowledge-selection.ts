@@ -27,10 +27,30 @@ function tokens(text: string): Set<string> {
     .replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه')
     .match(/[\p{L}\p{N}]+/gu)?.filter(word => !stopWords.has(word) && word.length > 1) ?? []);
 }
+function editDistanceWithin(value:string,target:string,limit:number){
+  if(value===target)return true;
+  if(Math.abs(value.length-target.length)>limit)return false;
+  let previous=Array.from({length:target.length+1},(_,index)=>index);
+  for(let row=1;row<=value.length;row++){
+    const current=[row];let minimum=row;
+    for(let column=1;column<=target.length;column++){
+      current[column]=Math.min(current[column-1]+1,previous[column]+1,previous[column-1]+(value[row-1]===target[column-1]?0:1));
+      minimum=Math.min(minimum,current[column]);
+    }
+    if(minimum>limit)return false;
+    previous=current;
+  }
+  return previous[target.length]<=limit;
+}
+function closeToken(value:string,target:string){
+  if(value===target)return true;
+  if(value[0]!==target[0]||Math.min(value.length,target.length)<4)return false;
+  return editDistanceWithin(value,target,Math.max(value.length,target.length)>=8?2:1);
+}
 const topicTokens = topics.map(tokens);
 function expand(words: Set<string>) {
   const result = new Set(words);
-  for (const group of topicTokens) if ([...words].some(word => group.has(word))) {
+  for (const group of topicTokens) if ([...words].some(word => [...group].some(topic=>closeToken(word,topic)))) {
     for (const word of group) result.add(word);
   }
   return result;
@@ -61,6 +81,9 @@ export function selectKnowledge(context: MessageContext, available: KnowledgeSou
       const rarity = 1 + Math.log(1 + available.length / (frequency.get(word) ?? 1));
       score += rarity * (query.has(word) ? 30 : expanded.has(word) ? 8 : history.has(word) ? 1 : 0);
       if (entry.title.has(word) && query.has(word)) score += 50 * rarity;
+    }
+    for(const queryWord of query)for(const titleWord of entry.title){
+      if(queryWord!==titleWord&&closeToken(queryWord,titleWord))score+=35;
     }
     return { ...entry, score };
   }).sort((a, b) => b.score - a.score || a.source.label.localeCompare(b.source.label, 'en', { numeric: true }));

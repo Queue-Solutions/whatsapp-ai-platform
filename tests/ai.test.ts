@@ -86,7 +86,7 @@ describe('grounded reply strategy', () => {
   });
   it('recognizes explicit requests and complaints in English and Arabic without paid calls',async()=>{
     const complete=vi.fn();const strategy=new GroundedStrategy(async()=>[],fakeLedger(),{complete});
-    for(const text of ['عايز أكلم حد','ممكن أتكلم مع حد','Can I speak to the owner?'])expect(await strategy.reply({...context,text})).toMatchObject({action:'clarify',followUp:{state:'collecting'},reason:'human_requested'});
+    for(const text of ['عايز أكلم حد','ممكن أتكلم مع حد','عاوز حد يكلمني','عاوز حد يكلمنى من فرع نوكي','Can I speak to the owner?','I need somone to call me'])expect(await strategy.reply({...context,text,history:[{role:'assistant',content:'Website: https://example.test'}]})).toMatchObject({action:'clarify',followUp:{state:'collecting'},reason:'human_requested'});
     for(const text of ['My order arrived damaged','You sent me the wrong item','I want a refund','الطلب وصل غلط','عايز اشتكي','الخدمة سيئة'])expect(await strategy.reply({...context,text})).toMatchObject({action:'clarify',followUp:{state:'collecting'},reason:'complaint'});
     for(const text of ['What is your refund policy?','I want refund policy details','What are your delivery times?','If my order arrives damaged, what is the return policy?',"I do not want a refund",'ايه سياسة الاسترجاع؟'])expect((await strategy.reply({...context,text})).reason).not.toBe('complaint');
     expect(complete).not.toHaveBeenCalled();

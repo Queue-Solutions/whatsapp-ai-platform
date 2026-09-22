@@ -141,19 +141,19 @@ describe('approved links and source labels',()=>{
   const complete=vi.fn();const decision=await new GroundedStrategy(async()=>[...branches,website],ledger(),{complete}).reply({...base,text:'ابعت',history:[{role:'assistant',content:'تقدر تشتري أونلاين من الموقع الرسمي. تحب أبعتلك الروابط؟'}]});
   expect(decision.action).toBe('answer');expect(decision.text).toContain('https://shop.example.test/collection');expect(decision.text).toContain('https://instagram.com/example');expect(decision.text).not.toContain('تحب');expect(complete).not.toHaveBeenCalled();
  });
- it.each(['عندكم مجوهرات؟','ممكن أشوف الكوليكشن؟','What is your Instagram?','Can I see your jewelry collection?'])('sends all approved collection/social links on the first request: %s',async text=>{
-  const complete=vi.fn();const decision=await new GroundedStrategy(async()=>[...branches,website],ledger(),{complete}).reply({...base,text,history:[]});
+ it.each(['عندكم مجوهرات؟','ممكن أشوف الكوليكشن؟','عاوز اشتري اون لاين','عايز اشتري اونلاين','What is your Instagram?','Can I see your jewelry collection?','I want to buy onlien'])('sends all approved collection/social links on the first request: %s',async text=>{
+  const complete=vi.fn();const decision=await new GroundedStrategy(async()=>[...branches,website],ledger(),{complete}).reply({...base,text,history:[{role:'assistant',content:'سياسة الاسترجاع تسمح بذلك وفق الشروط المنشورة.'}]});
   expect(decision.action).toBe('answer');expect(decision.text).toContain('https://shop.example.test/collection');expect(decision.text).toContain('https://instagram.com/example');expect(decision.text).toContain('https://facebook.com/example');expect(complete).not.toHaveBeenCalled();
  });
  it('does not turn a jewelry branch request into a collection-links reply',async()=>{
   expect(requestsApprovedLinks('Where is your jewelry branch?')).toBe(false);
  });
  it('does not mistake punctuation or Markdown around approved URLs for an invented link',async()=>{
-  const decision=await new GroundedStrategy(async()=>[website],ledger(),{complete:async()=>({decision:{action:'answer',text:'Visit [our website](https://shop.example.test/collection).',sourceLabels:['W1']},input:100,output:30})}).reply({...base,text:'Where can I buy online?'});
+  const decision=await new GroundedStrategy(async()=>[website],ledger(),{complete:async()=>({decision:{action:'answer',text:'Visit [our website](https://shop.example.test/collection).',sourceLabels:['W1']},input:100,output:30})}).reply({...base,text:'Could you explain the purchasing page?'});
   expect(decision.action).toBe('answer');
  });
  it('rejects lookalike and unapproved URL paths even when they contain an approved hostname',async()=>{
-  const decision=await new GroundedStrategy(async()=>[website],ledger(),{complete:async()=>({decision:{action:'answer',text:'Visit https://shop.example.test/collect',sourceLabels:['W1']},input:100,output:30})}).reply({...base,text:'Where can I buy online?'});
+  const decision=await new GroundedStrategy(async()=>[website],ledger(),{complete:async()=>({decision:{action:'answer',text:'Visit https://shop.example.test/collect',sourceLabels:['W1']},input:100,output:30})}).reply({...base,text:'Could you explain the purchasing page?'});
   expect(decision.reason).toBe('unsupported_link');
  });
  it('restricts generated citations to the actual selected labels',()=>{

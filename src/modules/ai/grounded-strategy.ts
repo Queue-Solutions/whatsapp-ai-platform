@@ -17,7 +17,7 @@ import { selectKnowledge } from './knowledge-selection';
 import { knowledgeGap } from './knowledge-gap';
 import { beginFollowUp, continueFollowUp } from './follow-up';
 import {careerFaqReply} from './career-faq';
-import {isRepairEnquiry,repairFaqReply} from './repair-faq';
+import {repairFaqReply} from './repair-faq';
 import { formatReply, formatBranchReply } from './reply-format';
 import { buildRequest, ModelFailure, type ModelProvider } from './openai';
 export type SourceLoader = (tenant: string) => Promise<KnowledgeSource[]>;
@@ -61,7 +61,7 @@ export class GroundedStrategy implements ReplyStrategy {
     if(contactReply&&!inferredName)return contactReply;
     if (!['text','location'].includes(context.type) || !context.text?.trim()) return fallback(context, 'unsupported_message');
     const attention = detectAttention(context.text);
-    if (attention&&!isRepairEnquiry(context.text)) return { ...fallback(context, attention, 'handoff'), attentionSummary: summarizeAttention(context.text,attention) };
+    if (attention) return { ...fallback(context, attention, 'handoff'), attentionSummary: summarizeAttention(context.text,attention) };
     if (!context.requestKey) return fallback(context, 'missing_request_identity');
     if (Buffer.byteLength(context.text, 'utf8') > 3500) return fallback(context, 'message_too_long');
     const social = socialReply(context.text);

@@ -15,7 +15,9 @@ export function requestsApprovedLinks(text:string):boolean {
   const collection=/(?:\b(?:show|see|view|browse|look at|photos?|pictures?|designs?|catalog(?:ue)?|collection|jewel(?:ry|lery))\b|اشوف|أشوف|نشوف|شوف|وريني|صور|تصاميم|تشكيله|تشكيلة|كوليكشن|مجوهرات)/.test(normalized);
   const request=/(?:\b(?:can|could|want|wanna|would like|where|what|send|show|see|view|browse|have|your)\b|ممكن|عايز|عاوز|حابب|فين|ايه|ابعت|ابعث|وريني|عندكم|بتبيعوا|اشوف|أشوف)/.test(normalized);
   const branchRequest=/(?:\b(?:branch|branches|location|address|hours|nearest|closest)\b|فرع|فروع|عنوان|عناوين|مواعيد|اقرب|أقرب)/.test(normalized);
-  return collection&&request&&!branchRequest;
+  const online=/(?:\b(?:online|on[ -]?line|onlien|web ?shop|e-?commerce)\b|اون\s*لاين|ان\s*لاين|اونلين|انترنت)/.test(normalized);
+  const shopping=/(?:\b(?:buy|shop|purchase|order|shopping)\b|اشتري|اشترى|شراء|اطلب|طلب|تسوق)/.test(normalized);
+  return (collection&&request&&!branchRequest)||(online&&(shopping||request)&&!branchRequest);
 }
 
 /** Remove prose/Markdown delimiters without removing balanced parentheses inside a URL. */
