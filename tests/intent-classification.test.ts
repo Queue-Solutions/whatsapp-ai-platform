@@ -70,6 +70,27 @@ describe('semantic intent classification',()=>{
     expect(usage.reserve).not.toHaveBeenCalled();expect(usage.finish).not.toHaveBeenCalled();
   });
 
+  it('welcomes once, then answers wellbeing messages naturally without repeating onboarding',async()=>{
+    const classifyIntent=vi.fn(),complete=vi.fn(),loadSources=vi.fn();
+    const strategy=new GroundedStrategy(loadSources,ledger(),{complete,classifyIntent});
+    const first=await strategy.reply({...context,requestKey:'greeting-1',text:'Hi',history:[]});
+    expect(first.text).toContain('Welcome to IRAM');expect(first.text).toContain('jewelry or BTC');
+    const history=[{role:'user' as const,content:'Hi'},{role:'assistant' as const,content:first.text}];
+    const second=await strategy.reply({...context,requestKey:'greeting-2',text:'How are u ?',history});
+    expect(second.text).toContain('doing well');expect(second.text).not.toContain('Welcome to IRAM');expect(second.text).not.toContain('jewelry or BTC');
+    const third=await strategy.reply({...context,requestKey:'greeting-3',text:'How are you doing ?',history:[...history,{role:'user',content:'How are u?'},{role:'assistant',content:second.text}]});
+    expect(third.text).toContain('doing well');expect(third.text).not.toContain('Welcome to IRAM');expect(third.text).not.toContain('jewelry or BTC');
+    expect(loadSources).not.toHaveBeenCalled();expect(classifyIntent).not.toHaveBeenCalled();expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('keeps AI-recognized greeting variants context-aware instead of replaying onboarding',async()=>{
+    const classifyIntent=vi.fn(async()=>({decision:decision({intent:'greeting',normalizedQuery:'How are you?'}),input:200,output:30}));
+    const strategy=new GroundedStrategy(async()=>[branch],ledger(),{complete:vi.fn(),classifyIntent});
+    const result=await strategy.reply({...context,text:'hw r u',history:[{role:'assistant',content:'Welcome to IRAM.'}]});
+    expect(result).toMatchObject({reason:'social_greeting'});expect(result.text).toContain('doing well');expect(result.text).not.toContain('jewelry or BTC');
+    expect(classifyIntent).toHaveBeenCalledOnce();
+  });
+
   it('routes a misspelled online-shopping request to exact approved links',async()=>{
     const complete=vi.fn();
     const strategy=new GroundedStrategy(async()=>[links],ledger(),{complete,classifyIntent:vi.fn(async()=>({

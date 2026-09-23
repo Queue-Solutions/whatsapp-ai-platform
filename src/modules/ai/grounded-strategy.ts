@@ -100,7 +100,7 @@ export class GroundedStrategy implements ReplyStrategy {
     // Exact standalone greetings and thanks describe the latest turn completely.
     // Resolve them before classification so stale issue history (or a cached
     // classifier result) can never reopen a completed personal follow-up.
-    const social=socialReply(context.text);if(social)return social;
+    const social=socialReply(context.text,context.history);if(social)return social;
     if(!this.provider.classifyIntent){
       const attention=detectAttention(context.text);
       if(attention)return {...fallback(context,attention,'handoff'),attentionSummary:summarizeAttention(context.text,attention)};
@@ -121,7 +121,7 @@ export class GroundedStrategy implements ReplyStrategy {
       return {...fallback(context,reason,'handoff'),attentionSummary:useClassification.summary||summarizeAttention(context.text,reason)};
     }
     if(useClassification?.intent==='greeting'||useClassification?.intent==='thanks'){
-      return socialReply(useClassification.language==='ar'?(useClassification.intent==='greeting'?'السلام عليكم':'شكرا'):(useClassification.intent==='greeting'?'Hello':'Thanks'))!;
+      return socialReply(useClassification.normalizedQuery,context.history,useClassification.intent)!;
     }
     if(useClassification?.intent==='unrelated')return fallback(context,'answer_not_supported');
     if(useClassification?.intent==='ambiguous')return scopeClarification(context);

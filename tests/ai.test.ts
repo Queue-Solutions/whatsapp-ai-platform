@@ -64,14 +64,19 @@ describe('grounded reply strategy', () => {
     expect(result.reason).toBe('missing_business_information');expect(result.attentionSummary).toContain('معلومات مختارة');
     expect(result.text).toMatch(/[\u0600-\u06ff]/);expect(result.attentionSummary!.length).toBeLessThanOrEqual(500);
   });
-  it('handles whole-message greetings and thanks consistently without knowledge or paid calls', async () => {
+  it('handles whole-message social turns contextually without knowledge or paid calls', async () => {
     const load = vi.fn(); const ledger = fakeLedger(); const complete = vi.fn();
     const strategy = new GroundedStrategy(load, ledger, { complete });
     for (const text of ['Hi', 'Hi!! 👋', 'Wassup', 'Hello there', 'السلام عليكم', 'أهلاً', 'إزيك؟', 'شكراً', 'Okay thanks', 'Thanks 🙏']) {
       const reply = await strategy.reply({ ...context, text, history: [{role:'assistant',content:'An earlier business answer.'}] });
       expect(reply.reason).toMatch(/^social_/); expect(reply.sources).toEqual([]);
-      expect(reply).toEqual(await strategy.reply({ ...context, text, requestKey:'different', history:[] }));
     }
+    const first=await strategy.reply({...context,text:'Hi',history:[]});
+    const returning=await strategy.reply({...context,text:'Hi',requestKey:'returning',history:[{role:'assistant',content:first.text}]});
+    const wellbeing=await strategy.reply({...context,text:'How are you?',requestKey:'wellbeing',history:[{role:'assistant',content:first.text}]});
+    expect(first.text).toContain('Welcome to IRAM');expect(first.text).toContain('jewelry or BTC');
+    expect(returning.text).toContain('Welcome back');expect(returning.text).not.toContain('jewelry or BTC');
+    expect(wellbeing.text).toContain('doing well');expect(wellbeing.text).not.toContain('Welcome');
     expect(load).not.toHaveBeenCalled(); expect(complete).not.toHaveBeenCalled(); expect(ledger.reserve).not.toHaveBeenCalled();
     expect((await strategy.reply({ ...context, text:'Hi', eligible:false })).action).toBe('suppress');
   });
