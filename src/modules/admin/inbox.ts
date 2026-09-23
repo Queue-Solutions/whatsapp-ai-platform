@@ -6,12 +6,21 @@ export type Conversation = {id:string;automation_mode:'auto'|'human';status:stri
   attention_state:'none'|'waiting'|'in_progress'|'resolved';attention_reason:string|null;attention_summary:string;attention_since:string|null;resolved_at:string|null;is_complaint:boolean;attention_message_id:string|null;followup_state:'none'|'collecting'|'ready'|'declined';followup_name:string|null;followup_phone:string|null;followup_purpose?:string;followup_role?:string|null;blocked?:boolean};
 export type InboxCounts = Record<InboxFilter,number>;
 export const attentionReason = (reason:string|null,summary?:string) => summary===AI_RECOVERY_SUMMARY?'Assistant reply needs review':({career_application:'Job enquiry',moderation_review:'Content check needs review',human_requested:'Requested a person',complaint:'Complaint',manual:'Flagged by you',customer_follow_up:'Customer followed up',knowledge_gap:'Missing business information'}[reason??'']??'Personal attention');
-export function conversationStateLabel(c:Pick<Conversation,'attention_state'|'automation_mode'|'blocked'>) {
+type ConversationAssistantState = Pick<Conversation,'attention_state'|'automation_mode'|'blocked'> & Partial<Pick<Conversation,'id'>>;
+export function conversationAssistantEnabled(c:ConversationAssistantState,availability?:AssistantAvailability|null) {
+  if(c.blocked||c.automation_mode!=='auto')return false;
+  if(!availability||availability.scope==='all')return true;
+  if(availability.scope==='off')return false;
+  return !!c.id&&availability.selectedConversationIds.includes(c.id);
+}
+export function conversationStateLabel(c:ConversationAssistantState,availability?:AssistantAvailability|null) {
   if(c.blocked)return 'Blacklisted · Replies blocked';
-  if(c.attention_state==='resolved')return c.automation_mode==='auto'?'Resolved · Assistant on':'Resolved · Assistant paused';
-  if(c.attention_state==='in_progress')return 'Replying personally';
-  if(c.attention_state==='waiting')return c.automation_mode==='auto'?'Needs review · Assistant on':'Needs you · Assistant paused';
-  return c.automation_mode==='auto'?'Assistant on':'Assistant paused';
+  const assistantOn=conversationAssistantEnabled(c,availability);
+  const assistantState=assistantOn?'Assistant on':c.automation_mode==='human'?'Assistant paused':'Assistant off';
+  if(c.attention_state==='resolved')return `Resolved · ${assistantState}`;
+  if(c.attention_state==='in_progress')return `Replying personally · ${assistantState}`;
+  if(c.attention_state==='waiting')return assistantOn?'Needs review · Assistant on':c.automation_mode==='human'?'Needs you · Assistant paused':'Needs review · Assistant off';
+  return assistantState;
 }
 export function waitingLabel(since:string|null,now=Date.now()) {
   if(!since)return 'Needs attention';

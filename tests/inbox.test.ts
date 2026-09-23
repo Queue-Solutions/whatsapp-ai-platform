@@ -272,13 +272,22 @@ describe('manual reply HTTP boundary',()=>{
   });
 });
 
-import {InboxRepository,waitingLabel,conversationStateLabel} from '../src/modules/admin/inbox';
+import {InboxRepository,waitingLabel,conversationAssistantEnabled,conversationStateLabel} from '../src/modules/admin/inbox';
 import type {SupabaseClient} from '@supabase/supabase-js';
 describe('inbox query scope',()=>{
   it('labels review status independently of assistant mode',()=>{
     expect(conversationStateLabel({attention_state:'waiting',automation_mode:'auto'})).toBe('Needs review · Assistant on');
     expect(conversationStateLabel({attention_state:'resolved',automation_mode:'auto'})).toBe('Resolved · Assistant on');
     expect(conversationStateLabel({attention_state:'resolved',automation_mode:'human'})).toBe('Resolved · Assistant paused');
+  });
+  it('reflects master availability in every conversation label',()=>{
+    const conversation={id:'chat-1',attention_state:'none' as const,automation_mode:'auto' as const};
+    const off={channelId:'channel',scope:'off' as const,selectedConversationIds:[]};
+    expect(conversationStateLabel(conversation,off)).toBe('Assistant off');
+    expect(conversationAssistantEnabled(conversation,off)).toBe(false);
+    expect(conversationStateLabel(conversation,{channelId:'channel',scope:'all',selectedConversationIds:[]})).toBe('Assistant on');
+    expect(conversationStateLabel(conversation,{channelId:'channel',scope:'selected',selectedConversationIds:['chat-1']})).toBe('Assistant on');
+    expect(conversationStateLabel(conversation,{channelId:'channel',scope:'selected',selectedConversationIds:['chat-2']})).toBe('Assistant off');
   });
   it('loads the exact unanswered message within the authenticated tenant and conversation',async()=>{
     const q={select:vi.fn(),eq:vi.fn(),maybeSingle:vi.fn().mockResolvedValue({data:null,error:null})};

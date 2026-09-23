@@ -4,7 +4,7 @@ import {useSearchParams} from 'next/navigation';
 import {GapFaqEditor} from './gap-faq-editor';
 import type {SupabaseClient} from '@supabase/supabase-js';
 import {KnowledgeEditor,type Membership} from '@/modules/admin/knowledge-editor';
-import {InboxRepository,attentionReason,conversationStateLabel,waitingLabel,type AssistantAvailability,type AssistantScope,type AttentionAction,type Conversation,type InboxCounts,type InboxFilter,type InboxMessage,type InboxEvent} from '@/modules/admin/inbox';
+import {InboxRepository,attentionReason,conversationAssistantEnabled,conversationStateLabel,waitingLabel,type AssistantAvailability,type AssistantScope,type AttentionAction,type Conversation,type InboxCounts,type InboxFilter,type InboxMessage,type InboxEvent} from '@/modules/admin/inbox';
 
 const filters: {id:InboxFilter;label:string;empty:string}[] = [
   {id:'all',label:'All',empty:'No conversations yet. New WhatsApp messages will appear here.'},
@@ -23,6 +23,7 @@ export function Inbox({db}:{db:SupabaseClient}){
   const [limit,setLimit]=useState(50);
   const [counts,setCounts]=useState<InboxCounts>({all:0,attention:0,complaints:0,resolved:0});
   const [conversations,setConversations]=useState<Conversation[]>([]);const [selected,setSelected]=useState('');
+  const [assistantAvailability,setAssistantAvailability]=useState<AssistantAvailability|null>(null);
   const [draftDirty,setDraftDirty]=useState(false);const [working,setWorking]=useState(false);
   const [now,setNow]=useState(()=>Date.now());
   useEffect(()=>{const warn=(e:BeforeUnloadEvent)=>{if(draftDirty){e.preventDefault();e.returnValue='';}};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[draftDirty]);
@@ -50,15 +51,15 @@ export function Inbox({db}:{db:SupabaseClient}){
   }
   return <main className="content inbox-content">
     <div className="page-title"><div><div className="eyebrow">YOUR CUSTOMER CONVERSATIONS</div><h1>Inbox</h1><p className="intro">See who needs you, reply personally, and keep every issue in view.</p></div><button className="text-button" disabled={working} onClick={()=>{if(discard())void db.auth.signOut({scope:'local'});}}>Sign out</button></div>
-    <div className="toolbar"><label>Business<select value={tenant} disabled={loading||working} onChange={e=>{if(!discard())return;setDraftDirty(false);setTenant(e.target.value);setConversations([]);setSelected('');setCounts({all:0,attention:0,complaints:0,resolved:0});setLimit(50);setLoading(true);}}>{memberships.map(m=><option key={m.tenant_id} value={m.tenant_id}>{m.name}</option>)}</select></label><span className="draft-count">Updates every 10 seconds</span><button className="secondary" disabled={working} onClick={()=>setRefresh(n=>n+1)}>Refresh</button></div>
-    {tenant&&<AssistantAvailabilityControl key={tenant} repository={repository} tenant={tenant} disabled={working} onWorking={setWorking}/>}
+    <div className="toolbar"><label>Business<select value={tenant} disabled={loading||working} onChange={e=>{if(!discard())return;setDraftDirty(false);setTenant(e.target.value);setConversations([]);setSelected('');setAssistantAvailability(null);setCounts({all:0,attention:0,complaints:0,resolved:0});setLimit(50);setLoading(true);}}>{memberships.map(m=><option key={m.tenant_id} value={m.tenant_id}>{m.name}</option>)}</select></label><span className="draft-count">Updates every 10 seconds</span><button className="secondary" disabled={working} onClick={()=>setRefresh(n=>n+1)}>Refresh</button></div>
+    {tenant&&<AssistantAvailabilityControl key={tenant} repository={repository} tenant={tenant} disabled={working} onWorking={setWorking} onAvailability={setAssistantAvailability}/>}
     <div className="inbox-filters" role="group" aria-label="Filter conversations">{filters.map(f=><button key={f.id} aria-pressed={filter===f.id} disabled={working} onClick={()=>changeFilter(f.id)}>{f.label}<span>{counts[f.id]}</span></button>)}</div>
     {error&&<p className="error" role="alert">{error}</p>}
     {loading?<p role="status">Loading conversations…</p>:!memberships.length?<p className="notice">Your account needs business access.</p>:<div className="inbox-grid">
       <nav className="conversation-list" aria-label="Conversations"><div className="list-heading">{filters.find(f=>f.id===filter)!.label}<span>{counts[filter]}</span></div>
         {!conversations.length&&<p className="empty-inbox">{filters.find(f=>f.id===filter)!.empty}</p>}
         {conversations.map(c=><button key={c.id} aria-current={c.id===selected?'true':undefined} disabled={working} onClick={()=>{if(c.id===selected)return;if(discard()){setDraftDirty(false);setSelected(c.id);}}}>
-          <strong>{c.name}</strong><span className="customer-number" dir="ltr">{c.phone?`+${c.phone}`:c.username?`@${c.username} · Phone number not shared`:'Phone number not shared'}</span><span className={`mode-label ${c.attention_state!=='none'?'human':''}`}>{conversationStateLabel(c)}</span>
+          <strong>{c.name}</strong><span className="customer-number" dir="ltr">{c.phone?`+${c.phone}`:c.username?`@${c.username} · Phone number not shared`:'Phone number not shared'}</span><span className={`mode-label ${conversationAssistantEnabled(c,assistantAvailability)?'':'human'}`}>{conversationStateLabel(c,assistantAvailability)}</span>
           {c.is_complaint&&<span className="complaint-chip">Complaint</span>}
           {c.attention_state!=='none'&&c.attention_reason!=='complaint'&&<span className="attention-reason">{attentionReason(c.attention_reason,c.attention_summary)}</span>}
           {c.attention_summary&&<span className="conversation-summary">{c.attention_summary}</span>}
@@ -66,28 +67,28 @@ export function Inbox({db}:{db:SupabaseClient}){
         </button>)}
         {conversations.length<counts[filter]&&<button className="load-conversations" disabled={working} onClick={()=>setLimit(n=>n+50)}>Load more conversations</button>}
       </nav>
-      {current?<ConversationPanel key={`${tenant}:${current.id}`} repository={repository} knowledgeEditor={knowledgeEditor} tenant={tenant} conversation={current} canEdit={canEdit} canEditFaq={canEditFaq} onDraft={setDraftDirty} onWorking={setWorking} onRefresh={()=>setRefresh(n=>n+1)}/>:<div className="empty-conversation"><span aria-hidden="true">✓</span><h2>{filter==='attention'?'Nothing needs your attention':'Your conversations, in one place'}</h2><p>{filters.find(f=>f.id===filter)!.empty}</p></div>}
+      {current?<ConversationPanel key={`${tenant}:${current.id}`} repository={repository} knowledgeEditor={knowledgeEditor} tenant={tenant} conversation={current} assistantAvailability={assistantAvailability} canEdit={canEdit} canEditFaq={canEditFaq} onDraft={setDraftDirty} onWorking={setWorking} onRefresh={()=>setRefresh(n=>n+1)}/>:<div className="empty-conversation"><span aria-hidden="true">✓</span><h2>{filter==='attention'?'Nothing needs your attention':'Your conversations, in one place'}</h2><p>{filters.find(f=>f.id===filter)!.empty}</p></div>}
     </div>}
   </main>;
 }
 
-function AssistantAvailabilityControl({repository,tenant,disabled,onWorking}:{repository:InboxRepository;tenant:string;disabled:boolean;onWorking:(working:boolean)=>void}){
+function AssistantAvailabilityControl({repository,tenant,disabled,onWorking,onAvailability}:{repository:InboxRepository;tenant:string;disabled:boolean;onWorking:(working:boolean)=>void;onAvailability:(availability:AssistantAvailability)=>void}){
   const [saved,setSaved]=useState<AssistantAvailability|null>(null);const [scope,setScope]=useState<AssistantScope>('all');
   const [selected,setSelected]=useState<string[]>([]);const [candidates,setCandidates]=useState<Conversation[]>([]);const [search,setSearch]=useState('');
   const [loading,setLoading]=useState(true);const [saving,setSaving]=useState(false);const [error,setError]=useState('');const [notice,setNotice]=useState('');
   useEffect(()=>{let active=true;
     void Promise.all([repository.assistantAvailability(tenant),repository.conversations(tenant,'all',500)]).then(([availability,rows])=>{
-      if(!active)return;setSaved(availability);setScope(availability.scope);setSelected(availability.selectedConversationIds);setCandidates(rows);
+      if(!active)return;setSaved(availability);setScope(availability.scope);setSelected(availability.selectedConversationIds);setCandidates(rows);onAvailability(availability);
     }).catch(()=>{if(active)setError('Could not load assistant availability. Refresh and try again.');}).finally(()=>{if(active)setLoading(false);});
     return()=>{active=false;};
-  },[repository,tenant]);
+  },[repository,tenant,onAvailability]);
   const normalized=[...selected].sort();const savedSelected=[...(saved?.selectedConversationIds??[])].sort();
   const dirty=!!saved&&(scope!==saved.scope||normalized.join(',')!==savedSelected.join(','));
   const visible=candidates.filter(c=>`${c.name} ${c.phone??''} ${c.username??''}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
   function toggle(id:string){setSelected(ids=>ids.includes(id)?ids.filter(value=>value!==id):[...ids,id]);setNotice('');}
   async function save(){if(!saved||saving||!dirty)return;if(scope==='selected'&&!selected.length){setError('Select at least one chat before saving.');return;}
     setSaving(true);onWorking(true);setError('');setNotice('');
-    try{await repository.setAssistantAvailability(saved.channelId,scope,selected);const next={...saved,scope,selectedConversationIds:[...selected]};setSaved(next);setNotice('Assistant availability updated. The new setting applies to future messages.');}
+    try{await repository.setAssistantAvailability(saved.channelId,scope,selected);const next={...saved,scope,selectedConversationIds:[...selected]};setSaved(next);onAvailability(next);setNotice('Assistant availability updated. The new setting applies to future messages.');}
     catch(e){setError((e as Error).message);}finally{setSaving(false);onWorking(false);}
   }
   const labels:Record<AssistantScope,{title:string;description:string}>={
@@ -108,7 +109,7 @@ function AssistantAvailabilityControl({repository,tenant,disabled,onWorking}:{re
     {error&&<p className="error" role="alert">{error}</p>}{notice&&<p className="success" role="status">{notice}</p>}
   </section>;
 }
-function ConversationPanel({repository,knowledgeEditor,tenant,conversation:c,canEdit,canEditFaq,onRefresh,onDraft,onWorking}:{repository:InboxRepository;knowledgeEditor:KnowledgeEditor;tenant:string;conversation:Conversation;canEdit:boolean;canEditFaq:boolean;onRefresh:()=>void;onDraft:(dirty:boolean)=>void;onWorking:(busy:boolean)=>void}){
+function ConversationPanel({repository,knowledgeEditor,tenant,conversation:c,assistantAvailability,canEdit,canEditFaq,onRefresh,onDraft,onWorking}:{repository:InboxRepository;knowledgeEditor:KnowledgeEditor;tenant:string;conversation:Conversation;assistantAvailability:AssistantAvailability|null;canEdit:boolean;canEditFaq:boolean;onRefresh:()=>void;onDraft:(dirty:boolean)=>void;onWorking:(busy:boolean)=>void}){
   const messageList=useRef<HTMLDivElement>(null);const firstMessages=useRef(true);
   const [now,setNow]=useState(()=>Date.now());
   const [messages,setMessages]=useState<InboxMessage[]>([]);const [events,setEvents]=useState<InboxEvent[]>([]);const [limit,setLimit]=useState(100);
@@ -149,7 +150,7 @@ function ConversationPanel({repository,knowledgeEditor,tenant,conversation:c,can
   function closeFaq(){if(!faqDirty||window.confirm('Discard the unsaved FAQ changes?')){setFaqTarget(null);setFaqDirty(false);}}
 
   return <section className="conversation-panel" aria-label={`Conversation with ${c.name}`}>
-    <div className="conversation-header"><div><h2>{c.name}</h2><span className="customer-number" dir="ltr">{c.phone?<a href={`tel:+${c.phone}`}>+{c.phone}</a>:c.username?`@${c.username} · Phone number not shared`:'Phone number not shared'}</span><span className={`mode-label ${c.automation_mode==='human'?'human':''}`}>{conversationStateLabel(c)}</span>{c.is_complaint&&<span className="complaint-chip">Complaint</span>}</div>
+    <div className="conversation-header"><div><h2>{c.name}</h2><span className="customer-number" dir="ltr">{c.phone?<a href={`tel:+${c.phone}`}>+{c.phone}</a>:c.username?`@${c.username} · Phone number not shared`:'Phone number not shared'}</span><span className={`mode-label ${conversationAssistantEnabled(c,assistantAvailability)?'':'human'}`}>{conversationStateLabel(c,assistantAvailability)}</span>{c.is_complaint&&<span className="complaint-chip">Complaint</span>}</div>
       <div className="conversation-controls">
         {c.attention_state!=='in_progress'&&<button className="primary" disabled={disabled} onClick={()=>void action('reply')}>Reply personally</button>}
         {c.attention_state!=='resolved'&&<button className="secondary" disabled={disabled} onClick={()=>void action('resolve')}>Resolve</button>}
