@@ -52,6 +52,24 @@ describe('semantic intent classification',()=>{
     expect(await strategy.reply(context)).toEqual(result);expect(classifyIntent).toHaveBeenCalledOnce();expect(complete).not.toHaveBeenCalled();
   });
 
+  it('never revives a completed personal-contact request from history when the latest message is only a greeting',async()=>{
+    const complete=vi.fn(),classifyIntent=vi.fn(async()=>({
+      decision:decision({intent:'human_followup',normalizedQuery:'Hi',summary:'Customer greeted and previously requested personal contact.'}),input:250,output:50,
+    }));
+    const loadSources=vi.fn(async()=>[branch,links]);const usage=ledger();
+    const strategy=new GroundedStrategy(loadSources,usage,{complete,classifyIntent});
+    const result=await strategy.reply({...context,text:'Hi',history:[
+      {role:'user',content:'Can I reach someone?'},
+      {role:'assistant',content:'Could you share your name and the best phone number to contact you on?'},
+      {role:'user',content:'Ziad 01067945993'},
+      {role:'assistant',content:'Thank you, I’ve saved your name and contact number. Someone from IRAM will contact you personally shortly.'},
+    ]});
+    expect(result).toMatchObject({action:'clarify',reason:'social_greeting'});
+    expect(result.followUp).toBeUndefined();expect(result.attentionSummary).toBeUndefined();
+    expect(loadSources).not.toHaveBeenCalled();expect(classifyIntent).not.toHaveBeenCalled();expect(complete).not.toHaveBeenCalled();
+    expect(usage.reserve).not.toHaveBeenCalled();expect(usage.finish).not.toHaveBeenCalled();
+  });
+
   it('routes a misspelled online-shopping request to exact approved links',async()=>{
     const complete=vi.fn();
     const strategy=new GroundedStrategy(async()=>[links],ledger(),{complete,classifyIntent:vi.fn(async()=>({

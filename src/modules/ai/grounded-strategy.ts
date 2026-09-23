@@ -97,10 +97,13 @@ export class GroundedStrategy implements ReplyStrategy {
     if (!['text','location'].includes(context.type) || !context.text?.trim()) return fallback(context, 'unsupported_message');
     if (!context.requestKey) return fallback(context, 'missing_request_identity');
     if (Buffer.byteLength(context.text, 'utf8') > 3500) return fallback(context, 'message_too_long');
+    // Exact standalone greetings and thanks describe the latest turn completely.
+    // Resolve them before classification so stale issue history (or a cached
+    // classifier result) can never reopen a completed personal follow-up.
+    const social=socialReply(context.text);if(social)return social;
     if(!this.provider.classifyIntent){
       const attention=detectAttention(context.text);
       if(attention)return {...fallback(context,attention,'handoff'),attentionSummary:summarizeAttention(context.text,attention)};
-      const social=socialReply(context.text);if(social)return social;
     }
     let sources:KnowledgeSource[]=[],knowledgeUnavailable=false;
     try { sources = await this.loadSources(context.tenantId); }
@@ -126,7 +129,6 @@ export class GroundedStrategy implements ReplyStrategy {
     if(!useClassification){
       const attention=detectAttention(context.text);
       if(attention)return {...fallback(context,attention,'handoff'),attentionSummary:summarizeAttention(context.text,attention)};
-      const social=socialReply(context.text);if(social)return social;
     }
     if(knowledgeUnavailable)return contactReply??fallback(context,'knowledge_unavailable');
     if(contactReply&&!matchingBranches(routed.text??'',sources).length)return contactReply;

@@ -29,7 +29,7 @@ const outputSchema={type:'object',properties:{
   branchLabels:{type:'array',items:{type:'string'},maxItems:40},normalizedQuery:{type:'string',maxLength:500},summary:{type:'string',maxLength:240},
 },required:['intent','confidence','language','product','branchMode','branchDetail','branchLabels','normalizedQuery','summary'],additionalProperties:false} as const;
 
-const instructions=`Classify the latest customer message for a business WhatsApp assistant. Perform semantic interpretation, not keyword matching. Understand Egyptian Arabic, English, Arabizi, ordinary spelling mistakes, phonetic spellings, missing punctuation and changed word order. The latest message has priority over older conversation topics.
+const instructions=`Classify the latest customer message for a business WhatsApp assistant. Perform semantic interpretation, not keyword matching. Understand Egyptian Arabic, English, Arabizi, ordinary spelling mistakes, phonetic spellings, missing punctuation and changed word order. The latest message has priority over older conversation topics. human_followup and complaint must be supported by the latest customer message itself; history may resolve a reference in that message but must never carry an old personal-contact request or complaint forward. A standalone greeting after an older issue or contact request is greeting, not human_followup or complaint.
 
 Return only the requested JSON. Do not answer the customer and do not provide business facts. normalizedQuery must be a short, corrected restatement of only the latest request in the same language. It may clarify spelling and intent but must never add a price, policy, service, branch or promise the customer did not express.
 
