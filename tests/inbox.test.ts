@@ -17,7 +17,7 @@ describe('inbox PostgreSQL boundaries',()=>{
   async function claim(){return(await rows<{id:string;lease_token:string;automation_epoch:number}>("select * from public.claim_message_job('9001')"))[0];}
   async function availability(scope:string,selected:string[]=[]){return db.query('select public.set_assistant_availability($1,$2,$3::uuid[])',[channel,scope,selected]);}
   beforeAll(async()=>{db=new PGlite();await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;`);
-    for(const file of ['202609120001_foundation.sql','202609120002_bounded_ai.sql','202609130001_inbox.sql','202609150001_faq_deletion.sql','202609160001_inbox_attention.sql','202609170001_knowledge_gap_attention.sql','202609170002_contact_followup.sql','202609170003_bsuid.sql','202609170004_careers_blacklist.sql','202609220001_assistant_availability.sql'])await db.exec(await readFile(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));
+    for(const file of ['202609120001_foundation.sql','202609120002_bounded_ai.sql','202609130001_inbox.sql','202609150001_faq_deletion.sql','202609160001_inbox_attention.sql','202609170001_knowledge_gap_attention.sql','202609170002_contact_followup.sql','202609170003_bsuid.sql','202609170004_careers_blacklist.sql','202609220001_assistant_availability.sql','202609230001_conversation_controls.sql'])await db.exec(await readFile(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));
   });
   afterAll(async()=>{await db?.close();});
   beforeEach(async()=>{await db.exec('reset role;truncate public.tenants,auth.users cascade;');
@@ -68,6 +68,15 @@ describe('inbox PostgreSQL boundaries',()=>{
     await db.exec("select public.ingest_whatsapp_message('9001','after-resume','201000000001',null,now(),'text','Hi')");const fresh=await claim();expect(fresh.automation_epoch).toBe(4);
     expect((await rows<{v:unknown}>("select public.prepare_ai_reply($1,$2,'Hi! How can I help you?','clarify','[]') as v",[fresh.id,fresh.lease_token]))[0].v).not.toBeNull();
   });
+  it('pauses a normal chat without manufacturing an issue and resumes it through the audited control',async()=>{
+    const old=await claim();await asUser(owner);await attention('pause');
+    expect((await rows('select attention_state,attention_reason,automation_mode from public.conversations where id=$1',[conversation]))[0]).toMatchObject({attention_state:'none',attention_reason:null,automation_mode:'human'});
+    await db.exec('reset role');
+    expect((await rows<{v:unknown}>("select public.prepare_ai_reply($1,$2,'Stale reply','clarify','[]') as v",[old.id,old.lease_token]))[0].v).toBeNull();
+    await asUser(owner);await attention('resume');
+    expect((await rows('select attention_state,attention_reason,automation_mode from public.conversations where id=$1',[conversation]))[0]).toMatchObject({attention_state:'none',attention_reason:null,automation_mode:'auto'});
+    expect(await rows<{event_type:string}>('select event_type from public.conversation_events order by created_at,id')).toEqual([{event_type:'paused'},{event_type:'resumed'}]);
+  });
   it('keeps source requirements for factual answers while allowing fixed nonfactual greetings',async()=>{
     const job=await claim();await expect(db.query("select public.prepare_ai_reply($1,$2,'Invented hours','answer','[]')",[job.id,job.lease_token])).rejects.toThrow('Ungrounded');
   });
@@ -96,16 +105,15 @@ describe('inbox PostgreSQL boundaries',()=>{
     const [c]=await rows<{version:string}>('select updated_at::text as version from public.conversations where id=$1',[id]);
     return db.query('select public.manage_conversation_attention($1,$2,$3)',[id,action,c?.version??new Date().toISOString()]);
   }
-  it('tracks a complaint through personal reply and resolution without resuming the assistant',async()=>{
+  it('tracks a complaint and automatically returns the resolved chat to the assistant',async()=>{
     await asUser(owner);await attention('complaint');
     expect((await rows('select attention_state,is_complaint,automation_mode from public.conversations'))[0]).toMatchObject({attention_state:'waiting',is_complaint:true,automation_mode:'human'});
     await attention('reply');expect((await rows('select attention_state from public.conversations'))[0]).toMatchObject({attention_state:'in_progress'});
-    await attention('resolve');expect((await rows('select attention_state,automation_mode,resolved_at from public.conversations'))[0]).toMatchObject({attention_state:'resolved',automation_mode:'human',resolved_at:expect.anything()});
+    await attention('resolve');expect((await rows('select attention_state,automation_mode,resolved_at from public.conversations'))[0]).toMatchObject({attention_state:'resolved',automation_mode:'auto',resolved_at:expect.anything()});
     await db.exec('reset role');await expect(manual()).rejects.toThrow('Pause');
     await asUser(owner);await attention('remove_complaint');
-    expect((await rows('select is_complaint,attention_state,automation_mode from public.conversations'))[0]).toMatchObject({is_complaint:false,attention_state:'resolved',automation_mode:'human'});
-    await attention('resume');expect((await rows('select attention_state,automation_mode from public.conversations'))[0]).toMatchObject({attention_state:'none',automation_mode:'auto'});
-    expect(await rows('select id from public.conversation_events')).toHaveLength(5);
+    expect((await rows('select is_complaint,attention_state,automation_mode from public.conversations'))[0]).toMatchObject({is_complaint:false,attention_state:'resolved',automation_mode:'auto'});
+    expect(await rows('select id from public.conversation_events')).toHaveLength(4);
   });
   it('denies attention edits by viewers, anonymous callers and other tenants, including stale requests',async()=>{
     await db.exec('reset role');const id=(await rows<{id:string}>('select id from public.conversations where tenant_id=$1',[other]))[0].id;
@@ -117,18 +125,17 @@ describe('inbox PostgreSQL boundaries',()=>{
     await db.exec('set role anon');await expect(db.query("select public.manage_conversation_attention($1,'flag',now())",[conversation])).rejects.toThrow();
     await db.exec('reset role');expect(await rows("select id from public.conversations where attention_state<>'none'")).toHaveLength(0);
   });
-  it('reopens resolved conversations only on new inbound messages, keeping automation paused and duplicate events harmless',async()=>{
-    await asUser(owner);await attention('resolve');await db.exec('reset role');
+  it('keeps a resolved conversation automatic and does not recreate an issue for ordinary inbound messages',async()=>{
+    await asUser(owner);await attention('complaint');await attention('resolve');await db.exec('reset role');
     await db.exec("select public.ingest_whatsapp_message('9001','fixture','201000000001',null,now(),'text','Duplicate')");
     expect((await rows('select attention_state from public.conversations where id=$1',[conversation]))[0]).toMatchObject({attention_state:'resolved'});
     await db.exec("select public.ingest_whatsapp_message('9001','old-delayed','201000000001',null,now()-interval '1 day','text','Old delayed message')");
     expect((await rows('select attention_state from public.conversations where id=$1',[conversation]))[0]).toMatchObject({attention_state:'resolved'});
     await db.exec("select public.ingest_whatsapp_message('9001','follow-up','201000000001',null,now(),'text','I still need help')");
-    expect((await rows('select attention_state,attention_reason,automation_mode from public.conversations where id=$1',[conversation]))[0]).toMatchObject({attention_state:'waiting',attention_reason:'customer_follow_up',automation_mode:'human'});
-    await asUser(owner);await attention('resolve');await db.exec('reset role');
+    expect((await rows('select attention_state,attention_reason,automation_mode from public.conversations where id=$1',[conversation]))[0]).toMatchObject({attention_state:'resolved',attention_reason:'complaint',automation_mode:'auto'});
     await db.exec("select public.ingest_whatsapp_message('9001','follow-up','201000000001',null,now(),'text','Redelivery')");
     expect((await rows('select attention_state from public.conversations where id=$1',[conversation]))[0]).toMatchObject({attention_state:'resolved'});
-    expect(await rows("select id from public.conversation_events where event_type='customer_follow_up'")).toHaveLength(1);
+    expect(await rows("select id from public.conversation_events where event_type='customer_follow_up'")).toHaveLength(0);
   });
   it('atomically flags automatic complaints, pauses future jobs and preserves the queue when acknowledgment delivery is uncertain',async()=>{
     const job=await claim();
@@ -223,7 +230,7 @@ describe('inbox PostgreSQL boundaries',()=>{
     await gap(await newMessage('missing-again'));
     expect((await rows('select attention_state,automation_mode from public.conversations where id=$1',[conversation]))[0]).toMatchObject({attention_state:'waiting',automation_mode:'auto'});
     await asUser(owner);await attention('reply');await attention('resolve');
-    expect((await rows('select attention_state,automation_mode from public.conversations where id=$1',[conversation]))[0]).toMatchObject({attention_state:'resolved',automation_mode:'human'});
+    expect((await rows('select attention_state,automation_mode from public.conversations where id=$1',[conversation]))[0]).toMatchObject({attention_state:'resolved',automation_mode:'auto'});
   });
   it('does not turn technical failures, clarification or off-topic answers into knowledge gaps',async()=>{
     for(const [i,reason] of ['openai_http_401','ai_budget_exhausted','knowledge_unavailable','answer_not_supported','knowledge_selection_empty'].entries()){
@@ -272,13 +279,19 @@ describe('manual reply HTTP boundary',()=>{
   });
 });
 
-import {InboxRepository,waitingLabel,conversationAssistantEnabled,conversationStateLabel} from '../src/modules/admin/inbox';
+import {InboxRepository,waitingLabel,conversationAssistantEnabled,conversationHasActiveIssue,conversationStateLabel} from '../src/modules/admin/inbox';
 import type {SupabaseClient} from '@supabase/supabase-js';
 describe('inbox query scope',()=>{
   it('labels review status independently of assistant mode',()=>{
     expect(conversationStateLabel({attention_state:'waiting',automation_mode:'auto'})).toBe('Needs review · Assistant on');
     expect(conversationStateLabel({attention_state:'resolved',automation_mode:'auto'})).toBe('Resolved · Assistant on');
     expect(conversationStateLabel({attention_state:'resolved',automation_mode:'human'})).toBe('Resolved · Assistant paused');
+  });
+  it('shows issue controls only while attention is actively waiting or in progress',()=>{
+    expect(conversationHasActiveIssue({attention_state:'none'})).toBe(false);
+    expect(conversationHasActiveIssue({attention_state:'waiting'})).toBe(true);
+    expect(conversationHasActiveIssue({attention_state:'in_progress'})).toBe(true);
+    expect(conversationHasActiveIssue({attention_state:'resolved'})).toBe(false);
   });
   it('reflects master availability in every conversation label',()=>{
     const conversation={id:'chat-1',attention_state:'none' as const,automation_mode:'auto' as const};

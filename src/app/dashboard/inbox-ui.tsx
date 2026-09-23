@@ -4,7 +4,7 @@ import {useSearchParams} from 'next/navigation';
 import {GapFaqEditor} from './gap-faq-editor';
 import type {SupabaseClient} from '@supabase/supabase-js';
 import {KnowledgeEditor,type Membership} from '@/modules/admin/knowledge-editor';
-import {InboxRepository,attentionReason,conversationAssistantEnabled,conversationStateLabel,waitingLabel,type AssistantAvailability,type AssistantScope,type AttentionAction,type Conversation,type InboxCounts,type InboxFilter,type InboxMessage,type InboxEvent} from '@/modules/admin/inbox';
+import {InboxRepository,attentionReason,conversationAssistantEnabled,conversationHasActiveIssue,conversationStateLabel,waitingLabel,type AssistantAvailability,type AssistantScope,type AttentionAction,type Conversation,type InboxCounts,type InboxFilter,type InboxMessage,type InboxEvent} from '@/modules/admin/inbox';
 
 const filters: {id:InboxFilter;label:string;empty:string}[] = [
   {id:'all',label:'All',empty:'No conversations yet. New WhatsApp messages will appear here.'},
@@ -130,7 +130,7 @@ function ConversationPanel({repository,knowledgeEditor,tenant,conversation:c,ass
     try{
       await repository.attention(c,value);
       if(clearsDraft){setText('');setAttempt(null);setFaqTarget(null);setFaqDirty(false);}
-      setNotice(({reply:'You’re replying personally. The assistant stays paused. A reply already being sent may still arrive.',resolve:c.attention_reason==='knowledge_gap'&&c.automation_mode==='auto'?'Review resolved. The assistant remains on. A new unanswered business question will flag this conversation again.':'Resolved. The assistant stays paused. A new customer message will bring this conversation back to Needs attention.',resume:'Assistant resumed for new messages. Earlier messages will not be replayed.',flag:'Added to Needs attention. The assistant is paused.',complaint:'Marked as a complaint. The assistant is paused.',remove_complaint:'Complaint label removed. The assistant mode has not changed.'})[value]);
+      setNotice(({reply:'You’re replying personally. The assistant stays paused. A reply already being sent may still arrive.',pause:'Assistant paused for this chat. No issue was created.',resolve:'Resolved. This chat was returned to automatic mode; the master availability setting still applies.',resume:'Assistant resumed for new messages. Earlier messages will not be replayed.',flag:'Added to Needs attention. The assistant is paused.',complaint:'Marked as a complaint. The assistant is paused.',remove_complaint:'Complaint label removed. The assistant mode has not changed.'})[value]);
       onRefresh();setReload(n=>n+1);return true;
     }catch(e){setError((e as Error).message);onRefresh();return false;}finally{setBusy(false);onWorking(false);}
   }
@@ -148,13 +148,15 @@ function ConversationPanel({repository,knowledgeEditor,tenant,conversation:c,ass
     if(await action('reply')){setText(answer.slice(0,4096));setAttempt(null);setFaqTarget(null);setFaqDirty(false);setNotice(answer.length>4096?'FAQ saved. The answer was shortened to fit a WhatsApp reply; review it before sending.':'FAQ saved. Review your personal reply below and choose Send reply when ready.');}
   }
   function closeFaq(){if(!faqDirty||window.confirm('Discard the unsaved FAQ changes?')){setFaqTarget(null);setFaqDirty(false);}}
+  const hasActiveIssue=conversationHasActiveIssue(c);
 
   return <section className="conversation-panel" aria-label={`Conversation with ${c.name}`}>
     <div className="conversation-header"><div><h2>{c.name}</h2><span className="customer-number" dir="ltr">{c.phone?<a href={`tel:+${c.phone}`}>+{c.phone}</a>:c.username?`@${c.username} · Phone number not shared`:'Phone number not shared'}</span><span className={`mode-label ${conversationAssistantEnabled(c,assistantAvailability)?'':'human'}`}>{conversationStateLabel(c,assistantAvailability)}</span>{c.is_complaint&&<span className="complaint-chip">Complaint</span>}</div>
       <div className="conversation-controls">
-        {c.attention_state!=='in_progress'&&<button className="primary" disabled={disabled} onClick={()=>void action('reply')}>Reply personally</button>}
-        {c.attention_state!=='resolved'&&<button className="secondary" disabled={disabled} onClick={()=>void action('resolve')}>Resolve</button>}
-        {c.automation_mode==='human'&&<button className="secondary" disabled={disabled} onClick={()=>void action('resume')}>Return to assistant</button>}
+        <button className="primary" disabled={disabled||c.attention_state==='in_progress'} onClick={()=>void action('reply')}>Reply personally</button>
+        {hasActiveIssue?<button className="secondary" disabled={disabled} onClick={()=>void action('resolve')}>Resolve</button>
+          :c.automation_mode==='human'?<button className="secondary" disabled={disabled} onClick={()=>void action('resume')}>Resume assistant</button>
+          :<button className="secondary" disabled={disabled} onClick={()=>void action('pause')}>Pause assistant</button>}
       </div>
     </div>
     {c.blocked&&<p className="notice">This customer is blacklisted. <a href="/dashboard/blacklist">Review the block</a> before replying or resuming the assistant.</p>}
@@ -168,7 +170,7 @@ function ConversationPanel({repository,knowledgeEditor,tenant,conversation:c,ass
       <dl>{c.followup_purpose==='career'&&<div><dt>Desired role</dt><dd dir="auto">{c.followup_role||'Not provided yet'}</dd></div>}<div><dt>Name</dt><dd dir="auto">{c.followup_name||'Not provided yet'}</dd></div><div><dt>Phone</dt><dd dir="ltr">{c.followup_phone?<a href={`tel:+${c.followup_phone}`}>+{c.followup_phone}</a>:'Not provided yet'}</dd></div></dl>
       {c.followup_purpose!=='career'&&c.followup_state==='ready'&&c.attention_state!=='resolved'&&<p>Contact the customer personally, then mark the conversation resolved.</p>}
     </section>}
-    {c.attention_state==='resolved'&&<p className="resolved-note">{c.automation_mode==='auto'?'This review is resolved. The assistant is on.':'This issue is marked resolved. The assistant stays paused until you return the conversation to it.'}</p>}
+    {c.attention_state==='resolved'&&<p className="resolved-note">This issue is resolved and this chat has been returned to the assistant. The master availability setting still applies.</p>}
     {faqTarget&&<GapFaqEditor key={faqTarget.id} editor={knowledgeEditor} tenant={tenant} messageId={faqTarget.id} question={faqTarget.question} onClose={closeFaq} onPrepare={prepareFaqReply} onDirty={setFaqDirty} onWorking={value=>{setBusy(value);onWorking(value);}}/>}
     <div ref={messageList} className="message-list" aria-label="Messages">{messages.length>=limit&&limit<500&&<button className="text-button" onClick={()=>setLimit(n=>n+100)}>Load older messages</button>}{!messages.length&&<p className="empty-inbox">No messages to show.</p>}{messages.map(m=><article key={m.id} className={`message-bubble ${m.direction}`}><p dir="auto">{m.body||`[${m.message_type} message]`}</p><div className="message-meta"><time>{formatTime(m.created_at)}</time>{m.direction==='outbound'&&<span>{deliveryLabel(m.delivery_status)}</span>}</div></article>)}</div>
     <div className="reply-area">{!canEdit?<p className="notice">This account has read-only access.</p>:<form onSubmit={send}><label>Your reply<textarea dir="auto" rows={3} maxLength={4096} value={text} onChange={e=>{setText(e.target.value);setAttempt(null);}} disabled={!canSend||busy||!!attempt?.blocked} placeholder={c.attention_state!=='in_progress'?'Choose “Reply personally” to write a reply.':'Write your reply…'}/></label><div className="composer-actions"><span>{c.attention_state!=='in_progress'?'Reply personally pauses the assistant for this conversation.':!canSend?'Wait for a new customer message to reopen the reply window.':'Your reply goes directly to this WhatsApp conversation.'}</span>{attempt?.blocked?<button type="button" className="secondary" onClick={()=>{setAttempt(null);setText('');setNotice('');setError('');}}>Compose another reply</button>:<button className="primary" disabled={!canSend||busy||!text.trim()}>{busy?'Working…':'Send reply'}</button>}</div></form>}

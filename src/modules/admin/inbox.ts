@@ -1,7 +1,7 @@
 import {AI_RECOVERY_SUMMARY} from '../ai/recovery';
 import type { SupabaseClient } from '@supabase/supabase-js';
 export type InboxFilter = 'all' | 'attention' | 'complaints' | 'resolved';
-export type AttentionAction = 'reply' | 'resolve' | 'resume' | 'flag' | 'complaint' | 'remove_complaint';
+export type AttentionAction = 'reply' | 'pause' | 'resolve' | 'resume' | 'flag' | 'complaint' | 'remove_complaint';
 export type Conversation = {id:string;automation_mode:'auto'|'human';status:string;last_inbound_at:string;updated_at:string;customer_id:string;name:string;phone:string|null;username:string|null;
   attention_state:'none'|'waiting'|'in_progress'|'resolved';attention_reason:string|null;attention_summary:string;attention_since:string|null;resolved_at:string|null;is_complaint:boolean;attention_message_id:string|null;followup_state:'none'|'collecting'|'ready'|'declined';followup_name:string|null;followup_phone:string|null;followup_purpose?:string;followup_role?:string|null;blocked?:boolean};
 export type InboxCounts = Record<InboxFilter,number>;
@@ -12,6 +12,9 @@ export function conversationAssistantEnabled(c:ConversationAssistantState,availa
   if(!availability||availability.scope==='all')return true;
   if(availability.scope==='off')return false;
   return !!c.id&&availability.selectedConversationIds.includes(c.id);
+}
+export function conversationHasActiveIssue(c:Pick<Conversation,'attention_state'>) {
+  return c.attention_state==='waiting'||c.attention_state==='in_progress';
 }
 export function conversationStateLabel(c:ConversationAssistantState,availability?:AssistantAvailability|null) {
   if(c.blocked)return 'Blacklisted · Replies blocked';
