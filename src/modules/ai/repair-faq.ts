@@ -41,8 +41,8 @@ function arabicRepairAnswer(answer:string){
 }
 
 /** Clear repair requests use the approved technical-care FAQ without a paid model call. */
-export function repairFaqReply(context:MessageContext,sources:KnowledgeSource[]):AgentDecision|null {
-  if(!isRepairEnquiry(context.text??''))return null;
+export function repairFaqReply(context:MessageContext,sources:KnowledgeSource[],force=false):AgentDecision|null {
+  if(!force&&!isRepairEnquiry(context.text??''))return null;
   const source=sources.find(isRepairFaq),value=source&&faq(source);
   if(!source||!value)return null;
   const text=replyLanguage(context.text??'')==='ar'?arabicRepairAnswer(value.answer):value.answer.trim();

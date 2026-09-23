@@ -212,7 +212,7 @@ describe('acceptance endpoint boundary', () => {
     const req=()=>new Request('https://test',{method:'POST',headers:{Authorization:`Bearer ${secret}`},body:'{"case":"english_hours"}'});
     expect((await handleAcceptance(req(),{...options,enabled:false})).status).toBe(404);
     expect((await handleAcceptance(req(),options)).status).toBe(200);
-    expect(run).toHaveBeenCalledWith(expect.objectContaining({tenantId:tenant,requestKey:'acceptance:v2:english_hours'}),expect.any(Array));
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({tenantId:tenant,requestKey:'acceptance:v3:english_hours'}),expect.any(Array));
   });
 });
 

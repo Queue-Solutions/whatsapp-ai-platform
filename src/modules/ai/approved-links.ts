@@ -45,8 +45,8 @@ export function hasUnsupportedLink(text:string,sources:KnowledgeSource[]){
   const approved=new Set(sources.flatMap(sourceUrls).map(canonical).filter(Boolean));
   return extractUrls(text).some(url=>!approved.has(canonical(url)));
 }
-export function offeredLinks(context:MessageContext,sources:KnowledgeSource[]):AgentDecision|null {
-  if(!requestsApprovedLinks(context.text??''))return null;
+export function offeredLinks(context:MessageContext,sources:KnowledgeSource[],force=false):AgentDecision|null {
+  if(!force&&!requestsApprovedLinks(context.text??''))return null;
   const relevant=sources.filter(source=>/(?:online|website|social|facebook|instagram|اون ?لاين|موقع|روابط|فيسبوك|انستجرام)/.test(normalizeIntent(source.content)))
     .map(source=>({source,urls:sourceUrls(source).filter(url=>{try{const u=new URL(url);return !/(?:^|\.)(?:google\.com|maps\.google\.com|maps\.app\.goo\.gl|goo\.gl)$/.test(u.hostname);}catch{return false;}})})).filter(s=>s.urls.length);
   if(!relevant.length)return null;

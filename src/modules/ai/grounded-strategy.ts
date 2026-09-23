@@ -20,6 +20,7 @@ import {careerFaqReply} from './career-faq';
 import {repairFaqReply} from './repair-faq';
 import { formatReply, formatBranchReply } from './reply-format';
 import { buildRequest, ModelFailure, type ModelProvider } from './openai';
+import {buildIntentRequest,catalogFingerprint,contextForIntent,isStoredIntentDecision,type IntentDecision,type StoredIntentDecision} from './intent-classification';
 export type SourceLoader = (tenant: string) => Promise<KnowledgeSource[]>;
 export function fallback(context: MessageContext, reason: string, action: AgentDecision['action'] = 'unavailable'): AgentDecision {
   const ar = replyLanguage(context.text ?? '') === 'ar';
@@ -31,6 +32,11 @@ export function fallback(context: MessageContext, reason: string, action: AgentD
 }
 function sourcesCurrent(decision: AgentDecision, available: KnowledgeSource[]) {
   return decision.sources.every(s => available.some(a => a.id === s.id && a.kind === s.kind && a.updatedAt === s.updatedAt));
+}
+function isAgentDecision(value:unknown):value is AgentDecision {
+  if(!value||typeof value!=='object')return false;
+  const decision=value as Partial<AgentDecision>;
+  return typeof decision.text==='string'&&typeof decision.action==='string'&&typeof decision.reason==='string'&&Array.isArray(decision.sources);
 }
 const defaultLocations=new GeoLocations();
 export const AI_RETRY_DELAY_MS=4000;
@@ -53,6 +59,31 @@ export class GroundedStrategy implements ReplyStrategy {
     return {...followUp,text:formatReply(followUp.text),
       ...(followUp.attentionSummary?{attentionSummary:formatReply(followUp.attentionSummary)}: {})};
   }
+  private async classifyIntent(context:MessageContext,sources:KnowledgeSource[]):Promise<IntentDecision|null>{
+    if(!this.provider.classifyIntent||!context.requestKey)return null;
+    const fingerprint=catalogFingerprint(sources);
+    let request:string;
+    try{request=buildIntentRequest(context,sources);}catch{return null;}
+    const key=`${context.requestKey.slice(0,160)}:intent:${fingerprint}`;
+    const reservation=await this.ledger.reserve(context.tenantId,key,this.purpose);
+    if(reservation.status==='completed')return isStoredIntentDecision(reservation.decision,fingerprint)?reservation.decision:null;
+    if(reservation.status!=='new'||!reservation.id)return null;
+    const start=Date.now();
+    try{
+      const result=await this.provider.classifyIntent(request,{timeoutMs:10000});
+      const allowed=new Set(sources.map(source=>source.label));
+      if(result.decision.branchLabels.some(label=>!allowed.has(label)))throw new ModelFailure('openai_invalid_intent',result);
+      const stored:StoredIntentDecision={kind:'intent_classification',catalogFingerprint:fingerprint,...result.decision};
+      await this.ledger.finish(context.tenantId,reservation.id,{state:'completed',input:result.input,output:result.output,
+        latency:Date.now()-start,decision:stored,error:null});
+      return stored;
+    }catch(error){
+      const known=error instanceof ModelFailure?error:new ModelFailure('openai_intent_unknown');
+      await this.ledger.finish(context.tenantId,reservation.id,{state:'failed',input:known.usage?.input??null,output:known.usage?.output??null,
+        latency:Date.now()-start,decision:null,error:known.code});
+      return null;
+    }
+  }
   private async generate(context: MessageContext, recoveryReason?:string, recoveryAttempt=0): Promise<AgentDecision> {
     if (context.eligible === false) return fallback(context, 'ineligible', 'suppress');
     // Career collection was retired: ignore any legacy in-progress career form and answer from the approved FAQ instead.
@@ -60,39 +91,59 @@ export class GroundedStrategy implements ReplyStrategy {
     const inferredName=contactReply?.followUp?.name&&!context.followUp?.name&&!/(?:my name is|name\s*:|اسمي|إسمي|الاسم\s*:)/i.test(context.text??'');
     if(contactReply&&!inferredName)return contactReply;
     if (!['text','location'].includes(context.type) || !context.text?.trim()) return fallback(context, 'unsupported_message');
-    const attention = detectAttention(context.text);
-    if (attention) return { ...fallback(context, attention, 'handoff'), attentionSummary: summarizeAttention(context.text,attention) };
     if (!context.requestKey) return fallback(context, 'missing_request_identity');
     if (Buffer.byteLength(context.text, 'utf8') > 3500) return fallback(context, 'message_too_long');
-    const social = socialReply(context.text);
-    if (social) return social;
-    let sources: KnowledgeSource[];
+    if(!this.provider.classifyIntent){
+      const attention=detectAttention(context.text);
+      if(attention)return {...fallback(context,attention,'handoff'),attentionSummary:summarizeAttention(context.text,attention)};
+      const social=socialReply(context.text);if(social)return social;
+    }
+    let sources:KnowledgeSource[]=[],knowledgeUnavailable=false;
     try { sources = await this.loadSources(context.tenantId); }
-    catch { return contactReply??fallback(context, 'knowledge_unavailable'); }
-    if(contactReply&&!matchingBranches(context.text??'',sources).length)return contactReply;
+    catch { knowledgeUnavailable=true; }
+    const classified=await this.classifyIntent(context,sources);
+    const useClassification=classified&&classified.confidence>=0.6?classified:null;
+    const routed=useClassification?contextForIntent(context,useClassification,sources):context;
+    if(useClassification?.intent==='human_followup'||useClassification?.intent==='complaint'){
+      const reason=useClassification.intent==='complaint'?'complaint':'human_requested';
+      return {...fallback(context,reason,'handoff'),attentionSummary:useClassification.summary||summarizeAttention(context.text,reason)};
+    }
+    if(useClassification?.intent==='greeting'||useClassification?.intent==='thanks'){
+      return socialReply(useClassification.language==='ar'?(useClassification.intent==='greeting'?'السلام عليكم':'شكرا'):(useClassification.intent==='greeting'?'Hello':'Thanks'))!;
+    }
+    if(useClassification?.intent==='unrelated')return fallback(context,'answer_not_supported');
+    if(useClassification?.intent==='ambiguous')return scopeClarification(context);
+    if(useClassification?.intent==='branch'&&useClassification.branchMode==='detail'&&!useClassification.branchLabels.length)return scopeClarification(context);
+    if(!useClassification){
+      const attention=detectAttention(context.text);
+      if(attention)return {...fallback(context,attention,'handoff'),attentionSummary:summarizeAttention(context.text,attention)};
+      const social=socialReply(context.text);if(social)return social;
+    }
+    if(knowledgeUnavailable)return contactReply??fallback(context,'knowledge_unavailable');
+    if(contactReply&&!matchingBranches(routed.text??'',sources).length)return contactReply;
     if (!sources.length) return knowledgeGap(context, replyLanguage(context.text) === 'ar'
       ? 'لا توجد معلومات معتمدة منشورة للمساعد. راجع سؤال العميل وأضف المعلومات المطلوبة.'
       : 'No approved business information is published for the assistant. Review the customer’s question and add the required information.');
     const available = sources;
-    const career=careerFaqReply(context,available);if(career)return career;
-    const repair=repairFaqReply(context,available);if(repair)return repair;
-    const links=offeredLinks(context,available);if(links)return links;
-    if(needsProductQuestion(context,available))return productQuestion(context);
-    const nearest=await nearestBranchReply(context,available,this.locations);if(nearest)return nearest;
-    const btcReply=btcBranchReply(context,available);if(btcReply)return btcReply;
-    const branchDetail=directBranchDetail(context,available);if(branchDetail)return branchDetail;
-    const branchDirectory=directJewelryDirectory(context,available);if(branchDirectory)return branchDirectory;
-    const selection = selectKnowledge(context, available);
+    const career=careerFaqReply(context,available,useClassification?.intent==='career');if(career)return career;
+    const repair=repairFaqReply(context,available,useClassification?.intent==='repair');if(repair)return repair;
+    const links=offeredLinks(context,available,useClassification?.intent==='online_links');if(links)return links;
+    if(needsProductQuestion(routed,available))return productQuestion(context);
+    const nearest=await nearestBranchReply(routed,available,this.locations);if(nearest)return nearest;
+    const btcReply=btcBranchReply(routed,available);if(btcReply)return btcReply;
+    const branchDetail=directBranchDetail(routed,available);if(branchDetail)return branchDetail;
+    const branchDirectory=directJewelryDirectory(routed,available);if(branchDirectory)return branchDirectory;
+    const selection = selectKnowledge(routed, available);
     sources = selection.sources;
     if (!sources.length) return selection.excludedByScope===available.length?knowledgeGap(context):fallback(context,'knowledge_selection_empty');
     let request: string;
-    try { request = buildRequest(context, sources, selection.coverage,recoveryReason,recoveryAttempt); } catch { return fallback(context, 'context_too_large'); }
+    try { request = buildRequest(routed, sources, selection.coverage,recoveryReason,recoveryAttempt,useClassification??undefined,context.text); } catch { return fallback(context, 'context_too_large'); }
     // Each attempt has a stable, separately budgeted key. Replayed jobs reuse all attempts.
     const reservation = await this.ledger.reserve(context.tenantId, recoveryAttempt?`${context.requestKey}:recovery:${recoveryAttempt}`:context.requestKey, this.purpose);
     if (reservation.status === 'completed') {
       const decision = reservation.decision;
-      if (!decision || !Array.isArray(decision.sources) || !sourcesCurrent(decision, available)) return fallback(context, 'cached_knowledge_changed');
-      return unsolicitedBranches(context,decision,available)?scopeClarification(context):renderBranchAnswer(context,decision,available);
+      if (!isAgentDecision(decision)||!sourcesCurrent(decision, available)) return fallback(context, 'cached_knowledge_changed');
+      return unsolicitedBranches(routed,decision,available)?scopeClarification(context):renderBranchAnswer(routed,decision,available);
     }
     if (reservation.status !== 'new' || !reservation.id) return fallback(context, reservation.status==='failed'&&reservation.errorCode?reservation.errorCode:`ai_${reservation.status}`);
     const start = Date.now();
@@ -118,11 +169,11 @@ export class GroundedStrategy implements ReplyStrategy {
     else decision = { text: formatReply(formatBranchReply(result.decision.text,result.decision.branchLines)), action: result.decision.action, reason: 'approved_knowledge',
       sources: selected.map(s => ({ id: s!.id, kind: s!.kind, updatedAt: s!.updatedAt })) };
     if (decision.action === 'handoff' && result.decision.summary?.trim()) decision.attentionSummary = result.decision.summary.trim();
-    if(unsolicitedBranches(context,decision,available,result.decision.branchLines))decision=scopeClarification(context);
-    if(decision.action==='answer'&&productIntent(context)==='btc'&&branchScope(context,available)==='directory'&&!selected.some(s=>s?.kind==='faq'&&bullionPattern.test(normalizeIntent(s.content))))decision=knowledgeGap(context);
+    if(unsolicitedBranches(routed,decision,available,result.decision.branchLines))decision=scopeClarification(context);
+    if(decision.action==='answer'&&productIntent(routed)==='btc'&&branchScope(routed,available)==='directory'&&!selected.some(s=>s?.kind==='faq'&&bullionPattern.test(normalizeIntent(s.content))))decision=knowledgeGap(context);
     const lastAssistant=[...(context.history??[])].reverse().find(m=>m.role==='assistant')?.content;
     if(lastAssistant&&isShortAcceptance(context.text??'')&&normalizeIntent(decision.text)===normalizeIntent(lastAssistant))decision=scopeClarification(context);
-    const rendered=renderBranchAnswer(context,decision,available);
+    const rendered=renderBranchAnswer(routed,decision,available);
     const usedBranchRecord=rendered.text!==decision.text;decision=rendered;
     // Never let the model invent a link, even when it names a valid source.
     if (hasUnsupportedLink(decision.text,selected.filter((s):s is KnowledgeSource=>!!s))) decision = fallback(context, 'unsupported_link');

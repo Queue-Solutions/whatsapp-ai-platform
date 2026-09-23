@@ -1,12 +1,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { AgentDecision } from './contracts';
+import type {AgentDecision} from './contracts';
+import type {StoredIntentDecision} from './intent-classification';
 import { AI_MODEL, PROMPT_VERSION } from './config';
-export type Reservation = { status: 'new'|'reserved'|'completed'|'failed'|'budget_exhausted'; id?: string; errorCode?:string; decision?: AgentDecision };
+export type LedgerDecision=AgentDecision|StoredIntentDecision;
+export type Reservation = { status: 'new'|'reserved'|'completed'|'failed'|'budget_exhausted'; id?: string; errorCode?:string; decision?: LedgerDecision };
 export interface UsageLedger {
   reserve(tenant: string, key: string, purpose: 'whatsapp'|'acceptance'): Promise<Reservation>;
   finish(tenant: string, id: string, result: {
     state: 'completed'|'failed'; input: number|null; output: number|null;
-    latency: number; decision: AgentDecision|null; error: string|null;
+    latency: number; decision: LedgerDecision|null; error: string|null;
   }): Promise<void>;
 }
 export class SupabaseUsageLedger implements UsageLedger {

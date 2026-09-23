@@ -1,5 +1,11 @@
 # Foundation validation
 
+## Semantic intent routing — 2026-09-23
+
+The customer-language layer now uses a strict semantic classification call before business routing. The classifier receives no FAQ answers, returns only intent metadata and approved branch labels, and is cached against the current knowledge-catalog fingerprint. Workflow execution and all factual branch/link output remain deterministic and source-version guarded. Local resilience rules remain available only if classification cannot run.
+
+Lint, TypeScript, all 323 automated tests and the production build passed. New synthetic coverage verifies misspelled human-contact and online-shopping requests, stale-history overrides, exact branch-record rendering, preservation of requested branch details, unresolved-branch clarification, corrected-query retrieval, strict classifier parsing, compact catalog disclosure and durable classification reuse. No paid OpenAI call, WhatsApp send, production deployment, database migration or client-number change was performed by this validation.
+
 Verified on 2026-09-12:
 
 - Lint, TypeScript, and Next.js production build passed.

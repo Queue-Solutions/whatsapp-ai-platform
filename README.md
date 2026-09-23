@@ -4,7 +4,7 @@ Next.js + TypeScript + Supabase, using **Meta's temporary test number only**. Th
 
 ## Current milestone
 
-The hosted development bot uses bounded AI replies from approved business knowledge. Whole-message greetings/thanks use fixed, free social replies. The authenticated inbox provides history, delivery status, audited pause/resume and manual text replies.
+The hosted development bot uses semantic AI intent classification followed by deterministic workflow execution and bounded answers from approved business knowledge. The authenticated inbox provides history, delivery status, audited pause/resume and manual text replies. See `docs/AI-ROUTING.md` for the routing boundaries.
 
 Real English and Arabic WhatsApp → webhook → Supabase → echo flows were verified on 2026-09-12, including Meta delivery receipts. The hosted development app is https://whatsapp-ai-platform-dev.vercel.app. Its Supabase minute recovery timer was verified with the local server and tunnel stopped. See `docs/VALIDATION.md` for evidence.
 
