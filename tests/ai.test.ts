@@ -44,6 +44,11 @@ describe('grounded reply strategy', () => {
         decision:{action,text:'Which branch do you mean?',sourceLabels:[],summary:''},input:100,output:20,
       })}).reply(context);
       expect(result.reason).not.toBe('missing_business_information');expect(result.attentionSummary).toBeUndefined();
+      if(action==='unavailable'){
+        expect(result).toMatchObject({reason:'answer_not_supported',action:'unavailable'});
+        expect(result.text).toContain('specifically to help with IRAM');
+        expect(result.text).not.toContain('confirmed information');
+      }
     }
     const prompt=JSON.parse(buildRequest(context,[source])).instructions;
     expect(prompt).toContain('ask one short clarification first');expect(prompt).toContain('avoid repeating a clarification');

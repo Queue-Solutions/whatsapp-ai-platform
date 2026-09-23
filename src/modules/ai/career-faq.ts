@@ -15,7 +15,7 @@ function faq(source:KnowledgeSource):{question:string;answer:string}|null {
 
 function isCareerFaq(source:KnowledgeSource){
   const value=faq(source);
-  return !!value&&/(?:\b(?:job|vacanc|career|employment|hiring|recruit)\w*\b|وظيف|وظائف|وظايف|توظيف|فرص عمل)/.test(normalizeIntent(value.question));
+  return !!value&&/(?:\b(?:hr|human resources?|job|vacanc|career|employment|hiring|recruit)\w*\b|وظيف|وظائف|وظايف|توظيف|فرص عمل|الموارد البشريه|موارد بشريه|اتش\s*ار)/.test(normalizeIntent(value.question));
 }
 
 function localizedAnswer(answer:string,context:MessageContext){

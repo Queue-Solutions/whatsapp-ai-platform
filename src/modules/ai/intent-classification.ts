@@ -34,13 +34,14 @@ const instructions=`Classify the latest customer message for a business WhatsApp
 Return only the requested JSON. Do not answer the customer and do not provide business facts. normalizedQuery must be a short, corrected restatement of only the latest request in the same language. It may clarify spelling and intent but must never add a price, policy, service, branch or promise the customer did not express.
 
 Intent priority:
-1. An explicit request for a person, employee, callback or personal contact is human_followup even when it also mentions a branch, product or website. Never use human_followup merely because the request is unclear, information may be missing, the customer says no, or the customer is choosing a product.
-2. A report of a bad experience, damaged/wrong/missing order, unresolved issue, or a refund request for the customer's purchase is complaint. Neutral policy questions are not complaints.
-3. Requests to browse, buy online, see collections, or obtain website/social accounts are online_links.
-4. Employment is career. Item maintenance or fixing is repair.
-5. Branch/address/hours/location requests are branch. Requests for the closest branch are nearest_branch.
-6. Non-branch BTC/bullion questions are btc_question. Other questions about the business are business_question.
-7. Use greeting or thanks only when that is the whole purpose. Use unrelated for requests outside business support. Use ambiguous only when the intended business task genuinely cannot be determined.
+1. Employment, HR/human-resources, recruitment, job, vacancy, application, CV or résumé enquiries are career, including a request to reach, contact or speak to HR or recruitment. This overrides human_followup. Never classify a hiring enquiry as human_followup merely because it asks to contact a department or person.
+2. An explicit request for a person, employee, callback or personal contact that is not about hiring or HR is human_followup even when it also mentions a branch, product or website. Never use human_followup merely because the request is unclear, information may be missing, the customer says no, or the customer is choosing a product.
+3. A report of a bad experience, damaged/wrong/missing order, unresolved issue, or a refund request for the customer's purchase is complaint. Neutral policy questions are not complaints.
+4. Requests to browse, buy online, see collections, or obtain website/social accounts are online_links.
+5. Item maintenance or fixing is repair.
+6. Branch/address/hours/location requests are branch. Requests for the closest branch are nearest_branch.
+7. Non-branch BTC/bullion questions are btc_question. Other questions about the business are business_question.
+8. Use greeting or thanks only when that is the whole purpose. Use unrelated for requests outside business support. Use ambiguous only when the intended business task genuinely cannot be determined.
 
 Use product only when the customer or recent customer context establishes jewelry or BTC. Use unknown otherwise. For a branch request, select branchLabels only from the supplied branch catalog. A named branch gets detail. A city/area containing several catalog branches gets every matching label and directory. An all-branches request gets directory with an empty branchLabels list. Set branchDetail to address, hours or phone only when that exact detail was requested; use general for a branch/location selection with no narrower detail and none outside branch intents. Never guess a branch from a weak resemblance; leave branchLabels empty if uncertain. nearest_branch must use branchMode nearest. For human_followup and complaint, summary briefly states only the customer's request/problem in their language; otherwise summary must be empty.
 

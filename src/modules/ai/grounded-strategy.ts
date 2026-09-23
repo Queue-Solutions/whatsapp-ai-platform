@@ -15,7 +15,7 @@ import type { UsageLedger } from './ledger';
 import { AI_MODEL } from './config';
 import { selectKnowledge } from './knowledge-selection';
 import { knowledgeGap } from './knowledge-gap';
-import { beginFollowUp, continueFollowUp } from './follow-up';
+import { beginFollowUp, continueFollowUp, isCareerEnquiry } from './follow-up';
 import {careerFaqReply} from './career-faq';
 import {repairFaqReply} from './repair-faq';
 import { formatReply, formatBusinessReply, formatBranchReply } from './reply-format';
@@ -27,7 +27,9 @@ export function fallback(context: MessageContext, reason: string, action: AgentD
   if(technicalFailure(reason))return {text:'',action:'suppress',reason,sources:[]};
   const text = action === 'handoff'
     ? ar ? 'طلبك محتاج متابعة شخصية من صاحب النشاط. هوقف الردود الآلية هنا علشان يقدر يراجع المحادثة ويرد عليك.' : 'Your message needs personal attention from the business owner. I’ll pause automated replies here so they can review the conversation and respond.'
-    : ar ? 'المعلومة دي مش متاحة عندي بشكل مؤكد حالياً. من فضلك وضّح سؤالك أو تواصل مع فريق العمل مباشرة.' : 'I do not have confirmed information for this right now. Please clarify your question or contact the business team directly.';
+    : reason === 'answer_not_supported'
+      ? ar ? 'أنا هنا لمساعدتك فقط في كل ما يخص مجوهرات IRAM ومنتجات BTC والسبائك وخدماتنا. أقدر أساعدك إزاي في رحلتك مع IRAM؟' : 'I’m here specifically to help with IRAM jewelry, BTC / bullion products and our business services. How can I assist you with your IRAM journey?'
+      : ar ? 'المعلومة دي مش متاحة عندي بشكل مؤكد حالياً. من فضلك وضّح سؤالك أو تواصل مع فريق العمل مباشرة.' : 'I do not have confirmed information for this right now. Please clarify your question or contact the business team directly.';
   return { text, action, reason, sources: [] };
 }
 function sourcesCurrent(decision: AgentDecision, available: KnowledgeSource[]) {
@@ -86,8 +88,10 @@ export class GroundedStrategy implements ReplyStrategy {
   }
   private async generate(context: MessageContext, recoveryReason?:string, recoveryAttempt=0): Promise<AgentDecision> {
     if (context.eligible === false) return fallback(context, 'ineligible', 'suppress');
+    const careerIntent=isCareerEnquiry(context.text??'');
     // Career collection was retired: ignore any legacy in-progress career form and answer from the approved FAQ instead.
-    const contactReply=context.followUp?.purpose==='career'?null:continueFollowUp(context);
+    // A new hiring/HR question also exits any unrelated contact-collection flow.
+    const contactReply=context.followUp?.purpose==='career'||careerIntent?null:continueFollowUp(context);
     // A completed contact form is deterministic and must not go back through intent
     // classification, which can discard the fields and restart the form. An
     // unlabelled name by itself is held briefly so approved branch names can still
@@ -101,13 +105,20 @@ export class GroundedStrategy implements ReplyStrategy {
     // Resolve them before classification so stale issue history (or a cached
     // classifier result) can never reopen a completed personal follow-up.
     const social=socialReply(context.text,context.history);if(social)return social;
+    let sources:KnowledgeSource[]=[],knowledgeUnavailable=false;
+    try { sources = await this.loadSources(context.tenantId); }
+    catch { knowledgeUnavailable=true; }
+    // Employment and HR requests use the approved hiring FAQ. They must win over
+    // generic phrases such as "reach the HR department", which also resemble a
+    // request for a person and previously opened an unnecessary follow-up.
+    if(careerIntent){
+      if(knowledgeUnavailable)return fallback(context,'knowledge_unavailable');
+      return careerFaqReply(context,sources,true)??fallback(context,'career_information_unavailable');
+    }
     if(!this.provider.classifyIntent){
       const attention=detectAttention(context.text);
       if(attention)return {...fallback(context,attention,'handoff'),attentionSummary:summarizeAttention(context.text,attention)};
     }
-    let sources:KnowledgeSource[]=[],knowledgeUnavailable=false;
-    try { sources = await this.loadSources(context.tenantId); }
-    catch { knowledgeUnavailable=true; }
     // A product choice answering our own branch-routing question is deterministic context, not a new support intent.
     if(!knowledgeUnavailable&&isProductChoiceContinuation(context)){
       const branchDetail=directBranchDetail(context,sources);if(branchDetail)return branchDetail;
@@ -116,6 +127,10 @@ export class GroundedStrategy implements ReplyStrategy {
     const classified=await this.classifyIntent(context,sources);
     const useClassification=classified&&classified.confidence>=0.6?classified:null;
     const routed=useClassification?contextForIntent(context,useClassification,sources):context;
+    if(useClassification?.intent==='career'){
+      if(knowledgeUnavailable)return fallback(context,'knowledge_unavailable');
+      return careerFaqReply(context,sources,true)??fallback(context,'career_information_unavailable');
+    }
     if(useClassification?.intent==='human_followup'||useClassification?.intent==='complaint'){
       const reason=useClassification.intent==='complaint'?'complaint':'human_requested';
       return {...fallback(context,reason,'handoff'),attentionSummary:useClassification.summary||summarizeAttention(context.text,reason)};
@@ -136,7 +151,7 @@ export class GroundedStrategy implements ReplyStrategy {
       ? 'لا توجد معلومات معتمدة منشورة للمساعد. راجع سؤال العميل وأضف المعلومات المطلوبة.'
       : 'No approved business information is published for the assistant. Review the customer’s question and add the required information.');
     const available = sources;
-    const career=careerFaqReply(context,available,useClassification?.intent==='career');if(career)return career;
+    const career=careerFaqReply(context,available);if(career)return career;
     const repair=repairFaqReply(context,available,useClassification?.intent==='repair');if(repair)return repair;
     const links=offeredLinks(context,available,useClassification?.intent==='online_links');if(links)return links;
     if(needsProductQuestion(routed,available))return productQuestion(context);
