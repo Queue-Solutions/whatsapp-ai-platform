@@ -15,6 +15,17 @@ function fixture(sources=[faq,...branches]){
   const complete=vi.fn(),reserve=vi.fn(),load=vi.fn(async()=>sources);
   return {locations,complete,reserve,load,strategy:new GroundedStrategy(load,{reserve,finish:vi.fn()},{complete},'whatsapp',locations)};
 }
+const classifiedNearest=(normalizedQuery:string)=>({
+  intent:'nearest_branch' as const,confidence:.99,language:'en' as const,product:'btc' as const,branchMode:'nearest' as const,
+  branchDetail:'none' as const,branchLabels:[],normalizedQuery,summary:'',
+});
+function classifiedFixture(normalizedQuery:string,locations?:LocationResolver){
+  const resolver=locations??{pin:vi.fn(async text=>coordinates(text)),area:vi.fn(async()=>({label:'Al-Obour',latitude:30.1914,longitude:31.450548}))};
+  const classifyIntent=vi.fn(async()=>({decision:classifiedNearest(normalizedQuery),input:180,output:35}));
+  const complete=vi.fn(),reserve=vi.fn(async()=>({status:'new' as const,id:'intent-reservation'})),finish=vi.fn();
+  const strategy=new GroundedStrategy(async()=>[faq,...branches],{reserve,finish},{complete,classifyIntent},'whatsapp',resolver);
+  return {strategy,locations:resolver,classifyIntent,complete,reserve,finish};
+}
 describe('nearest branch conversation',()=>{
   it.each(['What’s the nearest one for me ?','Which is closest?','أقرب واحد ليا؟'])('asks for origin immediately while preserving BTC: %s',async text=>{
     const f=fixture(),result=await f.strategy.reply({...base,text});
@@ -109,5 +120,28 @@ describe('location provider boundaries',()=>{
     const parsed=parseWebhook(payload({latitude:30,longitude:31,name:'Ignored untrusted location name'}));
     expect(parsed.messages[0]).toMatchObject({type:'location',text:'geo:30,31'});
     expect(()=>parseWebhook(payload({latitude:91,longitude:31}))).toThrow();expect(()=>parseWebhook(payload(undefined))).toThrow();
+  });
+});
+
+describe('semantic routing preserves raw nearest-branch locations',()=>{
+  it('passes a typed city to the area resolver unchanged',async()=>{
+    const f=classifiedFixture('Find the nearest BTC branch to Obour city.');
+    const result=await f.strategy.reply({...base,text:'Obour city',requestKey:'semantic-city',history:cityHistory});
+    expect(f.classifyIntent).toHaveBeenCalledOnce();expect(f.locations.area).toHaveBeenCalledWith('Obour city',expect.any(Array));
+    expect(result.text).toContain('straight-line');expect(f.complete).not.toHaveBeenCalled();
+  });
+  it('passes native WhatsApp coordinates to the pin resolver unchanged',async()=>{
+    const f=classifiedFixture('Find the nearest BTC branch using the shared location.');
+    const result=await f.strategy.reply({...base,type:'location',text:'geo:30.09,31.32',requestKey:'semantic-native-pin',history:cityHistory});
+    expect(f.locations.pin).toHaveBeenCalledWith('geo:30.09,31.32');expect(result.text).toContain('IRAM Korba — Heliopolis — 0.0 km');
+    expect(f.locations.area).not.toHaveBeenCalled();expect(f.complete).not.toHaveBeenCalled();
+  });
+  it('passes a Google Maps short link to the pin resolver unchanged',async()=>{
+    const link='https://maps.app.goo.gl/nHMGU2QsnEAnvA9W8?g_st=iw';
+    const locations:LocationResolver={pin:vi.fn(async text=>text===link?{latitude:30.09,longitude:31.32}:coordinates(text)),area:vi.fn()};
+    const f=classifiedFixture('Find the nearest BTC branch using the provided Google Maps pin.',locations);
+    const result=await f.strategy.reply({...base,text:link,requestKey:'semantic-maps-link',history:cityHistory});
+    expect(locations.pin).toHaveBeenCalledWith(link);expect(result.text).toContain('IRAM Korba — Heliopolis — 0.0 km');
+    expect(locations.area).not.toHaveBeenCalled();expect(f.complete).not.toHaveBeenCalled();
   });
 });

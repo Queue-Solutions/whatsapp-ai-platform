@@ -16,7 +16,7 @@ function inlineArea(text:string){
   return /^(?:me|here|مني|هنا)$/i.test(value)?'':value;
 }
 /** Intercept proximity requests before keyword branch matching or model generation. */
-export async function nearestBranchReply(context:MessageContext,sources:KnowledgeSource[],locations:LocationResolver):Promise<AgentDecision|null>{
+export async function nearestBranchReply(context:MessageContext,sources:KnowledgeSource[],locations:LocationResolver,productHint?:'btc'|'jewelry'|null):Promise<AgentDecision|null>{
   const text=context.text??'',history=context.history??[];
   const lastAssistant=[...history].reverse().find(m=>m.role==='assistant')?.content??'';
   const previousUser=[...history].reverse().find(m=>m.role==='user')?.content??'';
@@ -24,7 +24,7 @@ export async function nearestBranchReply(context:MessageContext,sources:Knowledg
   const answeringProduct=productOnly.test(normalizeIntent(text).trim())&&/jewelry|مجوهرات/i.test(lastAssistant)
     &&(nearestIntent({...context,text:previousUser,history:history.slice(0,-2)})||previousUser.startsWith('geo:'));
   if(!nearestIntent(context)&&context.type!=='location'&&!answeringArea&&!answeringProduct)return null;
-  const product=productIntent(context);if(!product)return productQuestion(context);
+  const product=productHint??productIntent(context);if(!product)return productQuestion(context);
   const languageText=(context.type==='location'||!!coordinates(text))?[...history].reverse().find(m=>m.role==='user'&&!m.content.startsWith('geo:'))?.content??'':text;
   const ar=replyLanguage(languageText)==='ar';
   const clarify=(value:string):AgentDecision=>({action:'clarify',reason:'nearest_branch_location',text:value,sources:[]});

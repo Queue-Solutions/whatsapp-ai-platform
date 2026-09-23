@@ -6,6 +6,7 @@ Customer-language understanding and business execution are separate layers.
 2. An in-progress contact workflow is continued deterministically so names and phone numbers are never guessed by a model.
 3. The semantic classifier reads the latest message, bounded history, FAQ questions and the approved branch name/city catalog. It returns strict JSON containing intent, confidence, corrected query, language, product, requested branch detail and branch labels. It receives no FAQ answers and cannot send a message.
 4. The backend validates every returned branch label against the current tenant-scoped catalog. High-confidence workflow intents are executed locally: human follow-up, complaints, approved links, careers, repairs, social replies and exact branch records.
+   Native `geo:` coordinates, typed areas and approved Google Maps URLs are always passed verbatim to the deterministic location resolver. The classifier may identify nearest-branch intent and product, but its corrected prose never replaces location data.
 5. General business questions use the corrected query for hybrid exact/fuzzy retrieval. The answer model receives the original message, interpreted request and selected approved records. Every factual answer must cite current source versions.
 6. Before sending, the database rechecks the job lease, automation epoch, human takeover, recipient allowlist and source publication timestamps.
 
@@ -22,6 +23,7 @@ Safety boundaries intentionally remain deterministic:
 - send allowlists and uncertain-send handling
 - approved URL validation
 - exact branch addresses, maps and BTC eligibility
+- raw location parsing and distance calculation
 - contact detail collection and persistence
 - source revision checks immediately before send
 
