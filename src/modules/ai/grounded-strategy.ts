@@ -88,8 +88,12 @@ export class GroundedStrategy implements ReplyStrategy {
     if (context.eligible === false) return fallback(context, 'ineligible', 'suppress');
     // Career collection was retired: ignore any legacy in-progress career form and answer from the approved FAQ instead.
     const contactReply=context.followUp?.purpose==='career'?null:continueFollowUp(context);
+    // A completed contact form is deterministic and must not go back through intent
+    // classification, which can discard the fields and restart the form. An
+    // unlabelled name by itself is held briefly so approved branch names can still
+    // take precedence below (for example, "Alexandria").
     const inferredName=contactReply?.followUp?.name&&!context.followUp?.name&&!/(?:my name is|name\s*:|اسمي|إسمي|الاسم\s*:)/i.test(context.text??'');
-    if(contactReply&&!inferredName)return contactReply;
+    if(contactReply&&(!inferredName||contactReply.followUp?.phone))return contactReply;
     if (!['text','location'].includes(context.type) || !context.text?.trim()) return fallback(context, 'unsupported_message');
     if (!context.requestKey) return fallback(context, 'missing_request_identity');
     if (Buffer.byteLength(context.text, 'utf8') > 3500) return fallback(context, 'message_too_long');

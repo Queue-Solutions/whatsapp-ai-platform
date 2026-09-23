@@ -24,6 +24,16 @@ describe('personal follow-up collection',()=>{
   expect(result.followUp).toEqual({state:'ready',name:'منى حسن',phone:'201012345678'});expect(result.text).toContain('IRAM');expect(result.text).toContain('قريبًا');
   expect(ledger.reserve).not.toHaveBeenCalled();expect(complete).not.toHaveBeenCalled();
  });
+ it.each(['Ziad 01067945993','Ziad\n01067945993'])('saves unlabelled name and phone details from the requested contact form: %j',async text=>{
+  const ledger={reserve:vi.fn(),finish:vi.fn()};
+  const complete=vi.fn();const classifyIntent=vi.fn();const loadSources=vi.fn();
+  const start=beginFollowUp(context,issue);
+  const result=await new GroundedStrategy(loadSources,ledger,{complete,classifyIntent}).reply({...context,text,followUp:pending,history:[{role:'assistant',content:start.text}]});
+  expect(result).toMatchObject({action:'handoff',followUp:{state:'ready',name:'Ziad',phone:'201067945993'}});
+  expect(result.text).toContain('contact you personally shortly');
+  expect(loadSources).not.toHaveBeenCalled();expect(classifyIntent).not.toHaveBeenCalled();expect(complete).not.toHaveBeenCalled();
+  expect(ledger.reserve).not.toHaveBeenCalled();expect(ledger.finish).not.toHaveBeenCalled();
+ });
  it('supports phone first, re-prompts for invalid phone and handles refusal without a callback promise',()=>{
   const start=beginFollowUp(context,issue);
   const phone=continueFollowUp({...context,text:'+201012345678',followUp:pending,history:[{role:'assistant',content:start.text}]})!;
