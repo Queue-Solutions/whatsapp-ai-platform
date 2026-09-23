@@ -19,6 +19,7 @@ describe('job enquiries',()=>{
    const reply=await strategy.reply({...context,text,requestKey:`message:${text}`});expect(reply).toMatchObject({reason:'approved_knowledge',action:'answer',sources:[{id:'career-faq'}]});expect(reply.text).toContain('hr@example.test');expect(reply.followUp).toBeUndefined();
    if(/[\u0600-\u06ff]/.test(text)){expect(reply.text).toContain('السيرة الذاتية');expect(reply.text).not.toContain('Please send');}
    else expect(reply.text).toContain('Please send');
+   expect(reply.text).not.toMatch(/شكرًا لتواصلك|Thank you for contacting|مع أطيب التحيات|Best regards/i);
   }
   expect(load).toHaveBeenCalledTimes(6);expect(complete).not.toHaveBeenCalled();expect(reserve).not.toHaveBeenCalled();
  });

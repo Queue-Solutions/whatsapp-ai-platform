@@ -19,9 +19,10 @@ function isCareerFaq(source:KnowledgeSource){
 }
 
 function localizedAnswer(answer:string,context:MessageContext){
-  if(replyLanguage(context.text??'')!=='ar')return answer.trim();
   const email=answer.match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/i)?.[0];
-  if(email&&/\b(?:cv|resume|résumé)\b/i.test(answer))return `شكرًا لتواصلك مع IRAM Jewelry!\n\nمن فضلك ابعت السيرة الذاتية على إيميل الموارد البشرية:\n${email}\n\nمع أطيب التحيات،\nIRAM Jewelry`;
+  if(email&&/\b(?:cv|resume|résumé)\b/i.test(answer))return replyLanguage(context.text??'')==='ar'
+    ? `من فضلك ابعت السيرة الذاتية على إيميل الموارد البشرية:\n${email}`
+    : `Please send your CV to the Human Resources email address:\n${email}`;
   return answer.trim();
 }
 

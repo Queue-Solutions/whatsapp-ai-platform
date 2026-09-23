@@ -1,7 +1,7 @@
 import {describe,it,expect,vi} from 'vitest';
 import {GroundedStrategy} from '../src/modules/ai/grounded-strategy';
 import {beginFollowUp,continueFollowUp,contactPhone} from '../src/modules/ai/follow-up';
-import {formatReply,formatBranchReply} from '../src/modules/ai/reply-format';
+import {formatReply,formatBusinessReply,formatBranchReply} from '../src/modules/ai/reply-format';
 import type {MessageContext} from '../src/modules/messaging/types';
 const context:MessageContext={tenantId:'tenant',conversationId:'conversation',requestKey:'inbound',eligible:true,type:'text',text:'My order arrived damaged'};
 const issue={action:'handoff' as const,reason:'complaint',text:'',sources:[],attentionSummary:'The customer reports a damaged item.'};
@@ -51,8 +51,10 @@ describe('personal follow-up collection',()=>{
 });
 describe('WhatsApp reply presentation',()=>{
  it('normalizes all brand spellings to uppercase English while retaining useful paragraph spacing',()=>{
-  expect(formatReply('أهلًا في إيرام؛  مع iram و ارم;\n\n\nتفضل')).toBe('أهلًا في IRAM\nمع IRAM و IRAM\n\nتفضل');
+ expect(formatReply('أهلًا في إيرام؛  مع iram و ارم;\n\n\nتفضل')).toBe('أهلًا في IRAM\nمع IRAM و IRAM\n\nتفضل');
   expect(formatReply('See https://example.test/a;b')).toBe('See https://example.test/a%3Bb');
+  expect(formatBusinessReply('شكرًا لتواصلك مع IRAM Jewelry!\n\nمن فضلك ابعت السيرة الذاتية.\n\nمع أطيب التحيات،\nIRAM Jewelry')).toBe('من فضلك ابعت السيرة الذاتية.');
+  expect(formatBusinessReply('Hello!\n\nYour branch closes at 10 PM.')).toBe('Your branch closes at 10 PM.');
  });
  it('places each branch on its own line with a blank line between entries',()=>{
   expect(formatReply(formatBranchReply('Our branches:', ['Riverside — River Road','Garden — Park Road']))).toBe('Our branches:\n\n• Riverside — River Road\n\n• Garden — Park Road');

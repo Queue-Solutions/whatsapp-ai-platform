@@ -2,7 +2,7 @@ import {describe,it,expect,vi} from 'vitest';
 import {GroundedStrategy} from '../src/modules/ai/grounded-strategy';
 import {branchScope,matchingBranches} from '../src/modules/ai/branch-scope';
 import {buildRequest} from '../src/modules/ai/openai';
-import {boundedHistory,resolveContinuation} from '../src/modules/ai/conversation-context';
+import {boundedHistory,isProductChoiceContinuation,resolveContinuation} from '../src/modules/ai/conversation-context';
 import {branchData,productIntent} from '../src/modules/ai/branch-dialogue';
 import {selectKnowledge} from '../src/modules/ai/knowledge-selection';
 import {continueFollowUp} from '../src/modules/ai/follow-up';
@@ -89,6 +89,15 @@ describe('product-aware branch navigation',()=>{
  it('resumes a named location after the customer answers the product question',async()=>{
   const decision=await new GroundedStrategy(async()=>branches,ledger(),{complete:vi.fn()}).reply({...base,text:'Jewelry',history:[{role:'user',content:'Alexandria address'},{role:'assistant',content:'Jewelry or BTC products?'}]});
   expect(decision.text).toContain('https://maps.app.goo.gl/B1');
+ });
+ it('treats “No diamonds” as a jewelry choice and never escalates the pending Korba branch request',async()=>{
+  const korba=branch('IRAM Korba','Heliopolis','KORBA'),complete=vi.fn(),classifyIntent=vi.fn();
+  const context={...base,text:'No diamonds',history:[{role:'user' as const,content:'Korba'},{role:'assistant' as const,content:'Are you looking for jewelry or BTC / bullion products? I’ll use that to find the right branches and service hours.'}]};
+  const resolved=resolveContinuation(context);
+  expect(resolved.text).toBe('jewelry');expect(isProductChoiceContinuation(resolved)).toBe(true);
+  const decision=await new GroundedStrategy(async()=>[korba],ledger(),{complete,classifyIntent}).reply(context);
+  expect(decision).toMatchObject({action:'answer',reason:'approved_knowledge'});expect(decision.text).toContain('IRAM Korba — Heliopolis');expect(decision.text).toContain('https://maps.app.goo.gl/KORBA');expect(decision.followUp).toBeUndefined();
+  expect(classifyIntent).not.toHaveBeenCalled();expect(complete).not.toHaveBeenCalled();
  });
  it('marks missing maps honestly rather than inventing one',async()=>{
   const source={...branches[0],content:JSON.stringify({category:'branch',value:{name:'Riverside',address:'123 Street',mapsUrl:''}})};

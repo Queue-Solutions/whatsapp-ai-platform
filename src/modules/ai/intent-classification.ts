@@ -34,7 +34,7 @@ const instructions=`Classify the latest customer message for a business WhatsApp
 Return only the requested JSON. Do not answer the customer and do not provide business facts. normalizedQuery must be a short, corrected restatement of only the latest request in the same language. It may clarify spelling and intent but must never add a price, policy, service, branch or promise the customer did not express.
 
 Intent priority:
-1. An explicit request for a person, employee, callback or personal contact is human_followup even when it also mentions a branch, product or website.
+1. An explicit request for a person, employee, callback or personal contact is human_followup even when it also mentions a branch, product or website. Never use human_followup merely because the request is unclear, information may be missing, the customer says no, or the customer is choosing a product.
 2. A report of a bad experience, damaged/wrong/missing order, unresolved issue, or a refund request for the customer's purchase is complaint. Neutral policy questions are not complaints.
 3. Requests to browse, buy online, see collections, or obtain website/social accounts are online_links.
 4. Employment is career. Item maintenance or fixing is repair.

@@ -4,7 +4,7 @@ import {btcBranchReply} from './btc-branches';
 import {technicalFailure,recoverableFailure} from './recovery';
 import {hasUnsupportedLink,offeredLinks} from './approved-links';
 import {needsProductQuestion,productQuestion,renderBranchAnswer,directBranchDetail,directJewelryDirectory,productIntent,bullionPattern} from './branch-dialogue';
-import {resolveContinuation,isShortAcceptance} from './conversation-context';
+import {resolveContinuation,isProductChoiceContinuation,isShortAcceptance} from './conversation-context';
 import {unsolicitedBranches,scopeClarification,branchScope,normalizeIntent,matchingBranches} from './branch-scope';
 import { detectAttention, summarizeAttention } from './attention-detection';
 import { replyLanguage } from './language';
@@ -18,7 +18,7 @@ import { knowledgeGap } from './knowledge-gap';
 import { beginFollowUp, continueFollowUp } from './follow-up';
 import {careerFaqReply} from './career-faq';
 import {repairFaqReply} from './repair-faq';
-import { formatReply, formatBranchReply } from './reply-format';
+import { formatReply, formatBusinessReply, formatBranchReply } from './reply-format';
 import { buildRequest, ModelFailure, type ModelProvider } from './openai';
 import {buildIntentRequest,catalogFingerprint,contextForIntent,isStoredIntentDecision,type IntentDecision,type StoredIntentDecision} from './intent-classification';
 export type SourceLoader = (tenant: string) => Promise<KnowledgeSource[]>;
@@ -56,7 +56,7 @@ export class GroundedStrategy implements ReplyStrategy {
     if(technicalFailure(decision.reason))return {...decision,text:'',action:'suppress',sources:[]};
     const followUp=decision.followUp?decision:decision.action==='handoff'||decision.reason==='missing_business_information'
       ? beginFollowUp(context,decision):decision;
-    return {...followUp,text:formatReply(followUp.text),
+    return {...followUp,text:followUp.reason.startsWith('social_')?formatReply(followUp.text):formatBusinessReply(followUp.text),
       ...(followUp.attentionSummary?{attentionSummary:formatReply(followUp.attentionSummary)}: {})};
   }
   private async classifyIntent(context:MessageContext,sources:KnowledgeSource[]):Promise<IntentDecision|null>{
@@ -101,6 +101,11 @@ export class GroundedStrategy implements ReplyStrategy {
     let sources:KnowledgeSource[]=[],knowledgeUnavailable=false;
     try { sources = await this.loadSources(context.tenantId); }
     catch { knowledgeUnavailable=true; }
+    // A product choice answering our own branch-routing question is deterministic context, not a new support intent.
+    if(!knowledgeUnavailable&&isProductChoiceContinuation(context)){
+      const branchDetail=directBranchDetail(context,sources);if(branchDetail)return branchDetail;
+      const branchDirectory=directJewelryDirectory(context,sources);if(branchDirectory)return branchDirectory;
+    }
     const classified=await this.classifyIntent(context,sources);
     const useClassification=classified&&classified.confidence>=0.6?classified:null;
     const routed=useClassification?contextForIntent(context,useClassification,sources):context;
