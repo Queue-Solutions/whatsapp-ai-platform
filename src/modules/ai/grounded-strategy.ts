@@ -15,7 +15,7 @@ import type { UsageLedger } from './ledger';
 import { AI_MODEL } from './config';
 import { selectKnowledge } from './knowledge-selection';
 import { knowledgeGap } from './knowledge-gap';
-import { beginFollowUp, continueFollowUp, isCareerEnquiry } from './follow-up';
+import { assistantResumedReply, beginFollowUp, continueFollowUp, isCareerEnquiry } from './follow-up';
 import {careerFaqReply} from './career-faq';
 import {repairFaqReply} from './repair-faq';
 import { formatReply, formatBusinessReply, formatBranchReply } from './reply-format';
@@ -88,6 +88,7 @@ export class GroundedStrategy implements ReplyStrategy {
   }
   private async generate(context: MessageContext, recoveryReason?:string, recoveryAttempt=0): Promise<AgentDecision> {
     if (context.eligible === false) return fallback(context, 'ineligible', 'suppress');
+    if(context.resumeRequested)return assistantResumedReply(context);
     const careerIntent=isCareerEnquiry(context.text??'');
     // Career collection was retired: ignore any legacy in-progress career form and answer from the approved FAQ instead.
     // A new hiring/HR question also exits any unrelated contact-collection flow.
@@ -108,6 +109,10 @@ export class GroundedStrategy implements ReplyStrategy {
     let sources:KnowledgeSource[]=[],knowledgeUnavailable=false;
     try { sources = await this.loadSources(context.tenantId); }
     catch { knowledgeUnavailable=true; }
+    // A plain name supplied after our contact question is valid form input. Only
+    // defer it when it is also an approved branch name, so “emad” is retained
+    // while “Alexandria” can still navigate to that branch.
+    if(contactReply&&inferredName&&(knowledgeUnavailable||!matchingBranches(context.text??'',sources).length))return contactReply;
     // Employment and HR requests use the approved hiring FAQ. They must win over
     // generic phrases such as "reach the HR department", which also resemble a
     // request for a person and previously opened an unnecessary follow-up.

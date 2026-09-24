@@ -34,11 +34,11 @@ function reply(context:MessageContext,reason:string,summary:string,details:Follo
     ? 'شكرًا ليك، سجلت الوظيفة اللي مهتم بيها واسمك ورقمك 🤍\n\nحد من فريق IRAM هيتواصل معاك لو فيه احتياج للدور ده.'
     : 'Thank you, I’ve saved your desired role, name and phone number 🤍\n\nSomeone from IRAM will contact you if this role is needed.';
   else if(details.state==='ready')text=ar
-    ? 'شكرًا ليك، سجلت اسمك ورقم التواصل 🤍\n\nحد من فريق IRAM هيتواصل معاك شخصيًا قريبًا.'
-    : 'Thank you, I’ve saved your name and contact number 🤍\n\nSomeone from IRAM will contact you personally shortly.';
+    ? 'شكرًا ليك، سجلت اسمك ورقم التواصل 🤍\n\nالمساعد الذكي اتوقف دلوقتي في المحادثة دي، وحد من فريق IRAM هيتواصل معاك خلال 24 ساعة.\n\nلو حابب تلغي طلب المتابعة وترجع للمساعد الذكي، اكتب AI أو Cancel.'
+    : 'Thank you, I’ve saved your name and contact number 🤍\n\nThe AI assistant is now turned off for this chat. Someone from IRAM will contact you within the next 24 hours.\n\nTo cancel this follow-up and return to the AI assistant, type AI or Cancel.';
   else if(details.state==='declined')text=ar
-    ? 'ولا يهمك، مشاركة بياناتك اختيارية 🤍\n\nهسيب المحادثة لصاحب النشاط علشان يراجع طلبك ويرد عليك هنا.'
-    : 'No problem, sharing your details is optional 🤍\n\nI’ll leave this conversation for the business owner to review and respond here.';
+    ? 'ولا يهمك، مشاركة بياناتك اختيارية 🤍\n\nالمساعد الذكي اتوقف في المحادثة دي علشان فريق IRAM يراجع طلبك ويرد عليك هنا. لو حابب تلغي طلب المتابعة وترجع للمساعد الذكي، اكتب AI أو Cancel.'
+    : 'No problem, sharing your details is optional 🤍\n\nThe AI assistant is paused for this chat so the IRAM team can review your request and respond here. To cancel the follow-up and return to the AI assistant, type AI or Cancel.';
   else {
     const intro=details.purpose==='career'?(ar?'شكرًا لاهتمامك بالانضمام لفريق IRAM 🤍':'Thank you for your interest in joining IRAM 🤍'):ar?'خلّينا نخلي حد من فريق IRAM يتابع طلبك شخصيًا 🤍':'Let’s have someone from IRAM help you personally 🤍';
     const question=!details.name&&!details.phone
@@ -90,6 +90,14 @@ export function isCareerEnquiry(text:string):boolean {
 export function beginCareer(context:MessageContext):AgentDecision {
   return reply({...context,followUp:undefined},'career_application','The customer wants to work at IRAM. Collect the desired role first, then name and phone. Contact only if the role is needed.',
     {purpose:'career',role:null,state:'collecting',name:null,phone:null});
+}
+
+export function assistantResumedReply(context:MessageContext):AgentDecision {
+  const lastAssistant=[...(context.history??[])].reverse().find(message=>message.role==='assistant')?.content??'';
+  const ar=replyLanguage(lastAssistant||(context.text??''))==='ar';
+  return {action:'clarify',reason:'assistant_resumed',sources:[],text:ar
+    ? 'تم إلغاء طلب المتابعة، والمساعد الذكي رجع يشتغل في المحادثة دي 🤍\n\nأقدر أساعدك بإيه؟'
+    : 'Your personal follow-up has been cancelled, and the AI assistant is back on for this chat 🤍\n\nHow can I help you?'};
 }
 
 /** Recover a yes/no hiring clarification issued before a career flow was persisted. */

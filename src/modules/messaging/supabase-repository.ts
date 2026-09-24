@@ -56,7 +56,7 @@ export class SupabaseMessagingRepository implements MessagingRepository {
     const eligible = assistantAvailable && !blocked && c.automation_mode === 'auto' && c.status === 'open' && ch.enabled && ch.mode === 'test'
       && job.automation_epoch === c.automation_epoch
       && ch.phone_number_id === this.phoneNumberId && Date.parse(c.last_inbound_at) >= Date.now() - (23*60+55)*60000;
-    return {tenantId:data.tenant_id,conversationId:data.conversation_id,text:data.body,type:data.message_type,mediaId:data.media_id??undefined,moderationState:data.moderation_state,blocked,eligible,history:boundedHistory(history.data),
+    return {tenantId:data.tenant_id,conversationId:data.conversation_id,text:data.body,type:data.message_type,mediaId:data.media_id??undefined,moderationState:data.moderation_state,blocked,eligible,resumeRequested:job.customer_resume===true,history:boundedHistory(history.data),
       followUp:c.followup_state==='collecting'?{state:'collecting',purpose:c.followup_purpose==='career'?'career':undefined,role:c.followup_role,name:c.followup_name,phone:c.followup_phone,
         reason:c.attention_reason==='knowledge_gap'?'missing_business_information':c.attention_reason,summary:c.attention_summary}:undefined};
   }
