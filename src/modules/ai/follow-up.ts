@@ -20,8 +20,11 @@ function contactName(text:string,allowPlain:boolean):string|null {
   const candidate=(explicit??(allowPlain?text.replace(/(?:\+|00)?[\d٠-٩۰-۹][\d٠-٩۰-۹ ()-]{5,}[\d٠-٩۰-۹]/g,'').replace(/[,،\n]/g,' ').trim():''))
     .replace(/\s+(?:and|phone|number|رقمي|ورقمي|رقم|تليفوني).*$/iu,'').trim();
   if(!/^[\p{L}\p{M}][\p{L}\p{M}'’ -]{1,79}$/u.test(candidate)||candidate.split(/\s+/).length>5)return null;
-  if(/\b(?:hi|hello|thanks|no|yes|branches|branch|price|where|when|what|how|please|help|online|website|links?|send|sure|jewelry|bullion|btc|don't|not)\b|(?:فروع|سعر|فين|امتي|متى|ازاي|شكرا|اهلا|عايز|عاوز|مش|رقم|تمام|اون ?لاين|ابعت|ياريت|يا ريت|ماشي|ايوه|روابط|موقع|سبائك|سبايك|مجوهرات|الاسكندريه|الاسكندرية|الغردقه|الغردقة)/iu.test(candidate))return null;
+  if(/\b(?:hi|hello|thanks|no|yes|yeah|yep|of\s*course|ofcourse|certainly|absolutely|okay|ok|alright|branches|branch|price|where|when|what|how|please|help|online|website|links?|send|sure|jewelry|bullion|btc|don't|not)\b|(?:فروع|سعر|فين|امتي|متى|ازاي|شكرا|اهلا|عايز|عاوز|مش|رقم|تمام|طبعاً|طبعا|أكيد|اكيد|اون ?لاين|ابعت|ياريت|يا ريت|ماشي|ايوه|روابط|موقع|سبائك|سبايك|مجوهرات|الاسكندريه|الاسكندرية|الغردقه|الغردقة)/iu.test(candidate))return null;
   return candidate;
+}
+function isAcknowledgement(text:string){
+  return /^(?:yes|yeah|yep|of\s*course|ofcourse|sure|certainly|absolutely|okay|ok|alright|fine|تمام|طبعاً|طبعا|أكيد|اكيد|ايوه|أيوه|اه|آه|ماشي)[.!،,؟? ]*$/iu.test(text.trim());
 }
 function reply(context:MessageContext,reason:string,summary:string,details:FollowUpDetails):AgentDecision {
   const lastAssistant=[...(context.history??[])].reverse().find(m=>m.role==='assistant')?.content;
@@ -34,11 +37,11 @@ function reply(context:MessageContext,reason:string,summary:string,details:Follo
     ? 'شكرًا ليك، سجلت الوظيفة اللي مهتم بيها واسمك ورقمك 🤍\n\nحد من فريق IRAM هيتواصل معاك لو فيه احتياج للدور ده.'
     : 'Thank you, I’ve saved your desired role, name and phone number 🤍\n\nSomeone from IRAM will contact you if this role is needed.';
   else if(details.state==='ready')text=ar
-    ? 'شكرًا ليك، سجلت اسمك ورقم التواصل 🤍\n\nالمساعد الذكي اتوقف دلوقتي في المحادثة دي، وحد من فريق IRAM هيتواصل معاك خلال 24 ساعة.\n\nلو حابب تلغي طلب المتابعة وترجع للمساعد الذكي، اكتب AI أو Cancel.'
-    : 'Thank you, I’ve saved your name and contact number 🤍\n\nThe AI assistant is now turned off for this chat. Someone from IRAM will contact you within the next 24 hours.\n\nTo cancel this follow-up and return to the AI assistant, type AI or Cancel.';
+    ? 'شكرًا ليك، سجلت اسمك ورقم التواصل 🤍\n\nالمساعد الذكي اتوقف دلوقتي في المحادثة دي، وحد من فريق IRAM هيتواصل معاك خلال 24 ساعة.\n\nلو حابب تلغي طلب المتابعة وترجع للمساعد الذكي، اكتب Cancel.'
+    : 'Thank you, I’ve saved your name and contact number 🤍\n\nThe AI assistant is now turned off for this chat. Someone from IRAM will contact you within the next 24 hours.\n\nTo cancel this follow-up and return to the AI assistant, type Cancel.';
   else if(details.state==='declined')text=ar
-    ? 'ولا يهمك، مشاركة بياناتك اختيارية 🤍\n\nالمساعد الذكي اتوقف في المحادثة دي علشان فريق IRAM يراجع طلبك ويرد عليك هنا. لو حابب تلغي طلب المتابعة وترجع للمساعد الذكي، اكتب AI أو Cancel.'
-    : 'No problem, sharing your details is optional 🤍\n\nThe AI assistant is paused for this chat so the IRAM team can review your request and respond here. To cancel the follow-up and return to the AI assistant, type AI or Cancel.';
+    ? 'ولا يهمك، مشاركة بياناتك اختيارية 🤍\n\nالمساعد الذكي اتوقف في المحادثة دي علشان فريق IRAM يراجع طلبك ويرد عليك هنا. لو حابب تلغي طلب المتابعة وترجع للمساعد الذكي، اكتب Cancel.'
+    : 'No problem, sharing your details is optional 🤍\n\nThe AI assistant is paused for this chat so the IRAM team can review your request and respond here. To cancel the follow-up and return to the AI assistant, type Cancel.';
   else {
     const intro=details.purpose==='career'?(ar?'شكرًا لاهتمامك بالانضمام لفريق IRAM 🤍':'Thank you for your interest in joining IRAM 🤍'):ar?'خلّينا نخلي حد من فريق IRAM يتابع طلبك شخصيًا 🤍':'Let’s have someone from IRAM help you personally 🤍';
     const question=!details.name&&!details.phone
@@ -71,6 +74,10 @@ export function continueFollowUp(context:MessageContext):AgentDecision|null {
   }
   const lastAssistant=[...(context.history??[])].reverse().find(m=>m.role==='assistant')?.content??'';
   const wasAskedForContact=/your name|phone number|ممكن اسمك|رقم التليفون|رقم تليفون/.test(lastAssistant);
+  // Agreement is not contact data. Keep the form conversational and ask only
+  // for the fields that are still missing instead of storing words like
+  // “ofcourse” or “sure” as the customer's name.
+  if(wasAskedForContact&&isAcknowledgement(text))return reply(context,current.reason,current.summary,current);
   const name=contactName(text,wasAskedForContact&&!current.name);
   const plainPhone=/^[+\d٠-٩۰-۹ ()-]+$/.test(text);
   const phone=plainPhone||name||labelledPhone.test(text)?contactPhone(text):null;
@@ -80,6 +87,12 @@ export function continueFollowUp(context:MessageContext):AgentDecision|null {
   const details={...current,name:name??current.name,phone:phone??current.phone,state:'collecting' as FollowUpDetails['state']};
   if(details.name&&details.phone)details.state='ready';
   return reply(context,current.reason,current.summary,details);
+}
+
+/** Repeat the active collection question without mutating any saved details. */
+export function repeatFollowUp(context:MessageContext):AgentDecision|null {
+  const current=context.followUp;
+  return current?.state==='collecting'?reply(context,current.reason,current.summary,current):null;
 }
 
 export function isCareerEnquiry(text:string):boolean {

@@ -27,10 +27,12 @@ describe('semantic intent classification',()=>{
     const request=JSON.parse(buildIntentRequest(context,[branch,links]));
     const input=JSON.parse(request.input);
     expect(input.latestCustomerMessage).toBe(context.text);
+    expect(input.activeContactCollection).toBe(false);
     expect(input.branchCatalog).toEqual([{label:'B1',name:'IRAM Nox',city:'New Cairo'}]);
     expect(input.faqTopics).toEqual(['Where can I see the collection online?']);
     expect(request.input).not.toContain('https://iram.example');
     expect(request.instructions).toContain('Perform semantic interpretation, not keyword matching');
+    expect(request.instructions).toContain('Agreement or acknowledgement expressions');
     expect(request.text.format.schema.properties.branchLabels.items.enum).toEqual(['B1']);
   });
 

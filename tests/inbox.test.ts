@@ -17,7 +17,7 @@ describe('inbox PostgreSQL boundaries',()=>{
   async function claim(){return(await rows<{id:string;lease_token:string;automation_epoch:number}>("select * from public.claim_message_job('9001')"))[0];}
   async function availability(scope:string,selected:string[]=[]){return db.query('select public.set_assistant_availability($1,$2,$3::uuid[])',[channel,scope,selected]);}
   beforeAll(async()=>{db=new PGlite();await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;`);
-    for(const file of ['202609120001_foundation.sql','202609120002_bounded_ai.sql','202609130001_inbox.sql','202609150001_faq_deletion.sql','202609160001_inbox_attention.sql','202609170001_knowledge_gap_attention.sql','202609170002_contact_followup.sql','202609170003_bsuid.sql','202609170004_careers_blacklist.sql','202609220001_assistant_availability.sql','202609230001_conversation_controls.sql','202609240001_customer_resume.sql'])await db.exec(await readFile(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));
+    for(const file of ['202609120001_foundation.sql','202609120002_bounded_ai.sql','202609130001_inbox.sql','202609150001_faq_deletion.sql','202609160001_inbox_attention.sql','202609170001_knowledge_gap_attention.sql','202609170002_contact_followup.sql','202609170003_bsuid.sql','202609170004_careers_blacklist.sql','202609220001_assistant_availability.sql','202609230001_conversation_controls.sql','202609240001_customer_resume.sql','202609240002_cancel_command.sql'])await db.exec(await readFile(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));
   });
   afterAll(async()=>{await db?.close();});
   beforeEach(async()=>{await db.exec('reset role;truncate public.tenants,auth.users cascade;');
@@ -117,7 +117,7 @@ describe('inbox PostgreSQL boundaries',()=>{
   });
   it('lets an exact customer command cancel an active escalation and resume only that chat',async()=>{
     await db.query("update public.conversations set automation_mode='human',attention_state='waiting',attention_reason='complaint',attention_summary='Active complaint',is_complaint=true,followup_state='ready',followup_name='Emad',followup_phone='201116657662' where id=$1",[conversation]);
-    await db.query("select public.ingest_moderated_message('9001','customer-resume','201000000001',null,now(),'text','Cancel',null,null,null)");
+    await db.query("select public.ingest_moderated_message('9001','customer-resume','201000000001',null,now(),'text','cAnCeL',null,null,null)");
     expect((await rows('select automation_mode,attention_state,attention_reason,is_complaint,followup_state,followup_name,followup_phone from public.conversations where id=$1',[conversation]))[0]).toMatchObject({
       automation_mode:'auto',attention_state:'resolved',attention_reason:'complaint',is_complaint:false,followup_state:'none',followup_name:null,followup_phone:null,
     });
@@ -132,6 +132,12 @@ describe('inbox PostgreSQL boundaries',()=>{
     await db.query("select public.ingest_moderated_message('9001','not-a-command','201000000001',null,now(),'text','Cancel my appointment',null,null,null)");
     expect((await rows('select automation_mode,attention_state,followup_state from public.conversations where id=$1',[conversation]))[0]).toMatchObject({automation_mode:'human',attention_state:'waiting',followup_state:'collecting'});
     expect((await rows<{customer_resume:boolean}>("select j.customer_resume from public.message_jobs j join public.messages m on m.id=j.inbound_message_id where m.provider_message_id='not-a-command'"))[0].customer_resume).toBe(false);
+  });
+  it('does not use AI as a customer resume command',async()=>{
+    await db.query("update public.conversations set automation_mode='human',attention_state='waiting',attention_reason='human_requested',attention_summary='Active follow-up',followup_state='collecting' where id=$1",[conversation]);
+    await db.query("select public.ingest_moderated_message('9001','ai-is-not-command','201000000001',null,now(),'text','AI',null,null,null)");
+    expect((await rows('select automation_mode,attention_state,followup_state from public.conversations where id=$1',[conversation]))[0]).toMatchObject({automation_mode:'human',attention_state:'waiting',followup_state:'collecting'});
+    expect((await rows<{customer_resume:boolean}>("select j.customer_resume from public.message_jobs j join public.messages m on m.id=j.inbound_message_id where m.provider_message_id='ai-is-not-command'"))[0].customer_resume).toBe(false);
   });
   it('denies attention edits by viewers, anonymous callers and other tenants, including stale requests',async()=>{
     await db.exec('reset role');const id=(await rows<{id:string}>('select id from public.conversations where tenant_id=$1',[other]))[0].id;

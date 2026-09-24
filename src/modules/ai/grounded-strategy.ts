@@ -15,7 +15,7 @@ import type { UsageLedger } from './ledger';
 import { AI_MODEL } from './config';
 import { selectKnowledge } from './knowledge-selection';
 import { knowledgeGap } from './knowledge-gap';
-import { assistantResumedReply, beginFollowUp, continueFollowUp, isCareerEnquiry } from './follow-up';
+import { assistantResumedReply, beginFollowUp, continueFollowUp, isCareerEnquiry, repeatFollowUp } from './follow-up';
 import {careerFaqReply} from './career-faq';
 import {repairFaqReply} from './repair-faq';
 import { formatReply, formatBusinessReply, formatBranchReply } from './reply-format';
@@ -109,10 +109,11 @@ export class GroundedStrategy implements ReplyStrategy {
     let sources:KnowledgeSource[]=[],knowledgeUnavailable=false;
     try { sources = await this.loadSources(context.tenantId); }
     catch { knowledgeUnavailable=true; }
-    // A plain name supplied after our contact question is valid form input. Only
-    // defer it when it is also an approved branch name, so “emad” is retained
-    // while “Alexandria” can still navigate to that branch.
-    if(contactReply&&inferredName&&(knowledgeUnavailable||!matchingBranches(context.text??'',sources).length))return contactReply;
+    // Combined details and labelled fields are deterministic. A bare one-word
+    // name is intentionally held for semantic validation below so an
+    // acknowledgement cannot silently become customer data. If classification
+    // is unavailable, retain the safe legacy fallback after excluding branches.
+    if(contactReply&&inferredName&&!this.provider.classifyIntent&&(knowledgeUnavailable||!matchingBranches(context.text??'',sources).length))return contactReply;
     // Employment and HR requests use the approved hiring FAQ. They must win over
     // generic phrases such as "reach the HR department", which also resemble a
     // request for a person and previously opened an unnecessary follow-up.
@@ -132,6 +133,14 @@ export class GroundedStrategy implements ReplyStrategy {
     const classified=await this.classifyIntent(context,sources);
     const useClassification=classified&&classified.confidence>=0.6?classified:null;
     const routed=useClassification?contextForIntent(context,useClassification,sources):context;
+    if(contactReply&&inferredName){
+      if(useClassification?.intent==='contact_details')return contactReply;
+      if(!useClassification&&(knowledgeUnavailable||!matchingBranches(context.text??'',sources).length))return contactReply;
+      // Acknowledgements are filtered before the classifier. This guard covers
+      // other non-detail replies without saving them as a name or losing the
+      // active form state.
+      if(useClassification&&['greeting','thanks','unrelated','ambiguous'].includes(useClassification.intent))return repeatFollowUp(context)??contactReply;
+    }
     if(useClassification?.intent==='career'){
       if(knowledgeUnavailable)return fallback(context,'knowledge_unavailable');
       return careerFaqReply(context,sources,true)??fallback(context,'career_information_unavailable');
@@ -150,8 +159,7 @@ export class GroundedStrategy implements ReplyStrategy {
       const attention=detectAttention(context.text);
       if(attention)return {...fallback(context,attention,'handoff'),attentionSummary:summarizeAttention(context.text,attention)};
     }
-    if(knowledgeUnavailable)return contactReply??fallback(context,'knowledge_unavailable');
-    if(contactReply&&!matchingBranches(routed.text??'',sources).length)return contactReply;
+    if(knowledgeUnavailable)return fallback(context,'knowledge_unavailable');
     if (!sources.length) return knowledgeGap(context, replyLanguage(context.text) === 'ar'
       ? 'لا توجد معلومات معتمدة منشورة للمساعد. راجع سؤال العميل وأضف المعلومات المطلوبة.'
       : 'No approved business information is published for the assistant. Review the customer’s question and add the required information.');
