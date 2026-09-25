@@ -37,7 +37,7 @@ function arabicRepairAnswer(answer:string){
   if(/\b(?:daily|except|sunday|weekly|friday|from|to)\b/i.test(schedule))return null;
   const branches=lines.slice(availableIndex+1,dropIndex).map(line=>line.replace(/^[\s\t•*-]*(?:\d+\ufe0f?\u20e3?)?[.)-]?\s*/u,'').trim()).filter(Boolean);
   if(!branches.length)return null;
-  return `مواعيد العناية الفنية والصيانة:\n${schedule}\n\nالفروع المتاحة:\n${branches.map(branch=>`• ${branch}`).join('\n')}\n\nتقدر كمان تسلّم القطعة للصيانة في أي فرع من فروعنا الأخرى، وتستلمها بعد كده من نفس الفرع.`;
+  return `مواعيد العناية الفنية والصيانة:\n${schedule}\n\nالفروع المتاحة:\n${branches.map(branch=>`• ${branch}`).join('\n')}\n\nيمكنك أيضًا تسليم القطعة للصيانة في أي فرع آخر من فروعنا، ثم استلامها من الفرع نفسه.`;
 }
 
 /** Clear repair requests use the approved technical-care FAQ without a paid model call. */

@@ -30,7 +30,7 @@ describe('BTC context from the screenshot',()=>{
   expect(productIntent(c)).toBe('btc');
   const complete=vi.fn(async()=>({decision:{action:'answer' as const,text:'مواعيد خدمة السبائك من ١٢ ظهرًا لحد ٨:٣٠ مساءً، والجمعة من ٢ لحد ٨:٣٠ مساءً.',branchLines:['Riverside — Cairo'],sourceLabels:['K1']},input:100,output:80}));
   const decision=await new GroundedStrategy(async()=>[btc,branch],ledger(),{complete}).reply(c);
-  expect(decision.action).toBe('answer');expect(decision.text).toContain('لو بتسأل على السبائك، فدي الفروع المتاحة');expect(decision.text).not.toMatch(/المجوهرات ولا|123 Street|9am/);expect(complete).not.toHaveBeenCalled();
+  expect(decision.action).toBe('answer');expect(decision.text).toContain('الفروع المتاحة لخدمة BTC والسبائك');expect(decision.text).not.toMatch(/المجوهرات ولا|123 Street|9am/);expect(complete).not.toHaveBeenCalled();
  });
 });
 describe('bounded and silent model recovery',()=>{

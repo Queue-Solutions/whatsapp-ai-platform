@@ -76,7 +76,7 @@ describe('personal follow-up collection',()=>{
   const load=vi.fn(),reserve=vi.fn(),complete=vi.fn(),classifyIntent=vi.fn();
   const strategy=new GroundedStrategy(load,{reserve,finish:vi.fn()},{complete,classifyIntent});
   const english=await strategy.reply({...context,text:'Cancel',resumeRequested:true,history:[{role:'assistant',content:'The AI assistant is now turned off for this chat.'}]});
-  expect(english).toMatchObject({action:'clarify',reason:'assistant_resumed'});expect(english.text).toContain('follow-up has been cancelled');expect(english.text).toContain('AI assistant is back on');
+  expect(english).toMatchObject({action:'clarify',reason:'assistant_resumed'});expect(english.text).toContain('follow-up has been cancelled');expect(english.text).toContain('AI assistant is active again');
   const arabic=await strategy.reply({...context,text:'cAnCeL',resumeRequested:true,history:[{role:'assistant',content:'المساعد الذكي اتوقف دلوقتي في المحادثة دي.'}]});
   expect(arabic.text).toContain('تم إلغاء طلب المتابعة');expect(load).not.toHaveBeenCalled();expect(reserve).not.toHaveBeenCalled();expect(classifyIntent).not.toHaveBeenCalled();expect(complete).not.toHaveBeenCalled();
  });
@@ -91,6 +91,7 @@ describe('WhatsApp reply presentation',()=>{
   expect(formatReply('See https://example.test/a;b')).toBe('See https://example.test/a%3Bb');
   expect(formatBusinessReply('شكرًا لتواصلك مع IRAM Jewelry!\n\nمن فضلك ابعت السيرة الذاتية.\n\nمع أطيب التحيات،\nIRAM Jewelry')).toBe('من فضلك ابعت السيرة الذاتية.');
   expect(formatBusinessReply('Hello!\n\nYour branch closes at 10 PM.')).toBe('Your branch closes at 10 PM.');
+  expect(formatBusinessReply('A polished answer 😊 🤍 💎')).toBe('A polished answer 🤍');
  });
  it('places each branch on its own line with a blank line between entries',()=>{
   expect(formatReply(formatBranchReply('Our branches:', ['Riverside — River Road','Garden — Park Road']))).toBe('Our branches:\n\n• Riverside — River Road\n\n• Garden — Park Road');
@@ -103,7 +104,7 @@ describe('WhatsApp reply presentation',()=>{
   expect(result.text).toContain('\\n\\n• Riverside — River Road\\n\\n• Garden — Park Road'.replaceAll('\\n','\n'));
   expect(result.sources).toEqual([{id:source.id,kind:'fact',updatedAt:source.updatedAt}]);
  });
- it('greets customers warmly and consistently in English and Arabic',async()=>{
+ it('greets customers elegantly and consistently in English and Arabic',async()=>{
   const strategy=new GroundedStrategy(vi.fn(),{reserve:vi.fn(),finish:vi.fn()},{complete:vi.fn()});
   const en=await strategy.reply({...context,text:'Hi'});const ar=await strategy.reply({...context,text:'السلام عليكم'});
   expect(en.text).toContain('Welcome to IRAM');expect(en.text).toContain('\n\n');expect(ar.text).toContain('IRAM');expect(ar.text).not.toMatch(/ارم|إيرام/);

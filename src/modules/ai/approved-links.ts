@@ -57,7 +57,7 @@ export function offeredLinks(context:MessageContext,sources:KnowledgeSource[],fo
     const label=host.includes('instagram')?(ar?'إنستجرام':'Instagram'):host.includes('facebook')?(ar?'فيسبوك':'Facebook'):(ar?'موقعنا':'Website');
     return `${label}: ${url}`;
   };
-  const text=`${ar?'تقدر تشوف تشكيلاتنا وكل جديد هنا:':'You can view our collections and latest designs here:'}\n\n${urls.map(linkLine).join('\n\n')}`;
+  const text=`${ar?'يمكنك الاطلاع على تشكيلاتنا وأحدث التصاميم عبر الروابط التالية 💎':'Explore our collections and latest designs through the following links 💎'}\n\n${urls.map(linkLine).join('\n\n')}`;
   if(text.length>4096)return null;
   return {action:'answer',reason:'approved_knowledge',text,sources:relevant.map(s=>sourceRef(s.source))};
 }

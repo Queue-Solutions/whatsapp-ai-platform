@@ -21,7 +21,7 @@ describe('BTC FAQ is the branch eligibility authority',()=>{
   expect(decision.action).toBe('answer');expect(decision.text.split('\n').filter(l=>l.startsWith('• '))).toEqual(names.map((n,i)=>`• ${n} — ${cities[i]}`));
   expect(decision.text).not.toMatch(/ZIA|Kawthar|Fictional|https:|09999999999|0120000000/);
   expect(decision.text).toContain('12:00 PM to 8:30 PM');expect(decision.text).toContain('Friday from 2:00 PM to 8:30 PM');
-  expect(decision.text.match(/Type the branch/g)).toHaveLength(1);expect(decision.text.match(/For BTC/g)).toHaveLength(1);
+  expect(decision.text.match(/Type the branch/g)).toHaveLength(1);expect(decision.text.match(/Branches offering BTC/g)).toHaveLength(1);
   expect(f.complete).not.toHaveBeenCalled();expect(f.reserve).not.toHaveBeenCalled();expect(f.load).toHaveBeenCalledWith('trusted-tenant');
  });
  it.each(names.map((name,i)=>[name,i] as const))('joins %s to its own address/map and the BTC-specific FAQ phone',async(name,i)=>{

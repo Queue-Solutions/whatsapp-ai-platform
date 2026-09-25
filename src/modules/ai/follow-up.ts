@@ -31,23 +31,23 @@ function reply(context:MessageContext,reason:string,summary:string,details:Follo
   const ar=replyLanguage(context.followUp?.state==='collecting'&&lastAssistant?lastAssistant:context.text??'')==='ar';
   let text:string;
   if(details.purpose==='career'&&!details.role&&details.state==='collecting')text=ar
-    ? 'أهلًا بيك 🤍 يسعدنا اهتمامك بالشغل مع IRAM.\n\nإيه الوظيفة أو الدور اللي حابب تقدم عليه؟'
-    : 'Thanks for your interest in joining IRAM 🤍\n\nWhat job role would you like to apply for?';
+    ? 'يسعدنا اهتمامك بالانضمام إلى فريق IRAM.\n\nما الوظيفة أو الدور الذي ترغب في التقدم إليه؟'
+    : 'Thank you for your interest in joining IRAM.\n\nWhich role would you like to apply for?';
   else if(details.purpose==='career'&&details.state==='ready')text=ar
-    ? 'شكرًا ليك، سجلت الوظيفة اللي مهتم بيها واسمك ورقمك 🤍\n\nحد من فريق IRAM هيتواصل معاك لو فيه احتياج للدور ده.'
-    : 'Thank you, I’ve saved your desired role, name and phone number 🤍\n\nSomeone from IRAM will contact you if this role is needed.';
+    ? 'شكرًا لك. تم تسجيل الوظيفة التي تهتم بها، إلى جانب اسمك ورقم التواصل.\n\nسيتواصل معك فريق IRAM إذا توفرت فرصة مناسبة لهذا الدور.'
+    : 'Thank you. Your preferred role, name and contact number have been saved.\n\nThe IRAM team will contact you if a suitable opportunity becomes available.';
   else if(details.state==='ready')text=ar
-    ? 'شكرًا ليك، سجلت اسمك ورقم التواصل 🤍\n\nالمساعد الذكي اتوقف دلوقتي في المحادثة دي، وحد من فريق IRAM هيتواصل معاك خلال 24 ساعة.\n\nلو حابب تلغي طلب المتابعة وترجع للمساعد الذكي، اكتب Cancel.'
-    : 'Thank you, I’ve saved your name and contact number 🤍\n\nThe AI assistant is now turned off for this chat. Someone from IRAM will contact you within the next 24 hours.\n\nTo cancel this follow-up and return to the AI assistant, type Cancel.';
+    ? 'شكرًا لك. تم تسجيل اسمك ورقم التواصل 🤍\n\nتم إيقاف المساعد الذكي لهذه المحادثة، وسيتواصل معك أحد ممثلي IRAM خلال 24 ساعة.\n\nلإلغاء طلب المتابعة والعودة إلى المساعد الذكي، اكتب Cancel.'
+    : 'Thank you. Your name and phone number have been saved 🤍\n\nThe AI assistant is now turned off for this chat. An IRAM representative will contact you within the next 24 hours.\n\nTo cancel this follow-up and return to the AI assistant, type Cancel.';
   else if(details.state==='declined')text=ar
-    ? 'ولا يهمك، مشاركة بياناتك اختيارية 🤍\n\nالمساعد الذكي اتوقف في المحادثة دي علشان فريق IRAM يراجع طلبك ويرد عليك هنا. لو حابب تلغي طلب المتابعة وترجع للمساعد الذكي، اكتب Cancel.'
-    : 'No problem, sharing your details is optional 🤍\n\nThe AI assistant is paused for this chat so the IRAM team can review your request and respond here. To cancel the follow-up and return to the AI assistant, type Cancel.';
+    ? 'مشاركة بيانات التواصل اختيارية.\n\nتم إيقاف المساعد الذكي لهذه المحادثة حتى يتمكن فريق IRAM من مراجعة طلبك والرد هنا. لإلغاء المتابعة والعودة إلى المساعد الذكي، اكتب Cancel.'
+    : 'Sharing your contact details is optional.\n\nThe AI assistant is paused for this chat while the IRAM team reviews your request and responds here. To cancel the follow-up and return to the AI assistant, type Cancel.';
   else {
-    const intro=details.purpose==='career'?(ar?'شكرًا لاهتمامك بالانضمام لفريق IRAM 🤍':'Thank you for your interest in joining IRAM 🤍'):ar?'خلّينا نخلي حد من فريق IRAM يتابع طلبك شخصيًا 🤍':'Let’s have someone from IRAM help you personally 🤍';
+    const intro=details.purpose==='career'?(ar?'يسعدنا اهتمامك بالانضمام إلى فريق IRAM.':'Thank you for your interest in joining IRAM.'):ar?'سيتابع أحد ممثلي IRAM طلبك بصورة شخصية.':'An IRAM representative will assist you personally.';
     const question=!details.name&&!details.phone
-      ? ar?'ممكن اسمك ورقم التليفون اللي تحب نتواصل معاك عليه؟':'Could you share your name and the best phone number to contact you on?'
-      : !details.name?ar?'ممكن اسمك علشان نكمل طلب المتابعة؟':'Could you share your name to complete the follow-up request?'
-      : ar?'شكرًا ليك. ممكن رقم تليفون صحيح للتواصل، بكود الدولة لو الرقم خارج مصر؟':'Thank you. What’s the best phone number to reach you on? Please include the country code if it’s outside Egypt.';
+      ? ar?'يرجى إرسال اسمك ورقم الهاتف الأنسب للتواصل.':'Please share your name and preferred phone number.'
+      : !details.name?ar?'يرجى إرسال اسمك لاستكمال طلب المتابعة.':'Please share your name to complete the follow-up request.'
+      : ar?'شكرًا لك. يرجى إرسال رقم هاتف صحيح للتواصل، مع إضافة كود الدولة إذا كان الرقم خارج مصر.':'Thank you. Please share a valid phone number, including the country code if it is outside Egypt.';
     text=`${intro}\n\n${question}`;
   }
   return {text,action:details.state==='collecting'?'clarify':'handoff',reason,sources:[],attentionSummary:summary,followUp:{state:details.state,name:details.name,phone:details.phone,...(details.purpose?{purpose:details.purpose,role:details.role??null}:{})}};
@@ -109,8 +109,8 @@ export function assistantResumedReply(context:MessageContext):AgentDecision {
   const lastAssistant=[...(context.history??[])].reverse().find(message=>message.role==='assistant')?.content??'';
   const ar=replyLanguage(lastAssistant||(context.text??''))==='ar';
   return {action:'clarify',reason:'assistant_resumed',sources:[],text:ar
-    ? 'تم إلغاء طلب المتابعة، والمساعد الذكي رجع يشتغل في المحادثة دي 🤍\n\nأقدر أساعدك بإيه؟'
-    : 'Your personal follow-up has been cancelled, and the AI assistant is back on for this chat 🤍\n\nHow can I help you?'};
+    ? 'تم إلغاء طلب المتابعة وإعادة تشغيل المساعد الذكي لهذه المحادثة.\n\nكيف يمكنني مساعدتك؟'
+    : 'Your personal follow-up has been cancelled, and the AI assistant is active again for this chat.\n\nHow may I assist you?'};
 }
 
 /** Recover a yes/no hiring clarification issued before a career flow was persisted. */

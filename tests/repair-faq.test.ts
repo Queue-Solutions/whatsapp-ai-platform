@@ -24,7 +24,7 @@ describe('approved repair FAQ routing',()=>{
   const decision=await new GroundedStrategy(async()=>[repair],usage,{complete}).reply({...context,text,requestKey:`message:${text}`});
   expect(decision).toMatchObject({action:'answer',reason:'approved_knowledge',sources:[{id:'repair'}]});
   expect(decision.text).toContain('مواعيد العناية الفنية والصيانة');expect(decision.text).toContain('يوميًا من 1:00 PM إلى 9:00 PM');
-  expect(decision.text).toContain('• IRAM KORBA (Heliopolis)');expect(decision.text).toContain('• Hurghada');expect(decision.text).toContain('أي فرع من فروعنا الأخرى');
+  expect(decision.text).toContain('• IRAM KORBA (Heliopolis)');expect(decision.text).toContain('• Hurghada');expect(decision.text).toContain('أي فرع آخر من فروعنا');
   expect(decision.text).not.toMatch(/شكرًا لتواصلك|توضح طلبك|المجوهرات ولا منتجات BTC|Technical Care/);expect(complete).not.toHaveBeenCalled();expect(usage.reserve).not.toHaveBeenCalled();
  });
  it('keeps the approved English FAQ answer for an English repair request',async()=>{

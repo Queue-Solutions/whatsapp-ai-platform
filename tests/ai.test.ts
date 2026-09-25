@@ -46,12 +46,13 @@ describe('grounded reply strategy', () => {
       expect(result.reason).not.toBe('missing_business_information');expect(result.attentionSummary).toBeUndefined();
       if(action==='unavailable'){
         expect(result).toMatchObject({reason:'answer_not_supported',action:'unavailable'});
-        expect(result.text).toContain('specifically to help with IRAM');
+        expect(result.text).toContain('here to assist with IRAM');
         expect(result.text).not.toContain('confirmed information');
       }
     }
     const prompt=JSON.parse(buildRequest(context,[source])).instructions;
     expect(prompt).toContain('ask one short clarification first');expect(prompt).toContain('avoid repeating a clarification');
+    expect(prompt).toContain('refined, composed and concise');expect(prompt).toContain('Use no emoji by default');
   });
   it('does not flag retrieval, budget, provider or validation failures as missing business information', async () => {
     const cases=[
@@ -80,6 +81,7 @@ describe('grounded reply strategy', () => {
     const returning=await strategy.reply({...context,text:'Hi',requestKey:'returning',history:[{role:'assistant',content:first.text}]});
     const wellbeing=await strategy.reply({...context,text:'How are you?',requestKey:'wellbeing',history:[{role:'assistant',content:first.text}]});
     expect(first.text).toContain('Welcome to IRAM');expect(first.text).toContain('jewelry or BTC');
+    expect(first.text.match(/[🤍💎✨]/gu)).toHaveLength(1);
     expect(returning.text).toContain('Welcome back');expect(returning.text).not.toContain('jewelry or BTC');
     expect(wellbeing.text).toContain('doing well');expect(wellbeing.text).not.toContain('Welcome');
     expect(load).not.toHaveBeenCalled(); expect(complete).not.toHaveBeenCalled(); expect(ledger.reserve).not.toHaveBeenCalled();

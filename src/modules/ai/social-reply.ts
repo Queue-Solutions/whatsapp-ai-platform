@@ -12,15 +12,15 @@ export function socialReply(text:string,history:ReadonlyArray<{role:'user'|'assi
   const isWellbeing=wellbeing.test(normalized);
   const isGreeting=isWellbeing||greetings.test(normalized)||hint==='greeting';
   if(isWellbeing)return {action:'clarify',reason:'social_greeting',sources:[],text:ar
-    ? 'أنا تمام، شكرًا لسؤالك 🤍\n\nأقدر أساعدك بإيه؟'
-    : 'I’m doing well, thank you for asking 🤍\n\nHow can I help you?'};
+    ? 'أنا بخير، شكرًا لسؤالك.\n\nكيف يمكنني مساعدتك؟'
+    : 'I’m doing well, thank you for asking.\n\nHow may I assist you?'};
   if(isGreeting){
     const returning=history.some(message=>message.role==='assistant');
     return {action:'clarify',reason:'social_greeting',sources:[],text:returning
-      ? ar?'أهلًا بيك تاني 🤍\n\nأقدر أساعدك بإيه؟':'Welcome back 🤍\n\nHow can I help you?'
-      : ar?'أهلًا بيك في IRAM ✨\n\nنوّرتنا! مهتم بالمجوهرات ولا منتجات BTC والسبائك؟ 🤍':'Welcome to IRAM ✨\n\nLovely to have you here! Are you interested in jewelry or BTC / bullion products? 🤍'};
+      ? ar?'أهلًا بعودتك إلى IRAM.\n\nكيف يمكنني مساعدتك؟':'Welcome back to IRAM.\n\nHow may I assist you?'
+      : ar?'أهلًا بك في IRAM ✨\n\nهل ترغب في الاستفسار عن المجوهرات أم منتجات BTC والسبائك؟':'Welcome to IRAM ✨\n\nWould you like assistance with jewelry or BTC / bullion products?'};
   }
   if (isThanks) return { action: 'clarify', reason: 'social_thanks', sources: [],
-    text: ar ? 'العفو، ده يسعدنا 🤍\n\nلو محتاج أي حاجة تانية، أنا معاك.' : 'You’re very welcome 🤍\n\nIf you need anything else, I’m here to help.' };
+    text: ar ? 'على الرحب والسعة.\n\nيسعدني مساعدتك في أي استفسار آخر يخص IRAM.' : 'You’re welcome.\n\nI’ll be pleased to assist with any other IRAM enquiry.' };
   return null;
 }

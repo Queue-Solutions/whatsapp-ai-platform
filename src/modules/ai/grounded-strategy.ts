@@ -26,10 +26,10 @@ export function fallback(context: MessageContext, reason: string, action: AgentD
   const ar = replyLanguage(context.text ?? '') === 'ar';
   if(technicalFailure(reason))return {text:'',action:'suppress',reason,sources:[]};
   const text = action === 'handoff'
-    ? ar ? 'طلبك محتاج متابعة شخصية من صاحب النشاط. هوقف الردود الآلية هنا علشان يقدر يراجع المحادثة ويرد عليك.' : 'Your message needs personal attention from the business owner. I’ll pause automated replies here so they can review the conversation and respond.'
+    ? ar ? 'يتطلب طلبك متابعة شخصية من فريق IRAM. سيتم إيقاف الردود الآلية لهذه المحادثة حتى يتمكن الفريق من مراجعتها والرد عليك.' : 'Your request requires personal attention from the IRAM team. Automated replies will be paused while the team reviews the conversation and responds.'
     : reason === 'answer_not_supported'
-      ? ar ? 'أنا هنا لمساعدتك فقط في كل ما يخص مجوهرات IRAM ومنتجات BTC والسبائك وخدماتنا. أقدر أساعدك إزاي في رحلتك مع IRAM؟' : 'I’m here specifically to help with IRAM jewelry, BTC / bullion products and our business services. How can I assist you with your IRAM journey?'
-      : ar ? 'المعلومة دي مش متاحة عندي بشكل مؤكد حالياً. من فضلك وضّح سؤالك أو تواصل مع فريق العمل مباشرة.' : 'I do not have confirmed information for this right now. Please clarify your question or contact the business team directly.';
+      ? ar ? 'أنا هنا لمساعدتك في كل ما يخص مجوهرات IRAM ومنتجات BTC والسبائك وخدماتنا. كيف يمكنني مساعدتك في تجربتك مع IRAM؟' : 'I’m here to assist with IRAM jewelry, BTC / bullion products and our services. How may I support your IRAM experience?'
+      : ar ? 'هذه المعلومة غير متاحة لدي بشكل مؤكد حاليًا. يرجى توضيح استفسارك أو التواصل مع فريق IRAM مباشرة.' : 'I don’t currently have confirmed information for this request. Please clarify your enquiry or contact the IRAM team directly.';
   return { text, action, reason, sources: [] };
 }
 function sourcesCurrent(decision: AgentDecision, available: KnowledgeSource[]) {

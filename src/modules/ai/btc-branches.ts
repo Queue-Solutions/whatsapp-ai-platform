@@ -94,19 +94,19 @@ function directory(context:MessageContext,catalog:BtcCatalog,sources:KnowledgeSo
     if(city)refs.push(records[0]);
     return `• ${entry.name}${city?` — ${city}`:''}`;
   });
-  const intro=unlisted?(ar?'الفرع ده مش ضمن فروع BTC المؤكدة في المعلومات المتاحة. دي الفروع المدرجة للخدمة:':'That branch is not listed for BTC in the approved information. These branches are listed for the service:')
-    :ar?'لو بتسأل على السبائك، فدي الفروع المتاحة لخدمة BTC:':'For BTC / bullion, these are the branches offering this service:';
+  const intro=unlisted?(ar?'هذا الفرع غير مدرج ضمن فروع BTC المؤكدة في المعلومات المتاحة. الفروع المدرجة للخدمة هي:':'That branch is not listed for BTC in the approved information. These branches are listed for the service:')
+    :ar?'الفروع المتاحة لخدمة BTC والسبائك:':'Branches offering BTC / bullion services:';
   const hours=hoursText(catalog.hours,ar);
   return {action:'answer',reason:'approved_knowledge',sources:[...new Map(refs.map(s=>[s.id,s])).values()].map(sourceRef),
-    text:[intro,lines.join('\n'),hours,ar?'اكتب اسم الفرع اللي يناسبك علشان أبعتلك العنوان الكامل ورابط الموقع ورقم خدمة BTC.':'Type the branch you want for its full address, location link and BTC phone number.'].filter(Boolean).join('\n\n')};
+    text:[intro,lines.join('\n'),hours,ar?'اكتب اسم الفرع المطلوب لعرض العنوان الكامل ورابط الموقع ورقم خدمة BTC.':'Type the branch name to receive its full address, location link and BTC phone number.'].filter(Boolean).join('\n\n')};
 }
 function details(context:MessageContext,catalog:BtcCatalog,entry:BtcEntry,sources:KnowledgeSource[]):AgentDecision {
   const ar=replyLanguage(context.text??'')==='ar',matches=btcBranchRecords(entry,sources);
   const record=matches.length===1?matches[0]:null,data=record?branchData(record):null;
   return {action:'answer',reason:'approved_knowledge',sources:[...catalog.sources,...(record?[record]:[])].map(sourceRef),text:[
     `${entry.name}${data?.city?` — ${data.city}`:''}`,
-    data?.address?.trim()||(ar?'العنوان الكامل مش مؤكد عندي للفرع ده حاليًا.':'The full address is not confirmed for this branch right now.'),
-    data?.mapsUrl?.trim()||(ar?'رابط الموقع مش متاح حاليًا للفرع ده.':'A location link is not currently available for this branch.'),
+    data?.address?.trim()||(ar?'العنوان الكامل غير مؤكد لهذا الفرع حاليًا.':'The full address is not confirmed for this branch right now.'),
+    data?.mapsUrl?.trim()||(ar?'رابط الموقع غير متاح لهذا الفرع حاليًا.':'A location link is not currently available for this branch.'),
     `${ar?'رقم خدمة BTC':'BTC phone'}: ${entry.phone}`,hoursText(catalog.hours,ar),
   ].filter(Boolean).join('\n\n')};
 }

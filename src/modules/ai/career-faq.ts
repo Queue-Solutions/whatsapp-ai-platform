@@ -21,7 +21,7 @@ function isCareerFaq(source:KnowledgeSource){
 function localizedAnswer(answer:string,context:MessageContext){
   const email=answer.match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/i)?.[0];
   if(email&&/\b(?:cv|resume|résumé)\b/i.test(answer))return replyLanguage(context.text??'')==='ar'
-    ? `من فضلك ابعت السيرة الذاتية على إيميل الموارد البشرية:\n${email}`
+    ? `يرجى إرسال السيرة الذاتية إلى بريد الموارد البشرية:\n${email}`
     : `Please send your CV to the Human Resources email address:\n${email}`;
   return answer.trim();
 }

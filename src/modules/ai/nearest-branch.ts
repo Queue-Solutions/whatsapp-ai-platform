@@ -84,7 +84,7 @@ export async function nearestBranchReply(context:MessageContext,sources:Knowledg
     if(known)query=inlineArea(known.content);
   }
   if(!query)return clarify(ar
-    ?`انت في انهي مدينة أو منطقة؟ أو ابعت لوكيشن واتساب أو رابط دبوس Google Maps علشان أحدد أقرب فرع ${product==='btc'?'لخدمة BTC':'للمجوهرات'}.`
+    ?`في أي مدينة أو منطقة تتواجد؟ يمكنك أيضًا إرسال موقعك عبر واتساب أو رابط دبوس Google Maps لتحديد أقرب فرع ${product==='btc'?'لخدمة BTC':'للمجوهرات'}.`
     :`Which city or area are you in? Or share your WhatsApp location or a Google Maps pin so I can find a nearby ${product==='btc'?'BTC':'jewelry'} branch.`);
   query=query.replace(/^(?:i(?:'m| am)|انا)\s+(?:in|from|في|من)\s+/i,'').trim();
   const catalog=product==='btc'?btcCatalog(sources):null;
@@ -101,24 +101,24 @@ export async function nearestBranchReply(context:MessageContext,sources:Knowledg
   }));
   const mapped=located.filter((v):v is NonNullable<typeof v>=>v!==null);
   if(!mapped.length)return {action:'answer',reason:'approved_knowledge',sources:[...(catalog?.sources??[]),...candidates.slice(0,32).map(c=>c.source)].map(sourceRef),text:ar
-    ?'مواقع الفروع الدقيقة مش متاحة عندي للمقارنة حاليًا، فمش هقدر أحدد الأقرب بدقة. اكتب اسم الفرع اللي يناسبك علشان أبعتلك عنوانه ورابطه المتاح.'
+    ?'إحداثيات الفروع الدقيقة غير متاحة للمقارنة حاليًا، لذلك لا يمكنني تحديد الفرع الأقرب بدقة. اكتب اسم الفرع المطلوب لعرض عنوانه ورابط الموقع المتاح.'
     :'I don’t have confirmed branch coordinates to compare right now. Type a branch name and I can send its saved address and available location link.'};
   const pin=await locations.pin(query);
   const area=pin?null:await locations.area(query,mapped.map(m=>m.position));
   const origin=pin??area;
-  if(!origin)return clarify(ar?'مش قادر أحدد المنطقة دي بشكل مؤكد. ابعت لوكيشن واتساب أو رابط دبوس Google Maps علشان أقارن المسافات.'
+  if(!origin)return clarify(ar?'لم أتمكن من تحديد هذه المنطقة بشكل مؤكد. يرجى إرسال موقعك عبر واتساب أو رابط دبوس Google Maps لمقارنة المسافات.'
     :'I couldn’t identify that area unambiguously. Please share your WhatsApp location or a Google Maps pin so I can compare distances.');
   const ranked=mapped.map(m=>({...m,distance:distanceKm(origin,m.position)})).sort((a,b)=>a.distance-b.distance||a.name.localeCompare(b.name));
   const shown=ranked.slice(0,3),complete=mapped.length===expected;
   const intro=ar?`أقرب الخيارات ${product==='btc'?'لخدمة BTC':'للمجوهرات'} حسب المسافة المباشرة${area?' من مركز المنطقة تقريبًا':''}:`
     :`Closest ${product==='btc'?'BTC':'jewelry'} options by straight-line distance${area?' from the approximate area centre':''}:`;
-  const caveat=ar?'دي مسافات مباشرة، مش مسافات أو وقت قيادة.':'These are straight-line distances, not driving distances or travel times.';
-  const coverage=complete?'':ar?'المقارنة تشمل الفروع اللي موقعها مؤكد فقط. ممكن يكون فيه فرع أقرب من الفروع اللي موقعها غير متاح.'
+  const caveat=ar?'هذه مسافات مباشرة، وليست مسافات قيادة أو أوقات وصول.':'These are straight-line distances, not driving distances or travel times.';
+  const coverage=complete?'':ar?'تشمل المقارنة الفروع ذات المواقع المؤكدة فقط. قد يوجد فرع أقرب ضمن الفروع التي لا تتوفر إحداثياتها.'
     :'This comparison includes only branches with confirmed coordinates. A branch with missing location data could be closer.';
   const lines=shown.map(m=>`• ${m.name}${branchData(m.source)?.city?` — ${branchData(m.source)!.city}`:''} — ${m.distance.toFixed(1)} ${ar?'كم':'km'}`);
   return {action:'answer',reason:'approved_knowledge',sources:[...new Map([...(catalog?.sources??[]),...candidates.slice(0,32).map(c=>c.source)].map(s=>[s.id,s])).values()].map(sourceRef),text:[intro,lines.join('\n'),caveat,coverage,
-    ar?'اكتب اسم الفرع اللي يناسبك علشان أبعتلك العنوان الكامل ورابط الموقع'+(product==='btc'?' ورقم خدمة BTC.':'.')
-      :'Type a branch name for its full address, location link'+(product==='btc'?' and BTC phone number.':'.'),
+    ar?'اكتب اسم الفرع المطلوب لعرض العنوان الكامل ورابط الموقع'+(product==='btc'?' ورقم خدمة BTC.':'.')
+      :'Type a branch name to receive its full address and location link'+(product==='btc'?' and BTC phone number.':'.'),
     area?(ar?'بيانات المنطقة: © OpenStreetMap contributors':'Area data: © OpenStreetMap contributors'):'',
   ].filter(Boolean).join('\n\n')};
 }
