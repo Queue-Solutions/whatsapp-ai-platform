@@ -103,3 +103,17 @@ export function selectKnowledge(context: MessageContext, available: KnowledgeSou
   // Keep whole records, versions and labels intact; never truncate a policy or its exceptions.
   return { sources, coverage: coverage(sources), excludedByScope:available.length-indexed.length };
 }
+
+const returnsTopic=/\b(?:return|returns|refund|refunds|exchange|exchanges|cancellation|cancelations|cancellations)\b|استرجاع|استبدال|الغاء|إلغاء/;
+function isReturnsFaq(source:KnowledgeSource){
+  if(source.kind!=='faq')return false;
+  try{
+    const value=JSON.parse(source.content) as {question?:unknown};
+    return typeof value.question==='string'&&returnsTopic.test(normalizeIntent(value.question));
+  }catch{return false;}
+}
+
+/** Restrict a classified returns request to approved returns-policy FAQs. */
+export function selectReturnsKnowledge(context:MessageContext,available:KnowledgeSource[]){
+  return selectKnowledge(context,available.filter(isReturnsFaq));
+}

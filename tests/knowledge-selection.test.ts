@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { selectKnowledge } from '../src/modules/ai/knowledge-selection';
+import { selectKnowledge, selectReturnsKnowledge } from '../src/modules/ai/knowledge-selection';
 import { buildRequest } from '../src/modules/ai/openai';
 import { GroundedStrategy } from '../src/modules/ai/grounded-strategy';
 import { MAX_KNOWLEDGE_BYTES, MAX_REQUEST_BYTES } from '../src/modules/ai/config';
@@ -49,6 +49,13 @@ describe('bounded approved knowledge selection', () => {
     const relevant=source(100,{question,answer:'Approved policy text.'});
     const many=Array.from({length:80},(_,i)=>source(i+1,{question:`Unrelated topic ${i}`,answer:'Other approved content.'}));
     expect(selectKnowledge({...context,text},[...many,relevant]).sources[0]).toEqual(relevant);
+  });
+  it('isolates approved returns-policy FAQs from unrelated knowledge',()=>{
+    const returns=source(100,{question:'What are your return, exchange, cancellation and refund policies?',answer:'Approved returns policy.'});
+    const delivery=source(101,{question:'What is your delivery policy?',answer:'Approved delivery policy.'});
+    const selection=selectReturnsKnowledge({...context,text:'I want to return a bracelet'},[delivery,...branches,returns]);
+    expect(selection.sources).toEqual([returns]);
+    expect(selection.coverage).toEqual({omittedSourceCount:0,branchDirectoryComplete:true});
   });
   it('uses the named branch and recent customer history for a short follow-up', () => {
     const target=source(100,{category:'branch',value:{name:'Riverside',address:'River Road',hours:'10am–6pm'}},'fact');

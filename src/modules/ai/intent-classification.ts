@@ -5,7 +5,7 @@ import type {KnowledgeSource} from './contracts';
 import type {MessageContext} from '../messaging/types';
 
 export const intentNames=[
-  'greeting','thanks','contact_details','human_followup','complaint','online_links','career','repair','branch','nearest_branch',
+  'greeting','thanks','contact_details','human_followup','complaint','returns','online_links','career','repair','branch','nearest_branch',
   'btc_question','business_question','unrelated','ambiguous',
 ] as const;
 export const intentDecisionSchema=z.object({
@@ -37,12 +37,13 @@ Intent priority:
 1. When activeContactCollection is true and the latest customer message actually supplies a requested personal name or phone number, use contact_details. A person's name may be one word and may arrive separately from the phone number. Agreement or acknowledgement expressions such as "of course", "yes", "sure", "okay", "تمام" and "أكيد" are not names and must not be contact_details. If the customer asks a new business question instead, classify that new request normally.
 2. Employment, HR/human-resources, recruitment, job, vacancy, application, CV or résumé enquiries are career, including a request to reach, contact or speak to HR or recruitment. This overrides human_followup. Never classify a hiring enquiry as human_followup merely because it asks to contact a department or person.
 3. An explicit request for a person, employee, callback or personal contact that is not about hiring or HR is human_followup even when it also mentions a branch, product or website. Never use human_followup merely because the request is unclear, information may be missing, the customer says no, or the customer is choosing a product.
-4. A report of a bad experience, damaged/wrong/missing order, unresolved issue, or a refund request for the customer's purchase is complaint. Neutral policy questions are not complaints.
-5. Requests to browse, buy online, see collections, or obtain website/social accounts are online_links.
-6. Item maintenance or fixing is repair.
-7. Branch/address/hours/location requests are branch. Requests for the closest branch are nearest_branch.
-8. Non-branch BTC/bullion questions are btc_question. Other questions about the business are business_question.
-9. Use greeting or thanks only when that is the whole purpose. Use unrelated for requests outside business support. Use ambiguous only when the intended business task genuinely cannot be determined.
+4. A report of a bad experience, damaged/wrong/missing order, poor service, an explicitly stated complaint, or an unresolved earlier attempt is complaint. Wanting a return, exchange, cancellation or refund does not by itself prove a complaint.
+5. A straightforward request or question about returning, exchanging, cancelling or refunding a purchase is returns when the latest message does not report a negative incident. This includes "I want to return a bracelet", "where do I return it?", "عايز أرجع إسورة" and ordinary misspellings. Use the approved policy FAQ instead of human_followup or complaint.
+6. Requests to browse, buy online, see collections, or obtain website/social accounts are online_links.
+7. Item maintenance or fixing is repair.
+8. Branch/address/hours/location requests are branch. Requests for the closest branch are nearest_branch.
+9. Non-branch BTC/bullion questions are btc_question. Other questions about the business are business_question.
+10. Use greeting or thanks only when that is the whole purpose. Use unrelated for requests outside business support. Use ambiguous only when the intended business task genuinely cannot be determined.
 
 Use product only when the customer or recent customer context establishes jewelry or BTC. Use unknown otherwise. For a branch request, select branchLabels only from the supplied branch catalog. A named branch gets detail. A city/area containing several catalog branches gets every matching label and directory. An all-branches request gets directory with an empty branchLabels list. Set branchDetail to address, hours or phone only when that exact detail was requested; use general for a branch/location selection with no narrower detail and none outside branch intents. Never guess a branch from a weak resemblance; leave branchLabels empty if uncertain. nearest_branch must use branchMode nearest. For human_followup and complaint, summary briefly states only the customer's request/problem in their language; otherwise summary must be empty.
 

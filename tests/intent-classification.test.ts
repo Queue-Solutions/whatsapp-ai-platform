@@ -13,6 +13,7 @@ const source=(label:string,data:object,kind:'faq'|'fact'='faq'):KnowledgeSource=
 const branch=source('B1',{category:'branch',value:{name:'IRAM Nox',city:'New Cairo',address:'Nox Mall, New Cairo',hours:'11am–10pm',mapsUrl:'https://maps.app.goo.gl/nox'}},'fact');
 const links=source('L1',{question:'Where can I see the collection online?',answer:'Website: https://iram.example/\nInstagram: https://instagram.com/iram'});
 const delivery=source('D1',{question:'What is the delivery policy?',answer:'Approved delivery information.'});
+const returns=source('R1',{question:'What are your return, exchange, cancellation and refund policies?',answer:'Returns are accepted at any IRAM branch during working hours under the approved policy conditions.'});
 const decision=(changes:Partial<IntentDecision>):IntentDecision=>({intent:'business_question',confidence:.98,language:'en',product:'unknown',branchMode:'none',branchDetail:'none',branchLabels:[],normalizedQuery:'What is the delivery policy?',summary:'',...changes});
 function ledger():UsageLedger{
   const saved=new Map<string,Reservation>();
@@ -33,6 +34,7 @@ describe('semantic intent classification',()=>{
     expect(request.input).not.toContain('https://iram.example');
     expect(request.instructions).toContain('Perform semantic interpretation, not keyword matching');
     expect(request.instructions).toContain('Agreement or acknowledgement expressions');
+    expect(request.instructions).toContain('Wanting a return, exchange, cancellation or refund does not by itself prove a complaint');
     expect(request.text.format.schema.properties.branchLabels.items.enum).toEqual(['B1']);
   });
 
@@ -146,5 +148,32 @@ describe('semantic intent classification',()=>{
     const strategy=new GroundedStrategy(async()=>[...unrelated,delivery],ledger(),{complete,classifyIntent:vi.fn(async()=>({decision:decision({}),input:220,output:35}))});
     const result=await strategy.reply({...context,text:'wat is delivry polcy'});
     expect(result).toMatchObject({action:'answer',reason:'approved_knowledge'});expect(complete).toHaveBeenCalledOnce();
+  });
+
+  it('answers a misspelled return request from only the approved returns FAQ instead of opening personal follow-up',async()=>{
+    const complete=vi.fn(async(request:string)=>{
+      const body=JSON.parse(request),input=JSON.parse(body.input);
+      expect(input.classifiedIntent).toBe('returns');
+      expect(input.customerMessage).toBe('I wanted to return a bravelet i got from u guyz');
+      expect(input.approvedSources).toEqual([{label:'R1',content:returns.content}]);
+      expect(body.instructions).toContain('A straightforward request such as "I want to return a bracelet" is not a complaint');
+      return {decision:{action:'answer' as const,text:'You can return the bracelet at any IRAM branch during working hours, subject to the approved policy conditions.',summary:'',branchLines:[],sourceLabels:['R1']},input:410,output:55};
+    });
+    const strategy=new GroundedStrategy(async()=>[branch,delivery,returns],ledger(),{complete,classifyIntent:vi.fn(async()=>({
+      decision:decision({intent:'returns',normalizedQuery:'I want to return a bracelet I purchased.'}),input:230,output:35,
+    }))});
+    const result=await strategy.reply({...context,text:'I wanted to return a bravelet i got from u guyz'});
+    expect(result).toMatchObject({action:'answer',reason:'approved_knowledge'});
+    expect(result.followUp).toBeUndefined();expect(result.attentionSummary).toBeUndefined();expect(complete).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a reported damaged purchase on the complaint path',async()=>{
+    const complete=vi.fn();
+    const strategy=new GroundedStrategy(async()=>[returns],ledger(),{complete,classifyIntent:vi.fn(async()=>({
+      decision:decision({intent:'complaint',normalizedQuery:'My bracelet arrived damaged and I want a refund.',summary:'Customer reports a damaged bracelet and requests a refund.'}),input:230,output:35,
+    }))});
+    const result=await strategy.reply({...context,text:'bracelet came brokn and i need my money back'});
+    expect(result).toMatchObject({action:'clarify',reason:'complaint',followUp:{state:'collecting'}});
+    expect(result.attentionSummary).toContain('damaged bracelet');expect(complete).not.toHaveBeenCalled();
   });
 });

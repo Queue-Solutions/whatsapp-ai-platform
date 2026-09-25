@@ -13,7 +13,7 @@ import type { MessageContext, ReplyStrategy } from '../messaging/types';
 import type { AgentDecision, KnowledgeSource } from './contracts';
 import type { UsageLedger } from './ledger';
 import { AI_MODEL } from './config';
-import { selectKnowledge } from './knowledge-selection';
+import { selectKnowledge, selectReturnsKnowledge } from './knowledge-selection';
 import { knowledgeGap } from './knowledge-gap';
 import { assistantResumedReply, beginFollowUp, continueFollowUp, isCareerEnquiry, repeatFollowUp } from './follow-up';
 import {careerFaqReply} from './career-faq';
@@ -175,9 +175,18 @@ export class GroundedStrategy implements ReplyStrategy {
     const btcReply=btcBranchReply(routed,available);if(btcReply)return btcReply;
     const branchDetail=directBranchDetail(routed,available);if(branchDetail)return branchDetail;
     const branchDirectory=directJewelryDirectory(routed,available);if(branchDirectory)return branchDirectory;
-    const selection = selectKnowledge(routed, available);
+    // A straightforward return/exchange/refund request is a policy workflow, not
+    // a complaint. Restrict its evidence to the approved returns FAQ so an
+    // unrelated record cannot outrank the policy or reopen personal follow-up.
+    const selection = useClassification?.intent==='returns'
+      ? selectReturnsKnowledge(routed,available)
+      : selectKnowledge(routed, available);
     sources = selection.sources;
-    if (!sources.length) return selection.excludedByScope===available.length?knowledgeGap(context):fallback(context,'knowledge_selection_empty');
+    if (!sources.length) return useClassification?.intent==='returns'||selection.excludedByScope===available.length
+      ? knowledgeGap(context,replyLanguage(context.text)==='ar'
+        ? 'طلب العميل يخص الاسترجاع أو الاستبدال، لكن سياسة الاسترجاع المعتمدة غير منشورة للمساعد.'
+        : 'The customer asked about a return or exchange, but no approved returns policy is published for the assistant.')
+      : fallback(context,'knowledge_selection_empty');
     let request: string;
     try { request = buildRequest(routed, sources, selection.coverage,recoveryReason,recoveryAttempt,useClassification??undefined,context.text); } catch { return fallback(context, 'context_too_large'); }
     // Each attempt has a stable, separately budgeted key. Replayed jobs reuse all attempts.
@@ -206,6 +215,8 @@ export class GroundedStrategy implements ReplyStrategy {
       decision = result.decision.sourceLabels.length ? fallback(context, 'invalid_source_reference')
         : knowledgeGap(context, result.decision.summary, selection.coverage.omittedSourceCount > 0);
     }
+    else if(useClassification?.intent==='returns'&&(result.decision.action==='handoff'||result.decision.action==='complaint'))
+      decision=fallback(context,'invalid_intent_action');
     else if (result.decision.action === 'unavailable' || result.decision.action === 'handoff' || result.decision.action === 'complaint')
       decision = fallback(context, result.decision.action === 'complaint' ? 'complaint' : result.decision.action === 'handoff' ? 'human_requested' : 'answer_not_supported', result.decision.action === 'complaint' ? 'handoff' : result.decision.action);
     else decision = { text: formatReply(formatBranchReply(result.decision.text,result.decision.branchLines)), action: result.decision.action, reason: 'approved_knowledge',
