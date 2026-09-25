@@ -15,13 +15,13 @@ function fixture(sources=[faq,...branches]){
   const complete=vi.fn(),reserve=vi.fn(),load=vi.fn(async()=>sources);
   return {locations,complete,reserve,load,strategy:new GroundedStrategy(load,{reserve,finish:vi.fn()},{complete},'whatsapp',locations)};
 }
-const classifiedNearest=(normalizedQuery:string)=>({
+const classifiedNearest=(normalizedQuery:string,originEvidence='',originQuery='')=>({
   intent:'nearest_branch' as const,confidence:.99,language:'en' as const,product:'btc' as const,branchMode:'nearest' as const,
-  branchDetail:'none' as const,branchLabels:[],normalizedQuery,summary:'',
+  branchDetail:'none' as const,branchLabels:[],originEvidence,originQuery,normalizedQuery,summary:'',
 });
-function classifiedFixture(normalizedQuery:string,locations?:LocationResolver){
+function classifiedFixture(normalizedQuery:string,locations?:LocationResolver,originEvidence='',originQuery=''){
   const resolver=locations??{pin:vi.fn(async text=>coordinates(text)),area:vi.fn(async()=>({label:'Al-Obour',latitude:30.1914,longitude:31.450548}))};
-  const classifyIntent=vi.fn(async()=>({decision:classifiedNearest(normalizedQuery),input:180,output:35}));
+  const classifyIntent=vi.fn(async()=>({decision:classifiedNearest(normalizedQuery,originEvidence,originQuery),input:180,output:35}));
   const complete=vi.fn(),reserve=vi.fn(async()=>({status:'new' as const,id:'intent-reservation'})),finish=vi.fn();
   const strategy=new GroundedStrategy(async()=>[faq,...branches],{reserve,finish},{complete,classifyIntent},'whatsapp',resolver);
   return {strategy,locations:resolver,classifyIntent,complete,reserve,finish};
@@ -158,5 +158,26 @@ describe('semantic routing preserves raw nearest-branch locations',()=>{
     const result=await f.strategy.reply({...base,text:link,requestKey:'semantic-maps-link',history:cityHistory});
     expect(locations.pin).toHaveBeenCalledWith(link);expect(result.text).toContain('IRAM Korba — Heliopolis — 0.0 km');
     expect(locations.area).not.toHaveBeenCalled();expect(f.complete).not.toHaveBeenCalled();
+  });
+  it('uses grounded semantic extraction for natural wording and spelling correction',async()=>{
+    const text='Could you check the closest BTC branch if I happen to be over by elobour city today?';
+    const f=classifiedFixture('Find the nearest BTC branch to Obour City.',undefined,'elobour city','Obour City');
+    const result=await f.strategy.reply({...base,text,requestKey:'semantic-natural-origin',history:[]});
+    expect(f.locations.area).toHaveBeenCalledWith('Obour City',expect.any(Array));
+    expect(result.text).toContain('straight-line');expect(f.complete).not.toHaveBeenCalled();
+  });
+  it('rejects a classifier location that is not evidenced by the customer message',async()=>{
+    const f=classifiedFixture('Find the nearest BTC branch.',undefined,'Obour City','Obour City');
+    const result=await f.strategy.reply({...base,text:'Which BTC branch is closest to me?',requestKey:'semantic-ungrounded-origin',history:[]});
+    expect(result.reason).toBe('nearest_branch_location');expect(result.text).toContain('Which city or area');
+    expect(f.locations.area).not.toHaveBeenCalled();expect(f.complete).not.toHaveBeenCalled();
+  });
+  it('rejects a semantically unrelated corrected place and safely falls back to the evidenced text',async()=>{
+    const text='Find the nearest BTC branch if I am at Cairo.';
+    const f=classifiedFixture('Find the nearest BTC branch to Obour City.',undefined,'Cairo','Obour City');
+    const result=await f.strategy.reply({...base,text,requestKey:'semantic-wrong-correction',history:[]});
+    expect(f.locations.area).toHaveBeenCalledWith('Cairo',expect.any(Array));
+    expect(f.locations.area).not.toHaveBeenCalledWith('Obour City',expect.any(Array));
+    expect(result.reason).toBe('approved_knowledge');expect(f.complete).not.toHaveBeenCalled();
   });
 });

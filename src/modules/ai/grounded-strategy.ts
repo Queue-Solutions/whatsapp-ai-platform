@@ -168,10 +168,12 @@ export class GroundedStrategy implements ReplyStrategy {
     const repair=repairFaqReply(context,available,useClassification?.intent==='repair');if(repair)return repair;
     const links=offeredLinks(context,available,useClassification?.intent==='online_links');if(links)return links;
     if(needsProductQuestion(routed,available))return productQuestion(context);
-    // Location resolution must receive the original city, geo: coordinates or Maps URL verbatim.
-    // The classifier may supply product intent, but its normalized prose must never replace location data.
+    // Native coordinates and Maps URLs remain verbatim. A typed-area correction
+    // is accepted only through the evidence-grounded validation in the resolver.
     const classifiedProduct=useClassification?.product==='btc'||useClassification?.product==='jewelry'?useClassification.product:null;
-    const nearest=await nearestBranchReply(context,available,this.locations,classifiedProduct);if(nearest)return nearest;
+    const classifiedOrigin=useClassification?.intent==='nearest_branch'
+      ?{evidence:useClassification.originEvidence,query:useClassification.originQuery}:null;
+    const nearest=await nearestBranchReply(context,available,this.locations,classifiedProduct,classifiedOrigin);if(nearest)return nearest;
     const btcReply=btcBranchReply(routed,available);if(btcReply)return btcReply;
     const branchDetail=directBranchDetail(routed,available);if(branchDetail)return branchDetail;
     const branchDirectory=directJewelryDirectory(routed,available);if(branchDirectory)return branchDirectory;

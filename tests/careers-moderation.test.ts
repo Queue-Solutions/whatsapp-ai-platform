@@ -15,7 +15,7 @@ const result=(flag:string|null=null)=>Response.json({results:[{categories:catego
 describe('job enquiries',()=>{
  it('answers from FAQ 9 immediately without collecting role or contact details',async()=>{
   const load=vi.fn(async()=>[careerFaq]),complete=vi.fn(),reserve=vi.fn();
-  const classifyIntent=vi.fn(async()=>({decision:{intent:'human_followup' as const,confidence:.99,language:'en' as const,product:'unknown' as const,branchMode:'none' as const,branchDetail:'none' as const,branchLabels:[],normalizedQuery:'I want to contact a person.',summary:'Customer requests a person.'},input:100,output:20}));
+  const classifyIntent=vi.fn(async()=>({decision:{intent:'human_followup' as const,confidence:.99,language:'en' as const,product:'unknown' as const,branchMode:'none' as const,branchDetail:'none' as const,branchLabels:[],originEvidence:'',originQuery:'',normalizedQuery:'I want to contact a person.',summary:'Customer requests a person.'},input:100,output:20}));
   const strategy=new GroundedStrategy(load,{reserve,finish:vi.fn()},{complete,classifyIntent});
   const messages=['محتاج شغل','عايز اشتغل عندكم','فيه وظائف؟','عايز اكلم الموارد البشرية','ممكن اتواصل مع الإتش آر','فين قسم التوظيف؟','Are you hiring?','I want to work at IRAM','i wanna work with u guyz','I meant what if I wanna reach the HR department','Can I speak to HR?','I need the recruitment department'];
   for(const text of messages){
@@ -27,7 +27,7 @@ describe('job enquiries',()=>{
   expect(load).toHaveBeenCalledTimes(messages.length);expect(complete).not.toHaveBeenCalled();expect(classifyIntent).not.toHaveBeenCalled();expect(reserve).not.toHaveBeenCalled();
  });
  it('lets semantic career classification handle a misspelled hiring request before handoff',async()=>{
-  const complete=vi.fn(),classifyIntent=vi.fn(async()=>({decision:{intent:'career' as const,confidence:.94,language:'en' as const,product:'unknown' as const,branchMode:'none' as const,branchDetail:'none' as const,branchLabels:[],normalizedQuery:'I want to contact recruitment about a vacancy.',summary:''},input:100,output:20}));
+  const complete=vi.fn(),classifyIntent=vi.fn(async()=>({decision:{intent:'career' as const,confidence:.94,language:'en' as const,product:'unknown' as const,branchMode:'none' as const,branchDetail:'none' as const,branchLabels:[],originEvidence:'',originQuery:'',normalizedQuery:'I want to contact recruitment about a vacancy.',summary:''},input:100,output:20}));
   const strategy=new GroundedStrategy(async()=>[careerFaq],{reserve:async()=>({status:'new' as const,id:'intent'}),finish:vi.fn()},{complete,classifyIntent});
   const reply=await strategy.reply({...context,text:'cn i tlk to recrutmnt abt a vacncy',requestKey:'message:misspelled-career'});
   expect(reply).toMatchObject({reason:'approved_knowledge',action:'answer',sources:[{id:'career-faq'}]});expect(reply.text).toContain('hr@example.test');expect(reply.followUp).toBeUndefined();expect(complete).not.toHaveBeenCalled();

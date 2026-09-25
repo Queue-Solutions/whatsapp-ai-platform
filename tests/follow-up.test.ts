@@ -37,7 +37,7 @@ describe('personal follow-up collection',()=>{
  it('retains a one-word name sent separately and asks only for the missing phone',async()=>{
   const loadSources=vi.fn(async()=>[]),complete=vi.fn();
   const reserve=vi.fn(async()=>({status:'new' as const,id:'contact-intent'})),finish=vi.fn();
-  const classifyIntent=vi.fn(async()=>({decision:{intent:'contact_details' as const,confidence:.99,language:'en' as const,product:'unknown' as const,branchMode:'none' as const,branchDetail:'none' as const,branchLabels:[],normalizedQuery:'Emad',summary:''},input:100,output:20}));
+  const classifyIntent=vi.fn(async()=>({decision:{intent:'contact_details' as const,confidence:.99,language:'en' as const,product:'unknown' as const,branchMode:'none' as const,branchDetail:'none' as const,branchLabels:[],originEvidence:'',originQuery:'',normalizedQuery:'Emad',summary:''},input:100,output:20}));
   const start=beginFollowUp(context,issue);
   const result=await new GroundedStrategy(loadSources,{reserve,finish},{complete,classifyIntent}).reply({...context,text:'emad',followUp:pending,history:[{role:'assistant',content:start.text}]});
   expect(result).toMatchObject({action:'clarify',followUp:{state:'collecting',name:'emad',phone:null}});

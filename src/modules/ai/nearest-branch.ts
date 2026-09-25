@@ -9,6 +9,7 @@ import {knowledgeGap} from './knowledge-gap';
 
 const areaPrompt=/which city or area|tell me your current city or area|share (?:your |a )?(?:whatsapp location|google maps pin)|انت في انهي مدينه|ابعت.*(?:لوكيشن|موقعك)/i;
 const productOnly=/^(?:btc|bullion|jewel(?:ry|lery)|سبائك|السبائك|مجوهرات|المجوهرات)[.!؟? ]*$/i;
+export interface SemanticOrigin {evidence:string;query:string}
 function areaAnswer(text:string){return text.length<=120&&!/\?|؟|\b(?:price|cost|buy|refund|hours|job|thanks|yes|no|what|how)\b|سعر|بكام|اشتري|استرجاع|مواعيد|وظيفه|شكرا/.test(normalizeIntent(text));}
 function cleanArea(value:string){
   let result=value.trim();
@@ -30,8 +31,36 @@ function inlineArea(text:string){
 function areaReply(text:string){
   return inlineArea(text)||cleanArea(text);
 }
+function normalizedEvidence(value:string){
+  return value.normalize('NFKC').toLowerCase().replace(/[\u064B-\u065F\u0670\u0640]/g,'').replace(/[أإآ]/g,'ا').replace(/ى/g,'ي')
+    .replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+}
+function editDistanceWithin(value:string,target:string,limit:number){
+  if(value===target)return true;
+  if(Math.abs(value.length-target.length)>limit)return false;
+  let previous=Array.from({length:target.length+1},(_,index)=>index);
+  for(let row=1;row<=value.length;row++){
+    const current=[row];let minimum=row;
+    for(let column=1;column<=target.length;column++){
+      current[column]=Math.min(current[column-1]+1,previous[column]+1,previous[column-1]+(value[row-1]===target[column-1]?0:1));
+      minimum=Math.min(minimum,current[column]);
+    }
+    if(minimum>limit)return false;
+    previous=current;
+  }
+  return previous[target.length]<=limit;
+}
+function groundedSemanticOrigin(message:string,hint?:SemanticOrigin|null){
+  if(!hint?.evidence.trim()||!hint.query.trim()||hint.evidence.length>160||hint.query.length>120)return '';
+  const messageKey=normalizedEvidence(message),evidenceKey=normalizedEvidence(hint.evidence),queryKey=normalizedEvidence(hint.query);
+  if(!evidenceKey||!queryKey||!messageKey.includes(evidenceKey)||!/\p{L}/u.test(queryKey))return '';
+  if(/https?:|geo:|@|[-+]?\d+\.\d+\s*,/i.test(hint.query))return '';
+  const comparable=(value:string)=>value.replace(/\b(?:city|town|district|of|the|al|el)\b|مدينه|مدينة|منطقة|المنطقه|المنطقة/g,'').replace(/\s+/g,'');
+  const evidence=comparable(evidenceKey),query=comparable(queryKey),limit=Math.max(2,Math.floor(Math.max(evidence.length,query.length)*.25));
+  return evidence&&query&&editDistanceWithin(evidence,query,limit)?hint.query.trim():'';
+}
 /** Intercept proximity requests before keyword branch matching or model generation. */
-export async function nearestBranchReply(context:MessageContext,sources:KnowledgeSource[],locations:LocationResolver,productHint?:'btc'|'jewelry'|null):Promise<AgentDecision|null>{
+export async function nearestBranchReply(context:MessageContext,sources:KnowledgeSource[],locations:LocationResolver,productHint?:'btc'|'jewelry'|null,originHint?:SemanticOrigin|null):Promise<AgentDecision|null>{
   const text=context.text??'',history=context.history??[];
   const lastAssistant=[...history].reverse().find(m=>m.role==='assistant')?.content??'';
   const previousUser=[...history].reverse().find(m=>m.role==='user')?.content??'';
@@ -43,7 +72,12 @@ export async function nearestBranchReply(context:MessageContext,sources:Knowledg
   const languageText=(context.type==='location'||!!coordinates(text))?[...history].reverse().find(m=>m.role==='user'&&!m.content.startsWith('geo:'))?.content??'':text;
   const ar=replyLanguage(languageText)==='ar';
   const clarify=(value:string):AgentDecision=>({action:'clarify',reason:'nearest_branch_location',text:value,sources:[]});
-  let query=context.type==='location'?text:answeringArea?areaReply(text):inlineArea(answeringProduct?previousUser:text);
+  const semantic=context.type==='location'||coordinates(text)||/^https:\/\//.test(text)?'':groundedSemanticOrigin(text,originHint);
+  let query=context.type==='location'
+    ?text
+    :(semantic||answeringArea)
+      ?semantic||areaReply(text)
+      :inlineArea(answeringProduct?previousUser:text);
   if(answeringProduct&&previousUser.startsWith('geo:'))query=previousUser;
   if(!query){
     const known=history.slice(-4).filter(m=>m.role==='user').reverse().find(m=>/^(?:i(?:'m| am)|انا)\s+(?:in|from|في|من)\s+/i.test(m.content));
