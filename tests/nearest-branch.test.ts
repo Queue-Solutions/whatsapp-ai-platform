@@ -50,6 +50,21 @@ describe('nearest branch conversation',()=>{
     const detail=await f.strategy.reply({...base,text:'TJH City Stars',history:[...cityHistory!,{role:'user',content:'Obour city'},{role:'assistant',content:result.text}]});
     expect(detail.text).toContain('b2 Test Road');expect(detail.text).toContain('01200000002');expect(detail.text).toContain('https://maps.google.com/');
   });
+  it('extracts an area from a natural full request instead of asking for it again',async()=>{
+    const f=fixture(),text='Thanks, what if im at obour city what would be the nearest branch for me that delivers BTC services ?';
+    const result=await f.strategy.reply({...base,text,history:[]});
+    expect(f.locations.area).toHaveBeenCalledWith('obour city',expect.any(Array));
+    expect(result.text).toContain('straight-line');expect(result.reason).toBe('approved_knowledge');expect(f.complete).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['Told u, obour city !','obour city'],
+    ['I already told you: Obour city.','Obour city'],
+    ['قلتلك، مدينة العبور!','مدينة العبور'],
+  ])('removes conversational correction text before geocoding: %s',async(text,expected)=>{
+    const f=fixture(),result=await f.strategy.reply({...base,text,history:cityHistory});
+    expect(f.locations.area).toHaveBeenCalledWith(expected,expect.any(Array));
+    expect(result.reason).toBe('approved_knowledge');expect(f.complete).not.toHaveBeenCalled();
+  });
   it('uses a native WhatsApp pin without sending it to a geocoder',async()=>{
     const f=fixture(),result=await f.strategy.reply({...base,type:'location',text:'geo:30.09,31.32',history:cityHistory});
     expect(result.text).toContain('IRAM Korba — Heliopolis — 0.0 km');expect(result.text).not.toContain('area centre');expect(f.locations.area).not.toHaveBeenCalled();

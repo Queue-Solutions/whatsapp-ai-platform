@@ -10,10 +10,25 @@ import {knowledgeGap} from './knowledge-gap';
 const areaPrompt=/which city or area|tell me your current city or area|share (?:your |a )?(?:whatsapp location|google maps pin)|انت في انهي مدينه|ابعت.*(?:لوكيشن|موقعك)/i;
 const productOnly=/^(?:btc|bullion|jewel(?:ry|lery)|سبائك|السبائك|مجوهرات|المجوهرات)[.!؟? ]*$/i;
 function areaAnswer(text:string){return text.length<=120&&!/\?|؟|\b(?:price|cost|buy|refund|hours|job|thanks|yes|no|what|how)\b|سعر|بكام|اشتري|استرجاع|مواعيد|وظيفه|شكرا/.test(normalizeIntent(text));}
+function cleanArea(value:string){
+  let result=value.trim();
+  // Remove conversational corrections without weakening the geocoder's exact
+  // place-name validation. The remaining value still has to resolve to one
+  // unambiguous city/area before any distance is calculated.
+  result=result.replace(/^(?:no|nope)\b[\s,!:;-]*/i,'')
+    .replace(/^(?:told\s+(?:u|you)|i\s+(?:already\s+)?(?:said|told\s+you)|as\s+i\s+said|it(?:'s|\s+is)|the\s+(?:city|area)\s+is|my\s+(?:city|area)\s+is)\b[\s,!:;-]*/i,'')
+    .replace(/^(?:لا|لأ)\b[\s،,:!؛-]*/,'')
+    .replace(/^(?:ما\s+انا\s+)?(?:قلتلك|قولتلك|قلت\s+لك|قولت\s+لك|زي\s+ما\s+قلتلك|انا\s+قلتلك)[\s،,:!؛-]*/,'')
+    .replace(/^[\s"'“”‘’([{]+|[\s"'“”‘’\])}.،,!?؟:;؛-]+$/g,'').trim();
+  return /^(?:me|here|مني|هنا)$/i.test(result)?'':result;
+}
 function inlineArea(text:string){
-  const match=text.match(/\b(?:in|from|near)\s+(.+?)[?.!]*$|(?:في|من)\s+(.+?)[؟.!]*$/i);
-  const value=(match?.[1]??match?.[2]??'').trim();
-  return /^(?:me|here|مني|هنا)$/i.test(value)?'':value;
+  const english=text.match(/\b(?:(?:i(?:'m|\s+am)\s+)?(?:located\s+)?(?:in|from|at|near|around)|close\s+to)\s+(.+?)(?=\s+(?:what|which|where|who|how|would|could|can|should|and\s+i|so\s+i)\b|[?؟!]|$)/i);
+  const arabic=text.match(/(?:^|\s)(?:(?:انا|اني)\s+)?(?:في|من|عند|قريب\s+من|جنب)\s+(.+?)(?=\s+(?:ايه|فين|ازاي|ازاى|اقرب|أقرب|عايز|عاوز|محتاج|ممكن)\b|[?؟!]|$)/i);
+  return cleanArea(english?.[1]??arabic?.[1]??'');
+}
+function areaReply(text:string){
+  return inlineArea(text)||cleanArea(text);
 }
 /** Intercept proximity requests before keyword branch matching or model generation. */
 export async function nearestBranchReply(context:MessageContext,sources:KnowledgeSource[],locations:LocationResolver,productHint?:'btc'|'jewelry'|null):Promise<AgentDecision|null>{
@@ -28,7 +43,7 @@ export async function nearestBranchReply(context:MessageContext,sources:Knowledg
   const languageText=(context.type==='location'||!!coordinates(text))?[...history].reverse().find(m=>m.role==='user'&&!m.content.startsWith('geo:'))?.content??'':text;
   const ar=replyLanguage(languageText)==='ar';
   const clarify=(value:string):AgentDecision=>({action:'clarify',reason:'nearest_branch_location',text:value,sources:[]});
-  let query=context.type==='location'||answeringArea?text:inlineArea(answeringProduct?previousUser:text);
+  let query=context.type==='location'?text:answeringArea?areaReply(text):inlineArea(answeringProduct?previousUser:text);
   if(answeringProduct&&previousUser.startsWith('geo:'))query=previousUser;
   if(!query){
     const known=history.slice(-4).filter(m=>m.role==='user').reverse().find(m=>/^(?:i(?:'m| am)|انا)\s+(?:in|from|في|من)\s+/i.test(m.content));
