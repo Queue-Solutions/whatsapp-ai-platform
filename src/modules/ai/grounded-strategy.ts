@@ -153,7 +153,10 @@ export class GroundedStrategy implements ReplyStrategy {
       return socialReply(useClassification.normalizedQuery,context.history,useClassification.intent)!;
     }
     if(useClassification?.intent==='unrelated')return fallback(context,'answer_not_supported');
-    if(useClassification?.intent==='ambiguous')return scopeClarification(context);
+    // Ambiguity from the compact classifier is advisory, not a terminal answer.
+    // Let the grounded answer model review the request alongside relevant approved
+    // knowledge. It can still ask one clarification when the request is genuinely
+    // unclear, while broad but valid questions are no longer blocked from their FAQ.
     if(useClassification?.intent==='branch'&&useClassification.branchMode==='detail'&&!useClassification.branchLabels.length)return scopeClarification(context);
     if(!useClassification){
       const attention=detectAttention(context.text);
@@ -190,7 +193,8 @@ export class GroundedStrategy implements ReplyStrategy {
         : 'The customer asked about a return or exchange, but no approved returns policy is published for the assistant.')
       : fallback(context,'knowledge_selection_empty');
     let request: string;
-    try { request = buildRequest(routed, sources, selection.coverage,recoveryReason,recoveryAttempt,useClassification??undefined,context.text); } catch { return fallback(context, 'context_too_large'); }
+    const answerClassification=useClassification?.intent==='ambiguous'?undefined:useClassification??undefined;
+    try { request = buildRequest(routed, sources, selection.coverage,recoveryReason,recoveryAttempt,answerClassification,context.text); } catch { return fallback(context, 'context_too_large'); }
     // Each attempt has a stable, separately budgeted key. Replayed jobs reuse all attempts.
     const reservation = await this.ledger.reserve(context.tenantId, recoveryAttempt?`${context.requestKey}:recovery:${recoveryAttempt}`:context.requestKey, this.purpose);
     if (reservation.status === 'completed') {

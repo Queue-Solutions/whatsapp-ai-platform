@@ -36,6 +36,10 @@ describe('product-aware branch navigation',()=>{
   const decision=await new GroundedStrategy(async()=>[maadi],usage,{complete}).reply({...base,text,history:[{role:'assistant',content:directory},{role:'user',content:'معادي'}]});
   expect(decision.action).toBe('answer');expect(decision.text).toContain('TJH Maadi — Maadi');expect(decision.text).toContain('123 TJH Maadi Street');expect(complete).not.toHaveBeenCalled();expect(usage.reserve).not.toHaveBeenCalled();
  });
+ it.each(['Elmaadi','elmaadi','Almaadi','alarkan'])('removes an attached Arabizi article before matching a saved branch: %s',text=>{
+  const maadi=branch('TJH Maadi','Maadi','MAADI'),arkan=branch('IRAM Arkan','6th of October City','ARKAN');
+  expect(matchingBranches(text,[maadi,arkan]).map(source=>source.label)).toEqual([/arkan/i.test(text)?'ARKAN':'MAADI']);
+ });
  it.each([
   ['كوربة','IRAM Korba'],['سيتي ستارز','TJH City Stars'],['ميفيدا','TJH Mivida'],['الكوثر','TJH El Kawthar'],
   ['نوكس','IRAM Nox'],['اركان','IRAM Arkan'],['زيا','IRAM ZIA'],['كمبنسكي','TJH Kempinski Hotel'],['سنزو','TJH Senzo Mall'],

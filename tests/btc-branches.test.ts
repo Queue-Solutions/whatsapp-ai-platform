@@ -33,6 +33,11 @@ describe('BTC FAQ is the branch eligibility authority',()=>{
  it.each([['كوربة',0],['سيتي ستارز',1],['نوكس',2],['ميفيدا',3],['المعادي',4],['أركان',5],['الاسكندرية',6],['المنصورة',7]] as const)('resolves the Arabic branch selection %s without switching the BTC phone',async(text,i)=>{
   const decision=await fixture().strategy.reply({...base,text});expect(decision.text).toContain(phones[i]);expect(decision.text).toContain(`https://maps.app.goo.gl/fixture${i}`);
  });
+ it.each(['Elmaadi','elmaadi','Almaadi','El Maadi'])('resolves the Arabizi branch selection %s on the first turn',async text=>{
+  const f=fixture();const decision=await f.strategy.reply({...base,text});
+  expect(decision.text).toContain(phones[4]);expect(decision.text).toContain('https://maps.app.goo.gl/fixture4');
+  expect(decision.text).not.toContain('Branches offering BTC');expect(f.complete).not.toHaveBeenCalled();
+ });
  it('uses the last selected branch for a phone follow-up',async()=>{
   const decision=await fixture().strategy.reply({...base,text:'And the phone number?',history:[{role:'user',content:'BTC'},{role:'user',content:'IRAM Korba'},{role:'assistant',content:'Here are the branch details.'}]});expect(decision.text).toContain(phones[0]);expect(decision.text).not.toContain(phones[1]);
  });

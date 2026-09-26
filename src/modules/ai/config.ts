@@ -1,5 +1,5 @@
 export const AI_MODEL = 'gpt-4.1-mini-2025-04-14';
-export const PROMPT_VERSION = 'approved-knowledge-v19-elegant-brand-voice';
+export const PROMPT_VERSION = 'approved-knowledge-v20-grounded-ambiguity-review';
 export const MAX_INPUT_TOKENS = 24000;
 export const MAX_OUTPUT_TOKENS = 2000;
 // Byte-level input bound + large framing/schema margin underpins the reservation.

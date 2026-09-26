@@ -40,7 +40,14 @@ export function locationWords(text:string){
   return t.match(/[\p{L}\p{N}]+/gu)??[];
 }
 export function matchingBranches(text:string,sources:KnowledgeSource[]){
-  const words=new Set(locationWords(text));
+  // Arabizi often attaches the Arabic article to a place name (for example,
+  // "elmaadi" or "alarkan"). Keep the original token and also compare the
+  // article-free form against the live branch catalog rather than maintaining
+  // one-off aliases for every location.
+  const words=new Set(locationWords(text).flatMap(word=>{
+    const articleFree=/^(?:el|al)[\p{L}\p{N}]{3,}$/u.test(word)?word.slice(2):'';
+    return articleFree?[word,articleFree]:[word];
+  }));
   const scored=sources.map(source=>{try{
     const d=JSON.parse(source.content);
     if(d.category!=='branch')return {source,score:0};

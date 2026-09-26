@@ -45,8 +45,8 @@ Intent priority:
 6. Requests to browse, buy online, see collections, or obtain website/social accounts are online_links.
 7. Item maintenance or fixing is repair.
 8. Branch/address/hours/location requests are branch. Requests for the closest branch are nearest_branch.
-9. Non-branch BTC/bullion questions are btc_question. Other questions about the business are business_question.
-10. Use greeting or thanks only when that is the whole purpose. Use unrelated for requests outside business support. Use ambiguous only when the intended business task genuinely cannot be determined.
+9. Non-branch BTC/bullion questions are btc_question. Other questions about the business are business_question. A broad but clear request for the business's services, products, offerings or capabilities is business_question, not ambiguous, even when it does not name a specific service.
+10. Use greeting or thanks only when that is the whole purpose. Use unrelated for requests outside business support. Use ambiguous only when the intended business task genuinely cannot be determined. Do not use ambiguous merely because a clear business question is broad, short, informal or misspelled.
 
 Use product only when the customer or recent customer context establishes jewelry or BTC. Use unknown otherwise. For a branch request, select branchLabels only from the supplied branch catalog. A named branch gets detail. A city/area containing several catalog branches gets every matching label and directory. An all-branches request gets directory with an empty branchLabels list. Set branchDetail to address, hours or phone only when that exact detail was requested; use general for a branch/location selection with no narrower detail and none outside branch intents. Never guess a branch from a weak resemblance; leave branchLabels empty if uncertain. nearest_branch must use branchMode nearest. For human_followup and complaint, summary briefly states only the customer's request/problem in their language; otherwise summary must be empty.
 

@@ -14,6 +14,7 @@ const branch=source('B1',{category:'branch',value:{name:'IRAM Nox',city:'New Cai
 const links=source('L1',{question:'Where can I see the collection online?',answer:'Website: https://iram.example/\nInstagram: https://instagram.com/iram'});
 const delivery=source('D1',{question:'What is the delivery policy?',answer:'Approved delivery information.'});
 const returns=source('R1',{question:'What are your return, exchange, cancellation and refund policies?',answer:'Returns are accepted at any IRAM branch during working hours under the approved policy conditions.'});
+const services=source('S1',{question:'What services does IRAM offer?',answer:'IRAM offers jewelry, BTC bullion, technical care and online shopping services.'});
 const decision=(changes:Partial<IntentDecision>):IntentDecision=>({intent:'business_question',confidence:.98,language:'en',product:'unknown',branchMode:'none',branchDetail:'none',branchLabels:[],originEvidence:'',originQuery:'',normalizedQuery:'What is the delivery policy?',summary:'',...changes});
 function ledger():UsageLedger{
   const saved=new Map<string,Reservation>();
@@ -105,6 +106,19 @@ describe('semantic intent classification',()=>{
     const result=await strategy.reply({...context,text:'wana by onlne'});
     expect(result.action).toBe('answer');expect(result.text).toContain('https://iram.example');expect(result.text).toContain('https://instagram.com/iram');
     expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('lets grounded knowledge answer a clear services question even when the compact classifier says ambiguous',async()=>{
+    const classifyIntent=vi.fn(async()=>({decision:decision({intent:'ambiguous',confidence:.92,normalizedQuery:'What services do you offer?'}),input:180,output:30}));
+    const complete=vi.fn(async(request:string)=>{
+      const parsed=JSON.parse(request),input=JSON.parse(parsed.input);
+      expect(input.customerMessage).toBe('What services do u offer ?');expect(input.classifiedIntent).toBeUndefined();
+      expect(input.approvedSources).toEqual([expect.objectContaining({label:'S1'})]);
+      return {decision:{action:'answer' as const,text:'IRAM offers jewelry, BTC bullion, technical care and online shopping services.',summary:'',branchLines:[],sourceLabels:['S1']},input:260,output:45};
+    });
+    const result=await new GroundedStrategy(async()=>[services],ledger(),{complete,classifyIntent}).reply({...context,text:'What services do u offer ?',requestKey:'services-first-turn'});
+    expect(result).toMatchObject({action:'answer',reason:'approved_knowledge'});expect(result.text).toContain('IRAM offers jewelry');
+    expect(classifyIntent).toHaveBeenCalledOnce();expect(complete).toHaveBeenCalledOnce();
   });
 
   it('uses approved branch identifiers to render exact records instead of model-written branch facts',async()=>{

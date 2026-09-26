@@ -120,7 +120,7 @@ export function btcBranchReply(context:MessageContext,sources:KnowledgeSource[])
   const requestedRecords=matchingBranches(context.text??'',sources);
   const focusedProduct=/\b(?:price|prices|cost|payment|refund|warranty|weight|karat)\b|اسعار|سعر|بكام|دفع|استرجاع|ضمان|عيار|وزن/.test(normalizeIntent(context.text??''));
   if(focusedProduct)return null;
-  if(scope==='none'&&!named.length)return null;
+  if(scope==='none'&&!named.length&&!requestedRecords.length)return null;
   if(!catalog)return knowledgeGap(context,'The approved BTC FAQ does not provide one unambiguous branch-to-BTC-phone list. Review its branch entries before directing this customer.');
   let selected=named;
   if(!selected.length&&requestedRecords.length){
