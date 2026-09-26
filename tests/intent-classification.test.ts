@@ -15,7 +15,7 @@ const links=source('L1',{question:'Where can I see the collection online?',answe
 const delivery=source('D1',{question:'What is the delivery policy?',answer:'Approved delivery information.'});
 const returns=source('R1',{question:'What are your return, exchange, cancellation and refund policies?',answer:'Returns are accepted at any IRAM branch during working hours under the approved policy conditions.'});
 const services=source('S1',{question:'What services does IRAM offer?',answer:'IRAM offers jewelry, BTC bullion, technical care and online shopping services.'});
-const decision=(changes:Partial<IntentDecision>):IntentDecision=>({intent:'business_question',confidence:.98,language:'en',product:'unknown',branchMode:'none',branchDetail:'none',branchLabels:[],originEvidence:'',originQuery:'',normalizedQuery:'What is the delivery policy?',summary:'',...changes});
+const decision=(changes:Partial<IntentDecision>):IntentDecision=>({intent:'business_question',confidence:.98,language:'en',product:'unknown',branchMode:'none',branchDetail:'none',branchLabels:[],originEvidence:'',originQuery:'',normalizedQuery:'What is the delivery policy?',analyticsTopic:'delivery policy',summary:'',risk:'none',...changes});
 function ledger():UsageLedger{
   const saved=new Map<string,Reservation>();
   return {
@@ -36,8 +36,10 @@ describe('semantic intent classification',()=>{
     expect(request.instructions).toContain('Perform semantic interpretation, not keyword matching');
     expect(request.instructions).toContain('Agreement or acknowledgement expressions');
     expect(request.instructions).toContain('Wanting a return, exchange, cancellation or refund does not by itself prove a complaint');
+    expect(request.instructions).toContain('A customer reporting suspected fraud');
     expect(request.instructions).toContain('originEvidence must be the exact consecutive words copied from the latest customer message');
     expect(request.text.format.schema.required).toEqual(expect.arrayContaining(['originEvidence','originQuery']));
+    expect(request.text.format.schema.required).toEqual(expect.arrayContaining(['risk','analyticsTopic']));
     expect(request.text.format.schema.properties.branchLabels.items.enum).toEqual(['B1']);
   });
 

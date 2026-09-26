@@ -9,9 +9,11 @@ import {BlacklistIndicator} from './blacklist-indicator';
 import {Blacklist} from './blacklist-ui';
 import { Inbox } from './inbox-ui';
 import { AttentionLink } from './inbox-attention';
+import {Analytics} from './analytics-ui';
 
 type Config = { url: string; key: string } | null;
-export function Dashboard({ config, view='knowledge' }: { config: Config; view?:'knowledge'|'inbox'|'blacklist' }) {
+type DashboardView='knowledge'|'inbox'|'blacklist'|'analytics'|'recommendations';
+export function Dashboard({ config, view='knowledge' }: { config: Config; view?:DashboardView }) {
   const db = useMemo(() => config ? createClient(config.url, config.key) : null, [config]);
   const [userId, setUserId] = useState<string | null>(null);
   const [checking, setChecking] = useState(!!db);
@@ -26,10 +28,12 @@ export function Dashboard({ config, view='knowledge' }: { config: Config; view?:
     <aside className="sidebar"><a className="brand" href="/dashboard" aria-label="Queue Solutions home"><span className="brand-mark"><Image src="/queue-solutions-logo.png" alt="" width={80} height={80} priority /></span><span className="brand-name">ueue<span className="brand-small">SOLUTIONS</span></span></a>
       <div className="workspace-label">YOUR WORKSPACE</div><a href="/dashboard" className={view==='knowledge'?'nav-active':'nav-link'}><span aria-hidden="true">▤</span> Business knowledge</a><a href="/dashboard/inbox" className={view==='inbox'?'nav-active':'nav-link'}><span aria-hidden="true">☷</span> Inbox {userId && db && <AttentionLink key={userId} db={db} compact />}</a>
       <a href="/dashboard/blacklist" className={view==='blacklist'?'nav-active':'nav-link'}><span aria-hidden="true">⊘</span> Blacklist {userId && db && <BlacklistIndicator key={userId} db={db}/>}</a>
+      <a href="/dashboard/analytics" className={view==='analytics'?'nav-active':'nav-link'}><span aria-hidden="true">⌁</span> Analytics</a>
+      <a href="/dashboard/recommendations" className={view==='recommendations'?'nav-active':'nav-link'}><span aria-hidden="true">✦</span> AI recommendations</a>
       <div className="sidebar-bottom"><span className="status-dot" /> Your business, in your words.<p>Give your assistant the answers your customers need.</p></div>
     </aside>
-    <div className="dashboard-main"><header className="topbar"><span>Workspace <span className="slash">/</span> {view==='blacklist'?'Blacklist':view==='inbox'?'Inbox':'Business knowledge'}</span>{userId && db ? <AttentionLink key={userId} db={db} /> : <span className="workspace-badge">Queue Solutions</span>}</header>
-      {checking ? <main className="content"><p role="status">Checking your session…</p></main> : userId && db ? view==='blacklist'?<Blacklist key={userId} db={db}/>:view==='inbox'?<Inbox key={userId} db={db}/>:<Editor key={userId} db={db} /> : <Login db={db} />}
+    <div className="dashboard-main"><header className="topbar"><span>Workspace <span className="slash">/</span> {view==='blacklist'?'Blacklist':view==='inbox'?'Inbox':view==='analytics'?'Analytics':view==='recommendations'?'AI recommendations':'Business knowledge'}</span>{userId && db ? <AttentionLink key={userId} db={db} /> : <span className="workspace-badge">Queue Solutions</span>}</header>
+      {checking ? <main className="content"><p role="status">Checking your session…</p></main> : userId && db ? view==='blacklist'?<Blacklist key={userId} db={db}/>:view==='inbox'?<Inbox key={userId} db={db}/>:view==='analytics'||view==='recommendations'?<Analytics key={`${userId}:${view}`} db={db} view={view}/>:<Editor key={userId} db={db} /> : <Login db={db} />}
       <footer className="site-footer"><a href="https://queuesolutions.org" target="_blank" rel="noopener noreferrer"><span className="footer-mark"><Image src="/queue-solutions-logo.png" alt="" width={32} height={32} /></span><span>Made by <strong>Queue Solutions</strong></span></a></footer>
     </div>
   </div>;

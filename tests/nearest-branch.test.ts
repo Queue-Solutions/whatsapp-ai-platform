@@ -16,8 +16,8 @@ function fixture(sources=[faq,...branches]){
   return {locations,complete,reserve,load,strategy:new GroundedStrategy(load,{reserve,finish:vi.fn()},{complete},'whatsapp',locations)};
 }
 const classifiedNearest=(normalizedQuery:string,originEvidence='',originQuery='')=>({
-  intent:'nearest_branch' as const,confidence:.99,language:'en' as const,product:'btc' as const,branchMode:'nearest' as const,
-  branchDetail:'none' as const,branchLabels:[],originEvidence,originQuery,normalizedQuery,summary:'',
+  intent:'nearest_branch' as const,confidence:.99,language:'en' as const,product:'btc' as const,branchMode:'nearest' as const,risk:'none' as const,
+  branchDetail:'none' as const,branchLabels:[],originEvidence,originQuery,normalizedQuery,analyticsTopic:'nearest BTC branch',summary:'',
 });
 function classifiedFixture(normalizedQuery:string,locations?:LocationResolver,originEvidence='',originQuery=''){
   const resolver=locations??{pin:vi.fn(async text=>coordinates(text)),area:vi.fn(async()=>({label:'Al-Obour',latitude:30.1914,longitude:31.450548}))};

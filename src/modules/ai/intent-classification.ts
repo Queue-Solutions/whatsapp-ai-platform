@@ -19,7 +19,9 @@ export const intentDecisionSchema=z.object({
   originEvidence:z.string().max(160),
   originQuery:z.string().max(120),
   normalizedQuery:z.string().trim().min(1).max(500),
+  analyticsTopic:z.string().trim().max(120).default(''),
   summary:z.string().trim().max(240),
+  risk:z.enum(['none','spam_or_fraud']).default('none'),
 }).strict();
 export type IntentDecision=z.infer<typeof intentDecisionSchema>;
 export type StoredIntentDecision=IntentDecision&{kind:'intent_classification';catalogFingerprint:string};
@@ -28,13 +30,18 @@ const outputSchema={type:'object',properties:{
   intent:{type:'string',enum:intentNames},confidence:{type:'number',minimum:0,maximum:1},language:{type:'string',enum:['ar','en']},
   product:{type:'string',enum:['jewelry','btc','unknown']},branchMode:{type:'string',enum:['none','directory','detail','nearest']},
   branchDetail:{type:'string',enum:['none','general','address','hours','phone']},
-  branchLabels:{type:'array',items:{type:'string'},maxItems:40},normalizedQuery:{type:'string',maxLength:500},summary:{type:'string',maxLength:240},
+  branchLabels:{type:'array',items:{type:'string'},maxItems:40},normalizedQuery:{type:'string',maxLength:500},analyticsTopic:{type:'string',maxLength:120},summary:{type:'string',maxLength:240},
+  risk:{type:'string',enum:['none','spam_or_fraud']},
   originEvidence:{type:'string',maxLength:160},originQuery:{type:'string',maxLength:120},
-},required:['intent','confidence','language','product','branchMode','branchDetail','branchLabels','originEvidence','originQuery','normalizedQuery','summary'],additionalProperties:false} as const;
+},required:['intent','confidence','language','product','branchMode','branchDetail','branchLabels','originEvidence','originQuery','normalizedQuery','analyticsTopic','summary','risk'],additionalProperties:false} as const;
 
 const instructions=`Classify the latest customer message for a business WhatsApp assistant. Perform semantic interpretation, not keyword matching. Understand Egyptian Arabic, English, Arabizi, ordinary spelling mistakes, phonetic spellings, missing punctuation and changed word order. The latest message has priority over older conversation topics. human_followup and complaint must be supported by the latest customer message itself; history may resolve a reference in that message but must never carry an old personal-contact request or complaint forward. A standalone greeting after an older issue or contact request is greeting, not human_followup or complaint.
 
 Return only the requested JSON. Do not answer the customer and do not provide business facts. normalizedQuery must be a short, corrected restatement of only the latest request in the same language. It may clarify spelling and intent but must never add a price, policy, service, branch or promise the customer did not express.
+
+analyticsTopic is a short, stable 2-to-8-word topic label in the same language for reporting. Use the concrete subject and issue, such as "gift wrapping", "damaged delivery" or "مواعيد فرع نوكس". Different phrasings of the same subject should use the same label. Use an empty string for greetings, thanks, contact details, unrelated messages and genuinely ambiguous messages.
+
+risk is spam_or_fraud only when the latest message itself is clearly unsolicited promotion, repetitive spam, phishing, impersonation, a fraudulent payment request or an attempt to involve the business in fraud. A customer reporting suspected fraud, asking whether something is genuine or complaining about a scam is not spam_or_fraud. Use none when uncertain. risk is reporting metadata only and does not change the intent.
 
 Intent priority:
 1. When activeContactCollection is true and the latest customer message actually supplies a requested personal name or phone number, use contact_details. A person's name may be one word and may arrive separately from the phone number. Agreement or acknowledgement expressions such as "of course", "yes", "sure", "okay", "تمام" and "أكيد" are not names and must not be contact_details. If the customer asks a new business question instead, classify that new request normally.
