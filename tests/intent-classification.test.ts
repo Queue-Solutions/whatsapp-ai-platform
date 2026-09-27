@@ -92,6 +92,14 @@ describe('semantic intent classification',()=>{
     expect(loadSources).not.toHaveBeenCalled();expect(classifyIntent).not.toHaveBeenCalled();expect(complete).not.toHaveBeenCalled();
   });
 
+  it.each(['Who are u','Who r u','Who is this?','What are you?','Are you a bot?','انت مين؟','مين انت'])('answers assistant identity locally for %s without classification, citations or recovery',async text=>{
+    const classifyIntent=vi.fn(),complete=vi.fn(),loadSources=vi.fn();const usage=ledger();
+    const result=await new GroundedStrategy(loadSources,usage,{complete,classifyIntent}).reply({...context,text,requestKey:`identity-${text}`});
+    expect(result).toMatchObject({action:'clarify',reason:'social_identity',sources:[]});expect(result.text).toContain('IRAM');
+    expect(loadSources).not.toHaveBeenCalled();expect(classifyIntent).not.toHaveBeenCalled();expect(complete).not.toHaveBeenCalled();
+    expect(usage.reserve).not.toHaveBeenCalled();expect(usage.finish).not.toHaveBeenCalled();
+  });
+
   it('keeps AI-recognized greeting variants context-aware instead of replaying onboarding',async()=>{
     const classifyIntent=vi.fn(async()=>({decision:decision({intent:'greeting',normalizedQuery:'How are you?'}),input:200,output:30}));
     const strategy=new GroundedStrategy(async()=>[branch],ledger(),{complete:vi.fn(),classifyIntent});
@@ -139,7 +147,7 @@ describe('semantic intent classification',()=>{
       decision:decision({intent:'branch',language:'ar',product:'jewelry',branchMode:'detail',branchDetail:'address',branchLabels:[],normalizedQuery:'عايز عنوان الفرع الغير واضح'}),input:220,output:40,
     }))});
     const result=await strategy.reply({...context,text:'عايز عنوان فرع نوكييي غريب'});
-    expect(result).toMatchObject({action:'clarify',reason:'reply_scope_clarification'});expect(result.text).not.toContain('Nox Mall');expect(complete).not.toHaveBeenCalled();
+    expect(result).toMatchObject({action:'clarify',reason:'reply_scope_clarification'});expect(result.text).toMatch(/أي فرع|Which branch/);expect(result.text).not.toContain('Nox Mall');expect(complete).not.toHaveBeenCalled();
   });
 
   it('preserves the requested branch detail instead of turning every branch intent into an address request',async()=>{

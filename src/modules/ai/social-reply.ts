@@ -4,6 +4,7 @@ import type { AgentDecision } from './contracts';
 export function socialReply(text:string,history:ReadonlyArray<{role:'user'|'assistant';content:string}>=[],hint?:'greeting'|'thanks'):AgentDecision|null {
   const normalized = text.normalize('NFKC').toLowerCase().replace(/[\u064B-\u065F\u0670\u0640]/g, '')
     .replace(/[أإآ]/g, 'ا').replace(/[\p{P}\p{S}]/gu, ' ').replace(/\s+/g, ' ').trim();
+  const identity=/^(?:who (?:are|r) (?:you|u)|who is this|what are you|what is your name|are you (?:a )?(?:bot|robot|ai|assistant)|مين انت|من انت|انت مين|انت ايه|اسمك ايه|هل انت (?:بوت|روبوت|مساعد))$/;
   const wellbeing=/^(?:how are (?:you|u)(?: doing)?|how s it going|what s up|whats up|wassup|sup|ازيك|ازيكم|عامل ايه|عاملين ايه)$/;
   const greetings = /^(?:hi+|hello+|hey+|hi there|hello there|hey there|good morning|good afternoon|good evening|اهلا|اهلا بيك|اهلا وسهلا|مرحبا|هاي|هلا|السلام عليكم|السلام عليكم ورحمة الله|السلام عليكم ورحمة الله وبركاته|صباح الخير|صباح النور|مساء الخير|مساء النور)$/;
   const thanks = /^(?:(?:ok|okay|alright|تمام) )?(?:thanks|thank you|thanks a lot|thank you so much|thank you very much|thanks so much|many thanks|شكرا|شكرا ليك|شكرا جزيلا|متشكر|متشكرة|تسلم|تسلمي|تسلموا)$/;
@@ -11,6 +12,11 @@ export function socialReply(text:string,history:ReadonlyArray<{role:'user'|'assi
   const isThanks=thanks.test(normalized)||hint==='thanks';
   const isWellbeing=wellbeing.test(normalized);
   const isGreeting=isWellbeing||greetings.test(normalized)||hint==='greeting';
+  // `clarify` is the existing database-safe action for deterministic, source-free
+  // conversational replies. The text answers the identity question directly.
+  if(identity.test(normalized))return {action:'clarify',reason:'social_identity',sources:[],text:ar
+    ? 'أنا المساعد الافتراضي لـ IRAM، وموجود لمساعدتك في استفسارات المجوهرات ومنتجات BTC والسبائك وخدماتنا. كيف يمكنني مساعدتك؟'
+    : 'I’m IRAM’s virtual assistant, here to help with jewelry, BTC / bullion products and our services. How may I assist you?'};
   if(isWellbeing)return {action:'clarify',reason:'social_greeting',sources:[],text:ar
     ? 'أنا بخير، شكرًا لسؤالك.\n\nكيف يمكنني مساعدتك؟'
     : 'I’m doing well, thank you for asking.\n\nHow may I assist you?'};

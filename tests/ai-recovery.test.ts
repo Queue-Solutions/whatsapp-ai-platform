@@ -48,6 +48,15 @@ describe('bounded and silent model recovery',()=>{
   const decision=await new GroundedStrategy(async()=>[source],usage,{complete},'whatsapp',undefined,noDelay).reply(context);
   expect(decision.text).toBe('Cash or card.');expect(usage.finish).toHaveBeenCalledTimes(2);
  });
+ it('silently retries an unsolicited branch answer instead of asking a clear request to be repeated',async()=>{
+  const usage=ledger(),complete=vi.fn()
+   .mockResolvedValueOnce({decision:{action:'answer' as const,text:'Here are our branches.',branchLines:['Imaginary branch — Cairo'],sourceLabels:['K1']},input:100,output:20})
+   .mockResolvedValue(result());
+  const decision=await new GroundedStrategy(async()=>[source],usage,{complete},'whatsapp',undefined,noDelay).reply(context);
+  expect(decision).toMatchObject({action:'answer',reason:'approved_knowledge',text:'Cash or card.'});
+  expect(decision.text).not.toContain('clarify your request');expect(complete).toHaveBeenCalledTimes(2);
+  expect(usage.saved.get('tenant:message:one')).toMatchObject({status:'completed',decision:{reason:'invalid_intent_action'}});
+ });
  it('retries a temporary source-load failure without making an unreserved model call',async()=>{
   const load=vi.fn().mockRejectedValueOnce(new Error('network')).mockResolvedValue([source]),usage=ledger(),complete=vi.fn(async()=>result());
   const delay=vi.fn(noDelay);expect((await new GroundedStrategy(load,usage,{complete},'whatsapp',undefined,delay).reply(context)).action).toBe('answer');

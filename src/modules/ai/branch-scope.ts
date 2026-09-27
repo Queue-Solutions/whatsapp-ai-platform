@@ -100,7 +100,8 @@ export function unsolicitedBranches(context:MessageContext,decision:Pick<AgentDe
   return scope==='none'?(lines.length>0||cited.length>0||named.length>0):(lines.length>1||named.length>1||(cited.length>1&&decision.text.length>500));
 }
 export function scopeClarification(context:MessageContext):AgentDecision {
-  return {action:'clarify',reason:'reply_scope_clarification',sources:[],text:replyLanguage(context.text??'')==='ar'
-    ?'ممكن توضح طلبك في سطر واحد علشان أساعدك مباشرة؟'
-    :'Could you clarify your request in one sentence so I can help you directly?'};
+  const ar=replyLanguage(context.text??'')==='ar',branchRelated=branchScope(context)==='detail';
+  return {action:'clarify',reason:'reply_scope_clarification',sources:[],text:branchRelated
+    ? ar?'تقصد أي فرع؟ اكتب اسم الفرع أو المنطقة وسأساعدك مباشرة.':'Which branch do you mean? Share its name or area and I’ll help directly.'
+    : ar?'تحب أساعدك في المجوهرات، منتجات BTC والسبائك، الفروع، ولا خدمة أخرى من IRAM؟':'What can I help with at IRAM—jewelry, BTC / bullion, branches, or another service?'};
 }

@@ -200,7 +200,10 @@ export class GroundedStrategy implements ReplyStrategy {
     if (reservation.status === 'completed') {
       const decision = reservation.decision;
       if (!isAgentDecision(decision)||!sourcesCurrent(decision, available)) return fallback(context, 'cached_knowledge_changed');
-      return unsolicitedBranches(routed,decision,available)?scopeClarification(context):renderBranchAnswer(routed,decision,available);
+      // A model-written branch list for a non-branch question is an invalid
+      // answer, not customer ambiguity. Send it through silent recovery rather
+      // than asking the customer to repeat a request that was already clear.
+      return unsolicitedBranches(routed,decision,available)?fallback(context,'invalid_intent_action'):renderBranchAnswer(routed,decision,available);
     }
     if (reservation.status !== 'new' || !reservation.id) return fallback(context, reservation.status==='failed'&&reservation.errorCode?reservation.errorCode:`ai_${reservation.status}`);
     const start = Date.now();
@@ -228,7 +231,7 @@ export class GroundedStrategy implements ReplyStrategy {
     else decision = { text: formatReply(formatBranchReply(result.decision.text,result.decision.branchLines)), action: result.decision.action, reason: 'approved_knowledge',
       sources: selected.map(s => ({ id: s!.id, kind: s!.kind, updatedAt: s!.updatedAt })) };
     if (decision.action === 'handoff' && result.decision.summary?.trim()) decision.attentionSummary = result.decision.summary.trim();
-    if(unsolicitedBranches(routed,decision,available,result.decision.branchLines))decision=scopeClarification(context);
+    if(unsolicitedBranches(routed,decision,available,result.decision.branchLines))decision=fallback(context,'invalid_intent_action');
     if(decision.action==='answer'&&productIntent(routed)==='btc'&&branchScope(routed,available)==='directory'&&!selected.some(s=>s?.kind==='faq'&&bullionPattern.test(normalizeIntent(s.content))))decision=knowledgeGap(context);
     const lastAssistant=[...(context.history??[])].reverse().find(m=>m.role==='assistant')?.content;
     if(lastAssistant&&isShortAcceptance(context.text??'')&&normalizeIntent(decision.text)===normalizeIntent(lastAssistant))decision=scopeClarification(context);
