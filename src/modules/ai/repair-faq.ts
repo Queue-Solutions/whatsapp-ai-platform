@@ -1,7 +1,7 @@
 import type {AgentDecision,KnowledgeSource} from './contracts';
 import type {MessageContext} from '../messaging/types';
-import {normalizeIntent} from './branch-scope';
-import {sourceRef} from './branch-dialogue';
+import {locationWords,normalizeIntent} from './branch-scope';
+import {branchData,sourceRef} from './branch-dialogue';
 import {replyLanguage} from './language';
 
 function faq(source:KnowledgeSource):{question:string;answer:string}|null {
@@ -15,6 +15,57 @@ function faq(source:KnowledgeSource):{question:string;answer:string}|null {
 function isRepairFaq(source:KnowledgeSource){
   const value=faq(source);if(!value)return false;
   return /\b(?:technical care|maintenance|repair)\b|صيانه|تصليح|اصلاح/.test(normalizeIntent(value.question));
+}
+
+export interface RepairBranchEntry {name:string}
+export interface RepairBranchCatalog {entries:RepairBranchEntry[];sources:KnowledgeSource[]}
+
+function branchIdentity(value:string){
+  const ignored=new Set(['iram','tjh','branch','store','mall','hotel','the','el','al','فرع','الفرع','مول','فندق']);
+  return locationWords(value.split(/\s*(?:\(|\[|—|–| - )/)[0]).filter(word=>!ignored.has(word));
+}
+
+function catalogEntries(answer:string){
+  const lines=answer.split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
+  const start=lines.findIndex(line=>/^(?:available branches|الفروع المتاحه):?$/i.test(normalizeIntent(line)));
+  if(start<0)return [];
+  const end=lines.findIndex((line,index)=>index>start&&/^(?:you may drop off\b|يمكنك.*(?:تسليم|ترك))/i.test(normalizeIntent(line)));
+  const selected=lines.slice(start+1,end>start?end:lines.length).map(line=>line
+    .replace(/^[\s\t•*-]*(?:\d+️?⃣?)?[.)-]?\s*/u,'').trim()).filter(Boolean);
+  return selected.map(name=>({name}));
+}
+
+/** Parse the approved technical-care availability list without treating the drop-off exception as service eligibility. */
+export function repairBranchCatalog(sources:KnowledgeSource[]):RepairBranchCatalog|null {
+  const catalogs=sources.flatMap(source=>{
+    const value=faq(source);
+    if(!value||!isRepairFaq(source))return [];
+    const entries=catalogEntries(value.answer);
+    return entries.length?[{source,entries}]:[];
+  });
+  if(!catalogs.length)return null;
+  const signature=(entries:RepairBranchEntry[])=>entries.map(entry=>branchIdentity(entry.name).join(' ')).sort().join('|');
+  const expected=signature(catalogs[0].entries);
+  if(!expected||catalogs.some(catalog=>signature(catalog.entries)!==expected))return null;
+  const entries=[...new Map(catalogs[0].entries.map(entry=>[branchIdentity(entry.name).join(' '),entry])).values()];
+  if(entries.length!==catalogs[0].entries.length||entries.some(entry=>!branchIdentity(entry.name).length))return null;
+  return {entries,sources:catalogs.map(catalog=>catalog.source)};
+}
+
+/** Join an approved maintenance entry to one physical branch by its explicit name, never merely by a shared city. */
+export function repairBranchRecords(entry:RepairBranchEntry,sources:KnowledgeSource[]){
+  const expected=branchIdentity(entry.name);
+  return sources.filter(source=>{
+    const data=branchData(source);if(!data?.name)return false;
+    const actual=branchIdentity(data.name);
+    return actual.length===expected.length&&expected.every((word,index)=>word===actual[index]);
+  });
+}
+
+/** The immediately preceding assistant reply established technical-care branch scope. */
+export function continuesRepairService(context:MessageContext){
+  const lastAssistant=[...(context.history??[])].reverse().find(message=>message.role==='assistant')?.content??'';
+  return /technical care working hours and available branches|مواعيد العنايه الفنيه والصيانه/.test(normalizeIntent(lastAssistant));
 }
 
 export function isRepairEnquiry(text:string){

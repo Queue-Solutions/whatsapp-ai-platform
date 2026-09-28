@@ -8,6 +8,16 @@ import type {MessageContext} from '../src/modules/messaging/types';
 const branch=(id:string,name:string,city:string,latitude:string,longitude:string):KnowledgeSource=>({id,kind:'fact',label:id,updatedAt:'2026-09-20',content:JSON.stringify({category:'branch',value:{name,city,latitude,longitude,address:`${id} Test Road`,mapsUrl:`https://maps.google.com/?q=${latitude},${longitude}`}})});
 const branches=[branch('b1','IRAM Korba','Heliopolis','30.09','31.32'),branch('b2','TJH City Stars','Nasr City','30.07','31.35'),branch('b3','Jewelry Only','Obour city','30.1914','31.450548')];
 const faq:KnowledgeSource={id:'f8',label:'F8',kind:'faq',updatedAt:'2026-09-20',content:JSON.stringify({question:'What information can you provide about your bullion or BTC products?',answer:'IRAM Korba: 01200000001\nTJH City Stars: 01200000002\nBTC working hours: Daily from 12:00 PM to 8:30 PM, except Friday from 2:00 PM to 8:30 PM.'})};
+const maintenance:KnowledgeSource={id:'maintenance',label:'F7',kind:'faq',updatedAt:'2026-09-20',content:JSON.stringify({question:'What technical care, maintenance, or repair services do you offer?',answer:`Technical Care working hours and available branches:
+Daily from 1:00 PM to 9:00 PM.
+Available branches:
+1. IRAM KORBA (Heliopolis)
+2. IRAM NOX (Fifth Settlement)
+3. IRAM ZIA (South 90th Street)
+4. IRAM ARKAN (Sheikh Zayed)
+5. IRAM ALEX (Roshdy)
+6. Hurghada
+You may drop off the product at any of our other branches for maintenance and collect it later from the same branch.`})};
 const base:MessageContext={type:'text',text:'What’s the nearest one for me ?',tenantId:'tenant-a',conversationId:'c1',requestKey:'message:1',history:[{role:'user',content:'BTC'},{role:'assistant',content:'For BTC, these are the branches offering this service: IRAM Korba, TJH City Stars.'}]};
 const cityHistory:MessageContext['history']=[...base.history!,{role:'user',content:base.text!},{role:'assistant',content:'Which city or area are you in? Or share your WhatsApp location or a Google Maps pin so I can find a nearby BTC branch.'}];
 function fixture(sources=[faq,...branches]){
@@ -108,6 +118,28 @@ describe('nearest branch conversation',()=>{
     const result=await f.strategy.reply({...base,text:'مصر الجديدة',requestKey:'message:area-retry',history});
     expect(result.reason).toBe('approved_knowledge');expect(result.text).toContain('IRAM Korba — Heliopolis — 0.0 كم');
     expect(f.locations.area).not.toHaveBeenCalled();expect(f.complete).not.toHaveBeenCalled();
+  });
+  it('ranks only branches approved for the active maintenance service',async()=>{
+    const eligible=[
+      branch('repair-korba','IRAM الكربه','مصر الجديدة','30.09','31.32'),
+      branch('repair-nox','IRAM نوكس','القاهرة الجديدة','30.02','31.49'),
+      branch('repair-zia','IRAM زيا','القاهرة الجديدة','30.01','31.48'),
+      branch('repair-arkan','IRAM اركان','الشيخ زايد','30.01','30.97'),
+      branch('repair-alex','IRAM الاسكندرية','الاسكندرية','31.24','29.96'),
+      branch('repair-hurghada','الغردقة','الغردقة','27.26','33.81'),
+    ];
+    const ineligible=branch('jewelry-maadi','TJH Maadi','Maadi','30.13','31.33');
+    const locations:LocationResolver={pin:vi.fn(async text=>coordinates(text)),area:vi.fn(async()=>({label:'Ain Shams',latitude:30.13,longitude:31.33}))};
+    const complete=vi.fn(),reserve=vi.fn();
+    const strategy=new GroundedStrategy(async()=>[maintenance,...eligible,ineligible],{reserve,finish:vi.fn()},{complete},'whatsapp',locations);
+    const history:MessageContext['history']=[
+      {role:'user',content:'عايز أصلح سلسلة'},
+      {role:'assistant',content:'مواعيد العناية الفنية والصيانة:\n\nالفروع المتاحة:\n• IRAM Korba\n• IRAM Nox\n• IRAM Zia\n• IRAM Arkan\n• IRAM Alex\n• Hurghada'},
+    ];
+    const result=await strategy.reply({...base,text:'ايه اقرب واحد ليا لو انا في عين شمس؟',requestKey:'message:maintenance-nearest',history});
+    expect(result.reason).toBe('approved_knowledge');expect(result.text).toContain('للصيانة والعناية الفنية');expect(result.text).toContain('IRAM الكربه');
+    expect(result.text).not.toContain('TJH Maadi');expect(result.sources.some(source=>source.id==='jewelry-maadi')).toBe(false);
+    expect(locations.area).toHaveBeenCalledWith('عين شمس',expect.any(Array));expect(complete).not.toHaveBeenCalled();expect(reserve).not.toHaveBeenCalled();
   });
   it('includes jewelry-only branches when the customer explicitly switches to jewelry',async()=>{
     const f=fixture(),result=await f.strategy.reply({...base,text:'Nearest jewelry branch in Obour city'});

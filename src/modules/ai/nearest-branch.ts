@@ -6,6 +6,7 @@ import {nearestIntent,normalizeIntent,locationWords} from './branch-scope';
 import {distanceKm,point,coordinates,type LocationResolver} from './branch-location';
 import {replyLanguage} from './language';
 import {knowledgeGap} from './knowledge-gap';
+import {continuesRepairService,repairBranchCatalog,repairBranchRecords} from './repair-faq';
 
 const areaPrompt=/which city or area|tell me your current city or area|share (?:your |a )?(?:whatsapp location|google maps pin)|couldn.t identify (?:that|the) area|انت في انهي مدينه|ابعت.*(?:لوكيشن|موقعك)|لم [اأ]تمكن من تحديد (?:هذه|هذة|تلك)?\s*(?:المنطقه|المنطقة|الموقع)/i;
 const productOnly=/^(?:btc|bullion|jewel(?:ry|lery)|سبائك|السبائك|مجوهرات|المجوهرات)[.!؟? ]*$/i;
@@ -82,7 +83,7 @@ export function continuesNearestBranch(context:MessageContext){
   const answeringArea=areaPrompt.test(lastAssistant)&&(areaAnswer(text)||!!coordinates(text)||/^https:\/\//.test(text));
   const answeringProduct=productOnly.test(normalizeIntent(text).trim())&&/jewelry|مجوهرات/i.test(lastAssistant)
     &&(nearestIntent({...context,text:previousUser,history:history.slice(0,-2)})||previousUser.startsWith('geo:'));
-  return answeringArea||answeringProduct;
+  return answeringArea||answeringProduct||(continuesRepairService(context)&&nearestIntent(context));
 }
 /** Intercept proximity requests before keyword branch matching or model generation. */
 export async function nearestBranchReply(context:MessageContext,sources:KnowledgeSource[],locations:LocationResolver,productHint?:'btc'|'jewelry'|null,originHint?:SemanticOrigin|null):Promise<AgentDecision|null>{
@@ -93,7 +94,8 @@ export async function nearestBranchReply(context:MessageContext,sources:Knowledg
   const answeringProduct=productOnly.test(normalizeIntent(text).trim())&&/jewelry|مجوهرات/i.test(lastAssistant)
     &&(nearestIntent({...context,text:previousUser,history:history.slice(0,-2)})||previousUser.startsWith('geo:'));
   if(!nearestIntent(context)&&context.type!=='location'&&!answeringArea&&!answeringProduct)return null;
-  const product=productHint??productIntent(context);if(!product)return productQuestion(context);
+  const repairContext=continuesRepairService(context);
+  const product=productHint??(repairContext?'jewelry':productIntent(context));if(!product)return productQuestion(context);
   const languageText=(context.type==='location'||!!coordinates(text))?[...history].reverse().find(m=>m.role==='user'&&!m.content.startsWith('geo:'))?.content??'':text;
   const ar=replyLanguage(languageText)==='ar';
   const clarify=(value:string):AgentDecision=>({action:'clarify',reason:'nearest_branch_location',text:value,sources:[]});
@@ -112,11 +114,16 @@ export async function nearestBranchReply(context:MessageContext,sources:Knowledg
     ?`في أي مدينة أو منطقة تتواجد؟ يمكنك أيضًا إرسال موقعك عبر واتساب أو رابط دبوس Google Maps لتحديد أقرب فرع ${product==='btc'?'لخدمة BTC':'للمجوهرات'}.`
     :`Which city or area are you in? Or share your WhatsApp location or a Google Maps pin so I can find a nearby ${product==='btc'?'BTC':'jewelry'} branch.`);
   query=query.replace(/^(?:i(?:'m| am)|انا)\s+(?:in|from|في|من)\s+/i,'').trim();
-  const catalog=product==='btc'?btcCatalog(sources):null;
-  if(product==='btc'&&!catalog)return knowledgeGap(context,'The approved BTC FAQ does not confirm an unambiguous eligible branch list.');
-  const expected=catalog?catalog.entries.length:sources.filter(s=>branchData(s)).length;
-  const candidates=catalog?catalog.entries.flatMap(e=>{const matches=btcBranchRecords(e,sources);return matches.length===1?[{source:matches[0],name:e.name}]:[];})
-    :sources.filter(s=>branchData(s)).map(source=>({source,name:branchData(source)!.name}));
+  const btc=product==='btc'?btcCatalog(sources):null;
+  if(product==='btc'&&!btc)return knowledgeGap(context,'The approved BTC FAQ does not confirm an unambiguous eligible branch list.');
+  const repair=product==='jewelry'&&repairContext?repairBranchCatalog(sources):null;
+  if(product==='jewelry'&&repairContext&&!repair)return knowledgeGap(context,'The approved maintenance FAQ does not confirm one unambiguous eligible branch list.');
+  const repairMatches=repair?.entries.map(entry=>({entry,matches:repairBranchRecords(entry,sources)}))??[];
+  if(repairMatches.some(match=>match.matches.length!==1))return knowledgeGap(context,'Every approved maintenance branch must match exactly one saved branch record before comparing distances.');
+  const expected=btc?btc.entries.length:repair?repair.entries.length:sources.filter(s=>branchData(s)).length;
+  const candidates=btc?btc.entries.flatMap(e=>{const matches=btcBranchRecords(e,sources);return matches.length===1?[{source:matches[0],name:e.name}]:[];})
+    :repair?repairMatches.map(({entry,matches})=>({source:matches[0],name:branchData(matches[0])?.name??entry.name}))
+      :sources.filter(s=>branchData(s)).map(source=>({source,name:branchData(source)!.name}));
   if(!expected)return knowledgeGap(context,'No approved branch records are available for a location comparison.');
   // Bound outbound map lookups; missing/unmatched records remain part of the coverage check.
   const located=await Promise.all(candidates.slice(0,32).map(async entry=>{
@@ -125,7 +132,8 @@ export async function nearestBranchReply(context:MessageContext,sources:Knowledg
     return position?{...entry,position}:null;
   }));
   const mapped=located.filter((v):v is NonNullable<typeof v>=>v!==null);
-  if(!mapped.length)return {action:'answer',reason:'approved_knowledge',sources:[...(catalog?.sources??[]),...candidates.slice(0,32).map(c=>c.source)].map(sourceRef),text:ar
+  const serviceSources=[...(btc?.sources??[]),...(repair?.sources??[])];
+  if(!mapped.length)return {action:'answer',reason:'approved_knowledge',sources:[...serviceSources,...candidates.slice(0,32).map(c=>c.source)].map(sourceRef),text:ar
     ?'إحداثيات الفروع الدقيقة غير متاحة للمقارنة حاليًا، لذلك لا يمكنني تحديد الفرع الأقرب بدقة. اكتب اسم الفرع المطلوب لعرض عنوانه ورابط الموقع المتاح.'
     :'I don’t have confirmed branch coordinates to compare right now. Type a branch name and I can send its saved address and available location link.'};
   const pin=await locations.pin(query);
@@ -137,13 +145,14 @@ export async function nearestBranchReply(context:MessageContext,sources:Knowledg
     :'I couldn’t identify that area unambiguously. Please share your WhatsApp location or a Google Maps pin so I can compare distances.');
   const ranked=mapped.map(m=>({...m,distance:distanceKm(origin,m.position)})).sort((a,b)=>a.distance-b.distance||a.name.localeCompare(b.name));
   const shown=ranked.slice(0,3),complete=mapped.length===expected;
-  const intro=ar?`أقرب الخيارات ${product==='btc'?'لخدمة BTC':'للمجوهرات'} حسب المسافة المباشرة${area?' من مركز المنطقة تقريبًا':''}:`
-    :`Closest ${product==='btc'?'BTC':'jewelry'} options by straight-line distance${area?' from the approximate area centre':''}:`;
+  const serviceName=repair?(ar?'للصيانة والعناية الفنية':'maintenance'):product==='btc'?'BTC':ar?'للمجوهرات':'jewelry';
+  const intro=ar?`أقرب الخيارات ${serviceName} حسب المسافة المباشرة${area?' من مركز المنطقة تقريبًا':''}:`
+    :`Closest ${serviceName} options by straight-line distance${area?' from the approximate area centre':''}:`;
   const caveat=ar?'هذه مسافات مباشرة، وليست مسافات قيادة أو أوقات وصول.':'These are straight-line distances, not driving distances or travel times.';
   const coverage=complete?'':ar?'تشمل المقارنة الفروع ذات المواقع المؤكدة فقط. قد يوجد فرع أقرب ضمن الفروع التي لا تتوفر إحداثياتها.'
     :'This comparison includes only branches with confirmed coordinates. A branch with missing location data could be closer.';
   const lines=shown.map(m=>`• ${m.name}${branchData(m.source)?.city?` — ${branchData(m.source)!.city}`:''} — ${m.distance.toFixed(1)} ${ar?'كم':'km'}`);
-  return {action:'answer',reason:'approved_knowledge',sources:[...new Map([...(catalog?.sources??[]),...candidates.slice(0,32).map(c=>c.source)].map(s=>[s.id,s])).values()].map(sourceRef),text:[intro,lines.join('\n'),caveat,coverage,
+  return {action:'answer',reason:'approved_knowledge',sources:[...new Map([...serviceSources,...candidates.slice(0,32).map(c=>c.source)].map(s=>[s.id,s])).values()].map(sourceRef),text:[intro,lines.join('\n'),caveat,coverage,
     ar?'اكتب اسم الفرع المطلوب لعرض العنوان الكامل ورابط الموقع'+(product==='btc'?' ورقم خدمة BTC.':'.')
       :'Type a branch name to receive its full address and location link'+(product==='btc'?' and BTC phone number.':'.'),
     externalArea?(ar?'بيانات المنطقة: © OpenStreetMap contributors':'Area data: © OpenStreetMap contributors'):'',

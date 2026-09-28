@@ -17,7 +17,7 @@ export function locationWords(text:string){
   let t=normalizeIntent(text);
   for(const [pattern,replacement] of [
     [/المعادي|المعادى|معادي|معادى|\bmaadi\b/g,'maadi'],
-    [/كوربه|كوربا|\bcorba\b|\bkorba\b/g,'korba'],
+    [/الكربه|كربه|كوربه|كوربا|\bcorba\b|\bkorba\b/g,'korba'],
     [/سيتي\s*ستارز?|سيتى\s*ستارز?|\bcity\s+stars?\b/g,'stars'],
     [/ميفيدا|\bmivida\b/g,'mivida'],
     [/الكوثر|كوثر|\bkawthar\b/g,'kawthar'],
