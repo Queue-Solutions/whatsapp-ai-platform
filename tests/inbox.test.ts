@@ -11,13 +11,14 @@ describe('inbox PostgreSQL boundaries',()=>{
   async function rows<T=Record<string,unknown>>(sql:string,args:unknown[]=[]){return(await db.query<T>(sql,args)).rows;}
   async function asUser(id:string){await db.exec('reset role');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[id]);await db.exec('set role authenticated');}
   async function mode(value:string,id=conversation){const [c]=await rows<{version:string}>('select updated_at::text as version from public.conversations where id=$1',[id]);return db.query('select public.set_conversation_mode($1,$2,$3)',[id,value,c?.version??new Date().toISOString()]);}
+  async function resetContext(id=conversation,expected?:string){const [c]=await rows<{version:string}>('select updated_at::text as version from public.conversations where id=$1',[id]);return db.query('select public.reset_conversation_context($1,$2)',[id,expected??c?.version??new Date().toISOString()]);}
   async function manual(overrides:{actor?:string;id?:string;body?:string;phone?:string;allowed?:string[];conversation?:string}={}){
     return(await rows<{v:{state:string;reply?:{outbound_id:string}}}>('select public.prepare_manual_reply($1,$2,$3,$4,$5,$6) as v',[overrides.actor??owner,overrides.conversation??conversation,overrides.id??requestId,overrides.body??'Synthetic staff reply',overrides.phone??'9001',overrides.allowed??['201000000001']]))[0].v;
   }
   async function claim(){return(await rows<{id:string;lease_token:string;automation_epoch:number}>("select * from public.claim_message_job('9001')"))[0];}
   async function availability(scope:string,selected:string[]=[]){return db.query('select public.set_assistant_availability($1,$2,$3::uuid[])',[channel,scope,selected]);}
   beforeAll(async()=>{db=new PGlite();await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;`);
-    for(const file of ['202609120001_foundation.sql','202609120002_bounded_ai.sql','202609130001_inbox.sql','202609150001_faq_deletion.sql','202609160001_inbox_attention.sql','202609170001_knowledge_gap_attention.sql','202609170002_contact_followup.sql','202609170003_bsuid.sql','202609170004_careers_blacklist.sql','202609220001_assistant_availability.sql','202609230001_conversation_controls.sql','202609240001_customer_resume.sql','202609240002_cancel_command.sql'])await db.exec(await readFile(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));
+    for(const file of ['202609120001_foundation.sql','202609120002_bounded_ai.sql','202609130001_inbox.sql','202609150001_faq_deletion.sql','202609160001_inbox_attention.sql','202609170001_knowledge_gap_attention.sql','202609170002_contact_followup.sql','202609170003_bsuid.sql','202609170004_careers_blacklist.sql','202609220001_assistant_availability.sql','202609230001_conversation_controls.sql','202609240001_customer_resume.sql','202609240002_cancel_command.sql','202609280002_agent_context_reset.sql'])await db.exec(await readFile(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));
   });
   afterAll(async()=>{await db?.close();});
   beforeEach(async()=>{await db.exec('reset role;truncate public.tenants,auth.users cascade;');
@@ -67,6 +68,28 @@ describe('inbox PostgreSQL boundaries',()=>{
     expect((await rows<{v:unknown}>("select public.prepare_message_reply($1,$2,'Old reply') as v",[waiting.id,waiting.lease_token]))[0].v).toBeNull();
     await db.exec("select public.ingest_whatsapp_message('9001','after-resume','201000000001',null,now(),'text','Hi')");const fresh=await claim();expect(fresh.automation_epoch).toBe(4);
     expect((await rows<{v:unknown}>("select public.prepare_ai_reply($1,$2,'Hi! How can I help you?','clarify','[]') as v",[fresh.id,fresh.lease_token]))[0].v).not.toBeNull();
+  });
+  it('resets agent context without deleting the transcript and invalidates pre-reset work',async()=>{
+    const old=await claim();
+    await db.query("update public.conversations set automation_mode='human',attention_state='waiting',attention_reason='complaint',attention_summary='Old issue',attention_message_id=(select inbound_message_id from public.message_jobs where id=$2),attention_since=now(),is_complaint=true,followup_state='ready',followup_name='Maya Hassan',followup_phone='201012345678' where id=$1",[conversation,old.id]);
+    const messageCount=(await rows<{count:number}>('select count(*)::int as count from public.messages where conversation_id=$1',[conversation]))[0].count;
+    await asUser(owner);await resetContext();await db.exec('reset role');
+    const reset=(await rows<{automation_mode:string;automation_epoch:number;context_reset_at:string|null;attention_state:string;attention_reason:string|null;attention_summary:string;is_complaint:boolean;followup_state:string;followup_name:string|null;followup_phone:string|null}>('select * from public.conversations where id=$1',[conversation]))[0];
+    expect(reset).toMatchObject({automation_mode:'auto',automation_epoch:1,attention_state:'none',attention_reason:null,attention_summary:'',is_complaint:false,followup_state:'none',followup_name:null,followup_phone:null});
+    expect(reset.context_reset_at).toBeTruthy();expect((await rows<{count:number}>('select count(*)::int as count from public.messages where conversation_id=$1',[conversation]))[0].count).toBe(messageCount);
+    expect((await rows<{state:string;error_code:string}>('select state,error_code from public.message_jobs where id=$1',[old.id]))[0]).toEqual({state:'skipped',error_code:'agent_context_reset'});
+    await expect(db.query("select public.prepare_ai_reply($1,$2,'Stale reply','clarify','[]')",[old.id,old.lease_token])).rejects.toThrow('lease');
+    expect(await rows("select id from public.messages where direction='outbound'")).toHaveLength(0);
+    expect(await rows("select id from public.conversation_events where event_type='agent_context_reset' and conversation_id=$1",[conversation])).toHaveLength(1);
+    await db.exec("select public.ingest_whatsapp_message('9001','after-context-reset','201000000001',null,now(),'text','Fresh question')");
+    const fresh=await claim();expect(fresh.automation_epoch).toBe(reset.automation_epoch);
+  });
+  it('restricts context reset to permitted tenant members and rejects stale versions',async()=>{
+    await asUser(viewer);await expect(resetContext()).rejects.toThrow('access denied');
+    await asUser(owner);await expect(resetContext(conversation,'2000-01-01')).rejects.toThrow('changed');
+    await db.exec('reset role');const otherConversation=(await rows<{id:string}>('select id from public.conversations where tenant_id=$1',[other]))[0].id;
+    await asUser(agent);await expect(resetContext(otherConversation)).rejects.toThrow('access denied');
+    await db.exec('set role anon');await expect(db.query('select public.reset_conversation_context($1,now())',[conversation])).rejects.toThrow();
   });
   it('pauses a normal chat without manufacturing an issue and resumes it through the audited control',async()=>{
     const old=await claim();await asUser(owner);await attention('pause');

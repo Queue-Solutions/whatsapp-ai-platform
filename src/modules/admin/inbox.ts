@@ -78,6 +78,10 @@ export class InboxRepository {
     const {error}=await this.db.rpc('manage_conversation_attention',{p_conversation:conversation.id,p_action:action,p_expected:conversation.updated_at});
     if(error)throw new Error('Could not update this conversation. Refresh it and check your access before trying again.');
   }
+  async resetContext(conversation:Conversation){
+    const {error}=await this.db.rpc('reset_conversation_context',{p_conversation:conversation.id,p_expected:conversation.updated_at});
+    if(error)throw new Error('Could not reset the agent context. Refresh the conversation and try again.');
+  }
   async assistantAvailability(tenant:string):Promise<AssistantAvailability>{
     const channel=await this.db.from('whatsapp_channels').select('id,assistant_scope').eq('tenant_id',tenant).eq('enabled',true).order('created_at').limit(1).maybeSingle();
     if(channel.error||!channel.data)throw new Error('Could not load assistant availability.');

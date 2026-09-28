@@ -142,6 +142,16 @@ function ConversationPanel({repository,knowledgeEditor,tenant,conversation:c,ass
     }catch(e){setAttempt({...pending,blocked:true});setError(`${(e as Error).message} Check the message list before composing another reply.`);}
     finally{setBusy(false);onWorking(false);setReload(n=>n+1);onRefresh();}
   }
+  async function resetContext(){
+    const draftWarning=text||faqDirty?' Your unsaved reply or FAQ changes will also be discarded.':'';
+    if(!window.confirm(`Reset the agent context? Previous messages will remain visible, but the AI will no longer use them.${draftWarning}`))return;
+    setBusy(true);onWorking(true);setError('');setNotice('');
+    try{
+      await repository.resetContext(c);setText('');setAttempt(null);setFaqTarget(null);setFaqDirty(false);
+      setNotice('Agent context reset. The existing transcript is preserved, and the next customer message will be treated as a new conversation.');
+      onRefresh();setReload(n=>n+1);
+    }catch(e){setError((e as Error).message);onRefresh();}finally{setBusy(false);onWorking(false);}
+  }
   const disabled=!!c.blocked||!canEdit||busy||c.status!=='open';
   async function prepareFaqReply(answer:string){
     if(text&&!window.confirm('Replace your unsent reply with the saved FAQ answer?'))return;
@@ -154,6 +164,7 @@ function ConversationPanel({repository,knowledgeEditor,tenant,conversation:c,ass
     <div className="conversation-header"><div><h2>{c.name}</h2><span className="customer-number" dir="ltr">{c.phone?<a href={`tel:+${c.phone}`}>+{c.phone}</a>:c.username?`@${c.username} · Phone number not shared`:'Phone number not shared'}</span><span className={`mode-label ${conversationAssistantEnabled(c,assistantAvailability)?'':'human'}`}>{conversationStateLabel(c,assistantAvailability)}</span>{c.is_complaint&&<span className="complaint-chip">Complaint</span>}</div>
       <div className="conversation-controls">
         <button className="primary" disabled={disabled||c.attention_state==='in_progress'} onClick={()=>void action('reply')}>Reply personally</button>
+        <button className="secondary" title="Keep the transcript but make the agent forget earlier messages" disabled={disabled} onClick={()=>void resetContext()}>Reset</button>
         {hasActiveIssue?<button className="secondary" disabled={disabled} onClick={()=>void action('resolve')}>Resolve</button>
           :c.automation_mode==='human'?<button className="secondary" disabled={disabled} onClick={()=>void action('resume')}>Resume assistant</button>
           :<button className="secondary" disabled={disabled} onClick={()=>void action('pause')}>Pause assistant</button>}
@@ -181,4 +192,4 @@ function ConversationPanel({repository,knowledgeEditor,tenant,conversation:c,ass
 }
 function formatTime(value:string){return new Date(value).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});}
 function deliveryLabel(status:string){return ({sending:'Sending',sent:'Sent',delivered:'Delivered',read:'Read',failed:'Failed',needs_review:'Delivery uncertain · check WhatsApp',queued:'Queued'} as Record<string,string>)[status]??status;}
-function eventLabel(type:string){return ({knowledge_gap:'Missing business information flagged',paused:'Assistant paused',resumed:'Returned to assistant',customer_resumed:'Customer returned to the assistant',manual_reply:'Personal reply prepared',human_requested:'Customer requested a person',complaint:'Flagged as a complaint',flagged:'Marked for your attention',reply_personally:'Replying personally',resolved:'Marked resolved',complaint_removed:'Complaint label removed',customer_follow_up:'Reopened after a customer message'} as Record<string,string>)[type]??'Conversation updated';}
+function eventLabel(type:string){return ({knowledge_gap:'Missing business information flagged',paused:'Assistant paused',resumed:'Returned to assistant',customer_resumed:'Customer returned to the assistant',agent_context_reset:'Agent context reset',manual_reply:'Personal reply prepared',human_requested:'Customer requested a person',complaint:'Flagged as a complaint',flagged:'Marked for your attention',reply_personally:'Replying personally',resolved:'Marked resolved',complaint_removed:'Complaint label removed',customer_follow_up:'Reopened after a customer message'} as Record<string,string>)[type]??'Conversation updated';}

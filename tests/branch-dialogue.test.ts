@@ -2,7 +2,7 @@ import {describe,it,expect,vi} from 'vitest';
 import {GroundedStrategy} from '../src/modules/ai/grounded-strategy';
 import {branchScope,matchingBranches} from '../src/modules/ai/branch-scope';
 import {buildRequest} from '../src/modules/ai/openai';
-import {boundedHistory,isProductChoiceContinuation,resolveContinuation} from '../src/modules/ai/conversation-context';
+import {boundedHistory,boundedHistorySince,isProductChoiceContinuation,resolveContinuation} from '../src/modules/ai/conversation-context';
 import {branchData,productIntent} from '../src/modules/ai/branch-dialogue';
 import {selectKnowledge} from '../src/modules/ai/knowledge-selection';
 import {continueFollowUp} from '../src/modules/ai/follow-up';
@@ -159,6 +159,17 @@ describe('short replies act on the last assistant offer',()=>{
   const long='م'.repeat(3000);
   expect(boundedHistory([{direction:'outbound',body:long},{direction:'inbound',body:'Earlier branch question'}])[1].content).toBe(long);
   expect(boundedHistory([{direction:'outbound',body:'Recent'},{direction:'inbound',body:'x'.repeat(100)},{direction:'outbound',body:'Stale'}],20)).toEqual([{role:'assistant',content:'Recent'}]);
+ });
+ it('keeps the transcript but excludes every turn at or before the agent context reset',()=>{
+  const rows=[
+   {direction:'outbound',body:'New assistant reply',created_at:'2026-09-28T20:00:02Z'},
+   {direction:'inbound',body:'New customer message',created_at:'2026-09-28T20:00:01Z'},
+   {direction:'outbound',body:'Old assistant context',created_at:'2026-09-28T19:59:59Z'},
+  ];
+  expect(boundedHistorySince(rows,'2026-09-28T20:00:00Z')).toEqual([
+   {role:'user',content:'New customer message'},{role:'assistant',content:'New assistant reply'},
+  ]);
+  expect(boundedHistorySince(rows,null)).toHaveLength(3);
  });
 });
 

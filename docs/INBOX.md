@@ -55,7 +55,7 @@ The owner must monitor the Inbox and fulfill the promised personal follow-up. Th
 
 ### Release order and verification
 
-1. Keep all previously applied migrations. Apply only the missing forward migrations in filename order, including `202609230001_conversation_controls.sql`, `202609240001_customer_resume.sql`, and `202609240002_cancel_command.sql`. They preserve existing messages, branches, FAQs, historical attention state and AI budget. Do not replay earlier migrations.
+1. Keep all previously applied migrations. Apply only the missing forward migrations in filename order, including `202609230001_conversation_controls.sql`, `202609240001_customer_resume.sql`, `202609240002_cancel_command.sql`, and `202609280002_agent_context_reset.sql`. They preserve existing messages, branches, FAQs, historical attention state and AI budget. The context-reset migration adds a per-conversation history boundary and an audited reset RPC; it does not delete chat messages or analytics. Do not replay earlier migrations.
 2. Deploy prompt version `approved-knowledge-v6-contact-style`. Old application calls remain compatible with the database additions.
 3. Check English/Arabic greetings and branch layout. With an approved test recipient, report an issue, send name and phone separately, and confirm the original issue plus contact details in Needs attention. The final acknowledgment pauses automation. Send standalone `Cancel` in mixed casing, confirm the issue is resolved and the complaint label is cleared, and confirm that the chat returns to automatic mode subject to the master availability setting. Confirm that standalone `AI` does not cancel the ticket.
 
