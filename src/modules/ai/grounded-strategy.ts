@@ -135,6 +135,11 @@ export class GroundedStrategy implements ReplyStrategy {
     const routed=useClassification?contextForIntent(context,useClassification,sources):context;
     if(contactReply&&inferredName){
       if(useClassification?.intent==='contact_details')return contactReply;
+      // The active form already established why this value was requested. Do not
+      // let a semantic false positive turn a valid supplied name (for example,
+      // "زياد") into an unrelated hiring enquiry. Explicit hiring language was
+      // handled by careerIntent before contact extraction.
+      if(useClassification?.intent==='career')return contactReply;
       if(!useClassification&&(knowledgeUnavailable||!matchingBranches(context.text??'',sources).length))return contactReply;
       // Acknowledgements are filtered before the classifier. This guard covers
       // other non-detail replies without saving them as a name or losing the

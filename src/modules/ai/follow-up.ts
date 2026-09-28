@@ -73,7 +73,7 @@ export function continueFollowUp(context:MessageContext):AgentDecision|null {
     return reply(context,'career_application',`Job enquiry: desired role “${role}”. Contact only if this role is needed.`,{...current,role});
   }
   const lastAssistant=[...(context.history??[])].reverse().find(m=>m.role==='assistant')?.content??'';
-  const wasAskedForContact=/your name|phone number|ممكن اسمك|رقم التليفون|رقم تليفون/.test(lastAssistant);
+  const wasAskedForContact=/your name|phone number|ممكن اسمك|اسمك|رقم (?:التليفون|تليفون|الهاتف|الموبايل|التواصل)/.test(lastAssistant);
   // Agreement is not contact data. Keep the form conversational and ask only
   // for the fields that are still missing instead of storing words like
   // “ofcourse” or “sure” as the customer's name.

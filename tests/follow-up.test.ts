@@ -44,6 +44,15 @@ describe('personal follow-up collection',()=>{
   expect(result.text).toContain('phone number');expect(result.text).not.toContain('share your name and');
   expect(loadSources).toHaveBeenCalledOnce();expect(classifyIntent).toHaveBeenCalledOnce();expect(finish).toHaveBeenCalledOnce();expect(complete).not.toHaveBeenCalled();
  });
+ it('keeps an Arabic name in active contact collection even if the classifier falsely labels it as career',async()=>{
+  const loadSources=vi.fn(async()=>[{id:'career-faq',kind:'faq' as const,label:'F9',updatedAt:'2026-09-20',content:JSON.stringify({question:'Do you have job vacancies?',answer:'Send a CV to hr@example.test.'})}]);
+  const reserve=vi.fn(async()=>({status:'new' as const,id:'contact-intent'})),finish=vi.fn(),complete=vi.fn();
+  const classifyIntent=vi.fn(async()=>({decision:{intent:'career' as const,confidence:.99,language:'ar' as const,product:'unknown' as const,branchMode:'none' as const,branchDetail:'none' as const,branchLabels:[],originEvidence:'',originQuery:'',normalizedQuery:'زياد',analyticsTopic:'',summary:'',risk:'none' as const},input:100,output:20}));
+  const result=await new GroundedStrategy(loadSources,{reserve,finish},{complete,classifyIntent}).reply({...context,text:'زياد',followUp:{...pending,reason:'human_requested',summary:'العميل يطلب التواصل'},history:[{role:'assistant',content:'يرجى إرسال اسمك ورقم الهاتف الأنسب للتواصل.'}]});
+  expect(result).toMatchObject({action:'clarify',reason:'human_requested',followUp:{state:'collecting',name:'زياد',phone:null}});
+  expect(result.text).toContain('رقم');expect(result.text).not.toContain('السيرة الذاتية');expect(result.text).not.toContain('hr@example.test');
+  expect(classifyIntent).toHaveBeenCalledOnce();expect(finish).toHaveBeenCalledOnce();expect(complete).not.toHaveBeenCalled();
+ });
  it.each(['Ofcourse','of course','SURE','Absolutely','تمام'])('does not save an acknowledgement as a customer name: %j',async text=>{
   const loadSources=vi.fn(),reserve=vi.fn(),complete=vi.fn(),classifyIntent=vi.fn();
   const start=beginFollowUp(context,issue);

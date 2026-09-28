@@ -35,6 +35,7 @@ describe('semantic intent classification',()=>{
     expect(request.input).not.toContain('https://iram.example');
     expect(request.instructions).toContain('Perform semantic interpretation, not keyword matching');
     expect(request.instructions).toContain('Agreement or acknowledgement expressions');
+    expect(request.instructions).toContain('"Ziad" or "زياد" is contact_details');
     expect(request.instructions).toContain('Wanting a return, exchange, cancellation or refund does not by itself prove a complaint');
     expect(request.instructions).toContain('A customer reporting suspected fraud');
     expect(request.instructions).toContain('originEvidence must be the exact consecutive words copied from the latest customer message');
