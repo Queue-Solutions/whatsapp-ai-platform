@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { PGlite } from '@electric-sql/pglite';
 import { readFile } from 'node:fs/promises';
 import { GroundedStrategy } from '../src/modules/ai/grounded-strategy';
-import { AI_MODEL, RESERVED_NANO } from '../src/modules/ai/config';
+import { AI_MODEL, INPUT_COST_NANO_PER_TOKEN, OUTPUT_COST_NANO_PER_TOKEN, RESERVED_NANO, modelCostNano } from '../src/modules/ai/config';
 import { buildRequest, ModelFailure, OpenAiProvider } from '../src/modules/ai/openai';
 import type { AgentDecision, KnowledgeSource } from '../src/modules/ai/contracts';
 import type { UsageLedger, Reservation } from '../src/modules/ai/ledger';
@@ -113,7 +113,7 @@ describe('grounded reply strategy', () => {
     const first = await strategy.reply(context); const second = await strategy.reply(context);
     expect(first).toEqual(second); expect(complete).toHaveBeenCalledOnce(); expect(load).toHaveBeenCalledWith(tenant);
     expect(ledger.finish).toHaveBeenCalledWith(tenant,expect.any(String),expect.objectContaining({ input: 400, output: 70, state: 'completed' }));
-    expect(first.usage?.costNano).toBe(400*400+70*1600);
+    expect(first.usage?.costNano).toBe(modelCostNano(400,70));
   });
   it('makes no paid calls for empty knowledge, ineligible messages, explicit human requests, unsupported media or oversized inputs', async () => {
     const complete = vi.fn(); const ledger = fakeLedger(); const strategy = new GroundedStrategy(async () => [],ledger,{ complete });
@@ -182,13 +182,14 @@ describe('grounded reply strategy', () => {
 
 describe('OpenAI HTTP adapter', () => {
   const envelope = (changes: Record<string,unknown>={}) => ({ model:AI_MODEL,status:'completed',usage:{input_tokens:400,output_tokens:70},
-    output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(modelResult().decision)}]}],...changes });
+    output:[{type:'reasoning',content:[]},{type:'message',content:[{type:'output_text',text:JSON.stringify(modelResult().decision)}]}],...changes });
   it('uses a bounded, stateless structured response with no tools and no hidden identifiers', async () => {
     const fetcher=vi.fn().mockResolvedValue(Response.json(envelope()));
     const body=buildRequest({...context,history:[{role:'user',content:'I mean the test branch.'}]},[source]);
     expect(await new OpenAiProvider('fake-key',fetcher).complete(body)).toEqual(modelResult());
     const sent=JSON.parse(fetcher.mock.calls[0][1].body);
-    expect(sent).toMatchObject({model:AI_MODEL,store:false,max_output_tokens:2000,text:{format:{type:'json_schema',strict:true}}});
+    expect(sent).toMatchObject({model:AI_MODEL,store:false,reasoning:{effort:'none'},max_output_tokens:2000,text:{format:{type:'json_schema',strict:true}}});
+    expect(sent.temperature).toBeUndefined();
     expect(sent.tools).toBeUndefined(); expect(sent.input).not.toContain(tenant); expect(sent.input).not.toContain(source.id);
     expect(sent.input).toContain('I mean the test branch.');
   });
@@ -240,7 +241,7 @@ describe('durable AI allowance and final send guards', () => {
     await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key);
       create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
       grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;`);
-    for(const file of ['202609120001_foundation.sql','202609120002_bounded_ai.sql','202609200001_ai_capacity.sql']) await db.exec(await readFile(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));
+    for(const file of ['202609120001_foundation.sql','202609120002_bounded_ai.sql','202609200001_ai_capacity.sql','202609280001_gpt_5_4_mini.sql']) await db.exec(await readFile(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));
   });
   afterAll(async()=>{await db?.close();});
   beforeEach(async()=>{
@@ -254,11 +255,11 @@ describe('durable AI allowance and final send guards', () => {
     expect(budget.cap_nano).toBeNull();expect(budget.allocated_nano).toBe(30*RESERVED_NANO);
   });
   it('still honors an explicitly configured future cap and allows 2000 output tokens', async()=>{
-    await db.exec('update public.ai_budget set cap_nano=12800000');
+    await db.query('update public.ai_budget set cap_nano=$1',[RESERVED_NANO]);
     const first=await reserve('first');expect(first.status).toBe('new');
     expect((await reserve('second')).status).toBe('budget_exhausted');
     await finish(first.id!,500,2000);
-    expect((await rows<{charged_nano:number}>('select charged_nano from public.ai_requests'))[0].charged_nano).toBe(500*400+2000*1600);
+    expect((await rows<{charged_nano:number}>('select charged_nano from public.ai_requests'))[0].charged_nano).toBe(500*INPUT_COST_NANO_PER_TOKEN+2000*OUTPUT_COST_NANO_PER_TOKEN);
   });
   it('deduplicates reservations, settles once and retains full exposure on uncertain failures', async()=>{
     const first=await reserve('same');expect((await reserve('same')).status).toBe('reserved');
@@ -266,8 +267,21 @@ describe('durable AI allowance and final send guards', () => {
     const cached=await reserve('same');expect(cached.status).toBe('completed');expect(cached.decision).toEqual(answer);
     const uncertain=await reserve('uncertain');await finish(uncertain.id!,null,null,'failed');
     const budget=(await rows<{allocated_nano:number}>('select allocated_nano from public.ai_budget'))[0];
-    expect(budget.allocated_nano).toBe(400*400+70*1600+RESERVED_NANO);
+    expect(budget.allocated_nano).toBe(modelCostNano(400,70)+RESERVED_NANO);
     expect((await reserve('uncertain')).status).toBe('failed');
+  });
+  it('supports rollback traffic while charging each model at its own rate',async()=>{
+    const legacy=(await rows<{v:Reservation}>('select public.reserve_ai_request($1,$2,$3,$4,$5) as v',[tenant,'legacy','acceptance','gpt-4.1-mini-2025-04-14','legacy-v1']))[0].v;
+    const current=await reserve('current');
+    expect(legacy.status).toBe('new');expect(current.status).toBe('new');
+    expect((await rows<{model:string;reserved_nano:number}>('select model,reserved_nano from public.ai_requests order by model')).map(row=>row.reserved_nano)).toEqual([12800000,RESERVED_NANO]);
+    await finish(legacy.id!,500,100);await finish(current.id!,500,100);
+    const charges=await rows<{model:string;charged_nano:number}>('select model,charged_nano from public.ai_requests order by model');
+    expect(charges).toEqual([
+      {model:'gpt-4.1-mini-2025-04-14',charged_nano:500*400+100*1600},
+      {model:AI_MODEL,charged_nano:modelCostNano(500,100)},
+    ]);
+    await expect(rows('select public.reserve_ai_request($1,$2,$3,$4,$5)',[tenant,'unsupported','acceptance','unknown-model','test-v1'])).rejects.toThrow('Unsupported AI model');
   });
   it('rejects cross-tenant settlement, over-limit usage and unauthorized budget mutations', async()=>{
     const first=await reserve('one');await reserve('one',otherTenant);

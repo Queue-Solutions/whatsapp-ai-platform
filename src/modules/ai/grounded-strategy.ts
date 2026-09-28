@@ -12,7 +12,7 @@ import { socialReply } from './social-reply';
 import type { MessageContext, ReplyStrategy } from '../messaging/types';
 import type { AgentDecision, KnowledgeSource } from './contracts';
 import type { UsageLedger } from './ledger';
-import { AI_MODEL } from './config';
+import { AI_MODEL,modelCostNano } from './config';
 import { selectKnowledge, selectReturnsKnowledge } from './knowledge-selection';
 import { knowledgeGap } from './knowledge-gap';
 import { assistantResumedReply, beginFollowUp, continueFollowUp, isCareerEnquiry, repeatFollowUp } from './follow-up';
@@ -241,7 +241,7 @@ export class GroundedStrategy implements ReplyStrategy {
     if (hasUnsupportedLink(decision.text,selected.filter((s):s is KnowledgeSource=>!!s))) decision = fallback(context, 'unsupported_link');
     if (decision.text.length>4096) decision=fallback(context,'context_too_large');
     if (!usedBranchRecord && replyLanguage(decision.text) !== replyLanguage(context.text)) decision = fallback(context, 'wrong_response_language');
-    decision.usage = { model: AI_MODEL, inputTokens: result.input, outputTokens: result.output, costNano: result.input*400+result.output*1600 };
+    decision.usage = { model: AI_MODEL, inputTokens: result.input, outputTokens: result.output, costNano: modelCostNano(result.input,result.output) };
     await this.ledger.finish(context.tenantId, reservation.id, { state: 'completed', input: result.input,
       output: result.output, latency: Date.now()-start, decision, error: null });
     return decision;

@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {AI_MODEL,MAX_OUTPUT_TOKENS,MAX_REQUEST_BYTES} from './config';
+import {AI_MODEL,AI_REASONING_EFFORT,MAX_OUTPUT_TOKENS,MAX_REQUEST_BYTES} from './config';
 import {branchData} from './branch-dialogue';
 import type {KnowledgeSource} from './contracts';
 import type {MessageContext} from '../messaging/types';
@@ -86,7 +86,7 @@ export function buildIntentRequest(context:MessageContext,sources:KnowledgeSourc
   const allowedLabels=branchCatalog.map(branch=>branch.label);
   const faqTopics=sources.map(faqQuestion).filter((value):value is string=>!!value);
   const history=[...(context.history??[])].slice(-10);
-  const makeBody=()=>({model:AI_MODEL,store:false,temperature:0,max_output_tokens:Math.min(600,MAX_OUTPUT_TOKENS),instructions,
+  const makeBody=()=>({model:AI_MODEL,store:false,reasoning:{effort:AI_REASONING_EFFORT},max_output_tokens:Math.min(600,MAX_OUTPUT_TOKENS),instructions,
     input:JSON.stringify({latestCustomerMessage:context.text,activeContactCollection:context.followUp?.state==='collecting',history,branchCatalog,faqTopics}),
     text:{format:{type:'json_schema',name:'customer_intent',strict:true,schema:{...outputSchema,properties:{...outputSchema.properties,
       branchLabels:{...outputSchema.properties.branchLabels,items:{type:'string',enum:allowedLabels.length?allowedLabels:['__no_branches__']},maxItems:Math.min(40,allowedLabels.length)},
