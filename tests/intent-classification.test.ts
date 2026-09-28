@@ -89,10 +89,12 @@ describe('semantic intent classification',()=>{
     expect(second.text).toContain('doing well');expect(second.text).not.toContain('Welcome to IRAM');expect(second.text).not.toContain('jewelry or BTC');
     const third=await strategy.reply({...context,requestKey:'greeting-3',text:'How are you doing ?',history:[...history,{role:'user',content:'How are u?'},{role:'assistant',content:second.text}]});
     expect(third.text).toContain('doing well');expect(third.text).not.toContain('Welcome to IRAM');expect(third.text).not.toContain('jewelry or BTC');
+    const fourth=await strategy.reply({...context,requestKey:'greeting-4',text:"How's it going?",history});
+    expect(fourth.text).toContain('doing well');expect(fourth.text).not.toContain('Welcome to IRAM');
     expect(loadSources).not.toHaveBeenCalled();expect(classifyIntent).not.toHaveBeenCalled();expect(complete).not.toHaveBeenCalled();
   });
 
-  it.each(['Who are u','Who r u','Who is this?','What are you?','Are you a bot?','انت مين؟','مين انت'])('answers assistant identity locally for %s without classification, citations or recovery',async text=>{
+  it.each(['Who are u','Who r u','Who is this?','What are you?','What’s ur name?','What\'s ur name?','Whats ur name?','What r u called?','Are you a bot?','انت مين؟','مين انت'])('answers assistant identity locally for %s without classification, citations or recovery',async text=>{
     const classifyIntent=vi.fn(),complete=vi.fn(),loadSources=vi.fn();const usage=ledger();
     const result=await new GroundedStrategy(loadSources,usage,{complete,classifyIntent}).reply({...context,text,requestKey:`identity-${text}`});
     expect(result).toMatchObject({action:'clarify',reason:'social_identity',sources:[]});expect(result.text).toContain('IRAM');
