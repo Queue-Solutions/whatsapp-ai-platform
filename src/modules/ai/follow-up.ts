@@ -20,15 +20,23 @@ function contactName(text:string,allowPlain:boolean):string|null {
   const candidate=(explicit??(allowPlain?text.replace(/(?:\+|00)?[\d٠-٩۰-۹][\d٠-٩۰-۹ ()-]{5,}[\d٠-٩۰-۹]/g,'').replace(/[,،\n]/g,' ').trim():''))
     .replace(/\s+(?:and|phone|number|رقمي|ورقمي|رقم|تليفوني).*$/iu,'').trim();
   if(!/^[\p{L}\p{M}][\p{L}\p{M}'’ -]{1,79}$/u.test(candidate)||candidate.split(/\s+/).length>5)return null;
-  if(/\b(?:hi|hello|thanks|no|yes|yeah|yep|of\s*course|ofcourse|certainly|absolutely|okay|ok|alright|branches|branch|price|where|when|what|how|please|help|online|website|links?|send|sure|jewelry|bullion|btc|don't|not)\b|(?:فروع|سعر|فين|امتي|متى|ازاي|شكرا|اهلا|عايز|عاوز|مش|رقم|تمام|طبعاً|طبعا|أكيد|اكيد|اون ?لاين|ابعت|ياريت|يا ريت|ماشي|ايوه|روابط|موقع|سبائك|سبايك|مجوهرات|الاسكندريه|الاسكندرية|الغردقه|الغردقة)/iu.test(candidate))return null;
+  if(/\b(?:hi|hello|thanks|no|yes|yeah|yep|of\s*course|ofcourse|certainly|absolutely|okay|ok|alright|branches|branch|price|where|when|what|how|please|help|online|website|links?|send|sure|jewelry|bullion|btc|don't|not)\b|(?:فروع|سعر|فين|امتي|متى|ازاي|شكرا|اهلا|عايز|عاوز|مش|رقم|تمام|طبعاً|طبعا|أكيد|اكيد|اون ?لاين|ابعت|ياريت|يا ريت|ماشي|ايوه|حاضر|حاضرين|روابط|موقع|سبائك|سبايك|مجوهرات|الاسكندريه|الاسكندرية|الغردقه|الغردقة)/iu.test(candidate))return null;
   return candidate;
 }
 function isAcknowledgement(text:string){
-  return /^(?:yes|yeah|yep|of\s*course|ofcourse|sure|certainly|absolutely|okay|ok|alright|fine|تمام|طبعاً|طبعا|أكيد|اكيد|ايوه|أيوه|اه|آه|ماشي)[.!،,؟? ]*$/iu.test(text.trim());
+  return /^(?:yes|yeah|yep|of\s*course|ofcourse|sure|certainly|absolutely|okay|ok|alright|fine|تمام|طبعاً|طبعا|أكيد|اكيد|ايوه|أيوه|اه|آه|ماشي|حاضر|حاضرين)[.!،,؟? ]*$/iu.test(text.trim());
+}
+function followUpArabic(context:MessageContext){
+  const lastAssistant=[...(context.history??[])].reverse().find(m=>m.role==='assistant')?.content;
+  return replyLanguage(context.followUp?.state==='collecting'&&lastAssistant?lastAssistant:context.text??'')==='ar';
+}
+function asksContactTiming(text:string){
+  const normalized=normalizeIntent(text);
+  return /\b(?:when|how soon)\b.{0,45}\b(?:call|contact|reach|reply|get back)\b|\b(?:call|contact|reach|get back)\b.{0,45}\bwhen\b/i.test(normalized)
+    || /(?:امتي|متى).{0,24}(?:هيكلمني|هتكلمني|هيتصل|هتتصل|هيتواصل|هتتواصل|حد|مندوب|ممثل)|(?:هيكلمني|هتكلمني|هيتصل|هتتصل|هيتواصل|هتتواصل|حد|مندوب|ممثل).{0,24}(?:امتي|متى)/i.test(normalized);
 }
 function reply(context:MessageContext,reason:string,summary:string,details:FollowUpDetails):AgentDecision {
-  const lastAssistant=[...(context.history??[])].reverse().find(m=>m.role==='assistant')?.content;
-  const ar=replyLanguage(context.followUp?.state==='collecting'&&lastAssistant?lastAssistant:context.text??'')==='ar';
+  const ar=followUpArabic(context);
   let text:string;
   if(details.purpose==='career'&&!details.role&&details.state==='collecting')text=ar
     ? 'يسعدنا اهتمامك بالانضمام إلى فريق IRAM.\n\nما الوظيفة أو الدور الذي ترغب في التقدم إليه؟'
@@ -52,6 +60,14 @@ function reply(context:MessageContext,reason:string,summary:string,details:Follo
   }
   return {text,action:details.state==='collecting'?'clarify':'handoff',reason,sources:[],attentionSummary:summary,followUp:{state:details.state,name:details.name,phone:details.phone,...(details.purpose?{purpose:details.purpose,role:details.role??null}:{})}};
 }
+function contactTimingReply(context:MessageContext,current:FollowUpContext):AgentDecision {
+  const pending=reply(context,current.reason,current.summary,current);
+  const question=pending.text.split('\n\n').at(-1)??pending.text;
+  const timing=followUpArabic(context)
+    ? 'بعد استكمال الاسم ورقم الهاتف الصحيح، سيتواصل معك أحد ممثلي IRAM خلال 24 ساعة.'
+    : 'After your name and a valid phone number are complete, an IRAM representative will contact you within 24 hours.';
+  return {...pending,text:`${timing}\n\n${question}`};
+}
 export function beginFollowUp(context:MessageContext,decision:AgentDecision):AgentDecision {
   const existing=context.followUp?.state==='collecting'?context.followUp:undefined;
   // Only take explicitly labelled names from the original issue, never infer from profile metadata.
@@ -65,6 +81,7 @@ export function continueFollowUp(context:MessageContext):AgentDecision|null {
   const text=context.text?.trim()??'';
   if(/^(?:no thanks|skip)[.! ]*$|(?:don't|do not|won't|rather not).{0,20}(?:share|give).{0,20}(?:number|name|details)|(?:مش|لا).{0,15}(?:هدي|هقول|اشارك)|بدون رقم|مش حابب.{0,20}(?:رقم|بيانات|اسم)/i.test(text))
     return reply(context,current.reason,current.summary,{...current,state:'declined'});
+  if(current.purpose!=='career'&&asksContactTiming(text))return contactTimingReply(context,current);
   if(current.purpose==='career'&&!current.role){
     // A role is user-provided text, not an inferred vacancy. New questions can leave this flow.
     if(!text||text.length>120||/[?؟]/.test(text)||/\b(?:where|when|branches|hours|price)\b|(?:فروع|مواعيد|سعر|فين الفرع)/i.test(text))return null;

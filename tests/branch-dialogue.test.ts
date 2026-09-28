@@ -89,9 +89,9 @@ describe('product-aware branch navigation',()=>{
   for(const source of newCairo){const name=branchDataName(source);expect(decision.text).toContain(name);expect(decision.text).toContain(`123 ${name} Street`);expect(decision.text).toContain(`https://maps.app.goo.gl/${source.label}`);}
   expect(decision.sources).toHaveLength(3);expect(complete).not.toHaveBeenCalled();expect(usage.reserve).not.toHaveBeenCalled();
  });
- it('maps مصر الجديدة only to the Heliopolis branch even with a conversational prefix',async()=>{
+ it.each(['طب فرع مصر الجديدة','طب فرع هليوبوليس'])('maps Heliopolis aliases only to the Heliopolis branch: %s',async text=>{
   const korba=branch('IRAM Korba','Heliopolis','KORBA'),mivida=branch('TJH Mivida','New Cairo','MIVIDA'),complete=vi.fn(),usage=ledger();
-  const decision=await new GroundedStrategy(async()=>[korba,mivida],usage,{complete}).reply({...base,text:'طب فرع مصر الجديدة',history:[{role:'assistant',content:'فروع المجوهرات:\n\n• IRAM Korba — Heliopolis\n• TJH Mivida — New Cairo'}]});
+  const decision=await new GroundedStrategy(async()=>[korba,mivida],usage,{complete}).reply({...base,text,history:[{role:'assistant',content:'فروع المجوهرات:\n\n• IRAM Korba — Heliopolis\n• TJH Mivida — New Cairo'}]});
   expect(decision.text).toContain('IRAM Korba — Heliopolis');expect(decision.text).toContain('123 IRAM Korba Street');expect(decision.text).toContain('https://maps.app.goo.gl/KORBA');
   expect(decision.text).not.toMatch(/Mivida|MIVIDA/);expect(complete).not.toHaveBeenCalled();expect(usage.reserve).not.toHaveBeenCalled();
  });

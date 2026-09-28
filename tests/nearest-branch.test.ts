@@ -81,6 +81,34 @@ describe('nearest branch conversation',()=>{
     const result=await f.strategy.reply({...base,text:'BTC',history:[{role:'user',content:'Nearest branch in Obour city'},{role:'assistant',content:question.text}]});
     expect(result.text).toContain('straight-line');expect(f.locations.area).toHaveBeenCalledWith('Obour city',expect.any(Array));
   });
+  it('continues the original nearest request after a jewelry answer instead of listing every branch',async()=>{
+    const f=fixture(),original='ايه اقرب فرع ليا لو انا في مصر الجديدة دلوقتي؟';
+    const question=await f.strategy.reply({...base,text:original,history:[]});
+    expect(question.reason).toBe('branch_product_clarification');
+    const result=await f.strategy.reply({...base,text:'مجوهرات',requestKey:'message:jewelry-nearest',history:[{role:'user',content:original},{role:'assistant',content:question.text}]});
+    expect(result.reason).toBe('approved_knowledge');expect(result.text).toContain('IRAM Korba — Heliopolis — 0.0 كم');
+    expect(result.text).not.toContain('فروع المجوهرات:');expect(f.locations.area).not.toHaveBeenCalled();
+    expect(f.complete).not.toHaveBeenCalled();expect(f.reserve).not.toHaveBeenCalled();
+  });
+  it.each(['مصر الجديدة','هليوبوليس'])('resolves the known Heliopolis area from approved branch records without external geocoding: %s',async area=>{
+    const f=fixture();vi.mocked(f.locations.area).mockResolvedValue(null);
+    const text=`ايه اقرب فرع مجوهرات لو انا في ${area}؟`;
+    const result=await f.strategy.reply({...base,text,requestKey:`message:${area}`,history:[]});
+    expect(result.reason).toBe('approved_knowledge');expect(result.text).toContain('IRAM Korba — Heliopolis — 0.0 كم');
+    expect(f.locations.area).not.toHaveBeenCalled();expect(f.complete).not.toHaveBeenCalled();
+  });
+  it('keeps a typed area in nearest-branch recovery after an unsuccessful location prompt',async()=>{
+    const f=fixture();vi.mocked(f.locations.area).mockResolvedValue(null);
+    const history:MessageContext['history']=[
+      {role:'user',content:'ايه اقرب فرع ليا لو انا في مصر الجديدة؟'},
+      {role:'assistant',content:'هل ترغب في الاستفسار عن المجوهرات أم منتجات BTC والسبائك؟'},
+      {role:'user',content:'مجوهرات'},
+      {role:'assistant',content:'لم أتمكن من تحديد هذه المنطقة بشكل مؤكد. يرجى إرسال موقعك عبر واتساب أو رابط دبوس Google Maps لمقارنة المسافات.'},
+    ];
+    const result=await f.strategy.reply({...base,text:'مصر الجديدة',requestKey:'message:area-retry',history});
+    expect(result.reason).toBe('approved_knowledge');expect(result.text).toContain('IRAM Korba — Heliopolis — 0.0 كم');
+    expect(f.locations.area).not.toHaveBeenCalled();expect(f.complete).not.toHaveBeenCalled();
+  });
   it('includes jewelry-only branches when the customer explicitly switches to jewelry',async()=>{
     const f=fixture(),result=await f.strategy.reply({...base,text:'Nearest jewelry branch in Obour city'});
     expect(result.text).toContain('Jewelry Only — Obour city — 0.0 km');
@@ -148,7 +176,7 @@ describe('semantic routing preserves raw nearest-branch locations',()=>{
   it('passes a typed city to the area resolver unchanged',async()=>{
     const f=classifiedFixture('Find the nearest BTC branch to Obour city.');
     const result=await f.strategy.reply({...base,text:'Obour city',requestKey:'semantic-city',history:cityHistory});
-    expect(f.classifyIntent).toHaveBeenCalledOnce();expect(f.locations.area).toHaveBeenCalledWith('Obour city',expect.any(Array));
+    expect(f.classifyIntent).not.toHaveBeenCalled();expect(f.locations.area).toHaveBeenCalledWith('Obour city',expect.any(Array));
     expect(result.text).toContain('straight-line');expect(f.complete).not.toHaveBeenCalled();
   });
   it('passes native WhatsApp coordinates to the pin resolver unchanged',async()=>{

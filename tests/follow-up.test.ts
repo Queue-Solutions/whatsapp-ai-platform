@@ -53,12 +53,19 @@ describe('personal follow-up collection',()=>{
   expect(result.text).toContain('رقم');expect(result.text).not.toContain('السيرة الذاتية');expect(result.text).not.toContain('hr@example.test');
   expect(classifyIntent).toHaveBeenCalledOnce();expect(finish).toHaveBeenCalledOnce();expect(complete).not.toHaveBeenCalled();
  });
- it.each(['Ofcourse','of course','SURE','Absolutely','تمام'])('does not save an acknowledgement as a customer name: %j',async text=>{
+ it.each(['Ofcourse','of course','SURE','Absolutely','تمام','حاضر'])('does not save an acknowledgement as a customer name: %j',async text=>{
   const loadSources=vi.fn(),reserve=vi.fn(),complete=vi.fn(),classifyIntent=vi.fn();
   const start=beginFollowUp(context,issue);
   const result=await new GroundedStrategy(loadSources,{reserve,finish:vi.fn()},{complete,classifyIntent}).reply({...context,text,followUp:pending,history:[{role:'assistant',content:start.text}]});
   expect(result).toMatchObject({action:'clarify',followUp:{state:'collecting',name:null,phone:null}});
   expect(result.text).toContain('name');expect(result.text).toContain('phone');
+  expect(loadSources).not.toHaveBeenCalled();expect(reserve).not.toHaveBeenCalled();expect(classifyIntent).not.toHaveBeenCalled();expect(complete).not.toHaveBeenCalled();
+ });
+ it.each(['هيكلمني امتى؟','هتتواصلوا معايا امتى؟','When will someone contact me?'])('answers contact timing without losing or inventing form details: %j',async text=>{
+  const loadSources=vi.fn(),reserve=vi.fn(),complete=vi.fn(),classifyIntent=vi.fn();
+  const result=await new GroundedStrategy(loadSources,{reserve,finish:vi.fn()},{complete,classifyIntent}).reply({...context,text,followUp:{...pending,reason:'human_requested'},history:[{role:'assistant',content:'سيتابع أحد ممثلي IRAM طلبك بصورة شخصية.\n\nيرجى إرسال اسمك ورقم الهاتف الأنسب للتواصل.'}]});
+  expect(result).toMatchObject({action:'clarify',reason:'human_requested',followUp:{state:'collecting',name:null,phone:null}});
+  expect(result.text).toContain('24 ساعة');expect(result.text).toContain('اسمك');expect(result.text).toContain('رقم الهاتف');
   expect(loadSources).not.toHaveBeenCalled();expect(reserve).not.toHaveBeenCalled();expect(classifyIntent).not.toHaveBeenCalled();expect(complete).not.toHaveBeenCalled();
  });
  it('supports phone first, re-prompts for invalid phone and handles refusal without a callback promise',()=>{

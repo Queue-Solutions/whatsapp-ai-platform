@@ -27,7 +27,7 @@ export function locationWords(text:string){
     [/كمبنسكي|كمبينسكي|\bkempinski\b/g,'kempinski'],
     [/سنزو|\bsenzo\b/g,'senzo'],
     [/التجمع(?: الخامس)?|تجمع(?: خامس)?/g,'cairo'],
-    [/مصر الجديده|\bheliopolis\b/g,'heliopolis'],
+    [/مصر الجديده|هليوبوليس|هليوبلس|هليوبولس|\bheliopolis\b/g,'heliopolis'],
     [/مدينه نصر|مدينة نصر|\bnasr(?: city)?\b/g,'nasr'],
     [/اكتوبر|أكتوبر|\boctober\b/g,'october'],
     [/رشدي|رشدى|\broshdy\b/g,'roshdy'],

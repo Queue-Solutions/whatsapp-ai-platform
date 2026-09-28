@@ -1,4 +1,4 @@
-import {nearestBranchReply} from './nearest-branch';
+import {continuesNearestBranch,nearestBranchReply} from './nearest-branch';
 import {GeoLocations,type LocationResolver} from './branch-location';
 import {btcBranchReply} from './btc-branches';
 import {technicalFailure,recoverableFailure} from './recovery';
@@ -131,6 +131,13 @@ export class GroundedStrategy implements ReplyStrategy {
     if(!this.provider.classifyIntent){
       const attention=detectAttention(context.text);
       if(attention)return {...fallback(context,attention,'handoff'),attentionSummary:summarizeAttention(context.text,attention)};
+    }
+    // Preserve the original nearest-branch request when the customer is answering
+    // our product question. This must run before the generic product continuation,
+    // otherwise a one-word "jewelry" answer incorrectly expands into every branch.
+    if(!knowledgeUnavailable&&continuesNearestBranch(context)){
+      const contextualNearest=await nearestBranchReply(context,sources,this.locations);
+      if(contextualNearest)return contextualNearest;
     }
     // A product choice answering our own branch-routing question is deterministic context, not a new support intent.
     if(!knowledgeUnavailable&&isProductChoiceContinuation(context)){

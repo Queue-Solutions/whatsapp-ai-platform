@@ -2,12 +2,12 @@ import type {AgentDecision,KnowledgeSource} from './contracts';
 import type {MessageContext} from '../messaging/types';
 import {branchData,productIntent,productQuestion,sourceRef} from './branch-dialogue';
 import {btcCatalog,btcBranchRecords} from './btc-branches';
-import {nearestIntent,normalizeIntent} from './branch-scope';
+import {nearestIntent,normalizeIntent,locationWords} from './branch-scope';
 import {distanceKm,point,coordinates,type LocationResolver} from './branch-location';
 import {replyLanguage} from './language';
 import {knowledgeGap} from './knowledge-gap';
 
-const areaPrompt=/which city or area|tell me your current city or area|share (?:your |a )?(?:whatsapp location|google maps pin)|انت في انهي مدينه|ابعت.*(?:لوكيشن|موقعك)/i;
+const areaPrompt=/which city or area|tell me your current city or area|share (?:your |a )?(?:whatsapp location|google maps pin)|couldn.t identify (?:that|the) area|انت في انهي مدينه|ابعت.*(?:لوكيشن|موقعك)|لم [اأ]تمكن من تحديد (?:هذه|هذة|تلك)?\s*(?:المنطقه|المنطقة|الموقع)/i;
 const productOnly=/^(?:btc|bullion|jewel(?:ry|lery)|سبائك|السبائك|مجوهرات|المجوهرات)[.!؟? ]*$/i;
 export interface SemanticOrigin {evidence:string;query:string}
 function areaAnswer(text:string){return text.length<=120&&!/\?|؟|\b(?:price|cost|buy|refund|hours|job|thanks|yes|no|what|how)\b|سعر|بكام|اشتري|استرجاع|مواعيد|وظيفه|شكرا/.test(normalizeIntent(text));}
@@ -20,6 +20,7 @@ function cleanArea(value:string){
     .replace(/^(?:told\s+(?:u|you)|i\s+(?:already\s+)?(?:said|told\s+you)|as\s+i\s+said|it(?:'s|\s+is)|the\s+(?:city|area)\s+is|my\s+(?:city|area)\s+is)\b[\s,!:;-]*/i,'')
     .replace(/^(?:لا|لأ)\b[\s،,:!؛-]*/,'')
     .replace(/^(?:ما\s+انا\s+)?(?:قلتلك|قولتلك|قلت\s+لك|قولت\s+لك|زي\s+ما\s+قلتلك|انا\s+قلتلك)[\s،,:!؛-]*/,'')
+    .replace(/\s+(?:right\s+now|currently|today|now|دلوقتي|دلوقت|حاليا|حالياً|الان|الآن)$/i,'')
     .replace(/^[\s"'“”‘’([{]+|[\s"'“”‘’\])}.،,!?؟:;؛-]+$/g,'').trim();
   return /^(?:me|here|مني|هنا)$/i.test(result)?'':result;
 }
@@ -58,6 +59,30 @@ function groundedSemanticOrigin(message:string,hint?:SemanticOrigin|null){
   const comparable=(value:string)=>value.replace(/\b(?:city|town|district|of|the|al|el)\b|مدينه|مدينة|منطقة|المنطقه|المنطقة/g,'').replace(/\s+/g,'');
   const evidence=comparable(evidenceKey),query=comparable(queryKey),limit=Math.max(2,Math.floor(Math.max(evidence.length,query.length)*.25));
   return evidence&&query&&editDistanceWithin(evidence,query,limit)?hint.query.trim():'';
+}
+function approvedAreaOrigin(query:string,mapped:Array<{source:KnowledgeSource;position:{latitude:number;longitude:number}}>){
+  const noise=new Set(['city','town','district','area','new','the','in','at','مدينه','المدينه','منطقه','المنطقه','الجديده']);
+  const wanted=[...new Set(locationWords(query).filter(word=>word.length>2&&!noise.has(word)))];
+  if(!wanted.length)return null;
+  const matches=mapped.filter(entry=>{
+    const data=branchData(entry.source);
+    if(!data)return false;
+    const words=new Set(locationWords(`${data.name} ${data.city??''} ${data.address??''}`));
+    return wanted.every(word=>words.has(word));
+  });
+  if(!matches.length)return null;
+  return {label:query,latitude:matches.reduce((sum,entry)=>sum+entry.position.latitude,0)/matches.length,
+    longitude:matches.reduce((sum,entry)=>sum+entry.position.longitude,0)/matches.length};
+}
+/** True only when the current message answers a nearest-branch question already asked by the assistant. */
+export function continuesNearestBranch(context:MessageContext){
+  const text=context.text??'',history=context.history??[];
+  const lastAssistant=[...history].reverse().find(m=>m.role==='assistant')?.content??'';
+  const previousUser=[...history].reverse().find(m=>m.role==='user')?.content??'';
+  const answeringArea=areaPrompt.test(lastAssistant)&&(areaAnswer(text)||!!coordinates(text)||/^https:\/\//.test(text));
+  const answeringProduct=productOnly.test(normalizeIntent(text).trim())&&/jewelry|مجوهرات/i.test(lastAssistant)
+    &&(nearestIntent({...context,text:previousUser,history:history.slice(0,-2)})||previousUser.startsWith('geo:'));
+  return answeringArea||answeringProduct;
 }
 /** Intercept proximity requests before keyword branch matching or model generation. */
 export async function nearestBranchReply(context:MessageContext,sources:KnowledgeSource[],locations:LocationResolver,productHint?:'btc'|'jewelry'|null,originHint?:SemanticOrigin|null):Promise<AgentDecision|null>{
@@ -104,7 +129,9 @@ export async function nearestBranchReply(context:MessageContext,sources:Knowledg
     ?'إحداثيات الفروع الدقيقة غير متاحة للمقارنة حاليًا، لذلك لا يمكنني تحديد الفرع الأقرب بدقة. اكتب اسم الفرع المطلوب لعرض عنوانه ورابط الموقع المتاح.'
     :'I don’t have confirmed branch coordinates to compare right now. Type a branch name and I can send its saved address and available location link.'};
   const pin=await locations.pin(query);
-  const area=pin?null:await locations.area(query,mapped.map(m=>m.position));
+  const approvedArea=pin?null:approvedAreaOrigin(query,mapped);
+  const externalArea=pin||approvedArea?null:await locations.area(query,mapped.map(m=>m.position));
+  const area=approvedArea??externalArea;
   const origin=pin??area;
   if(!origin)return clarify(ar?'لم أتمكن من تحديد هذه المنطقة بشكل مؤكد. يرجى إرسال موقعك عبر واتساب أو رابط دبوس Google Maps لمقارنة المسافات.'
     :'I couldn’t identify that area unambiguously. Please share your WhatsApp location or a Google Maps pin so I can compare distances.');
@@ -119,6 +146,6 @@ export async function nearestBranchReply(context:MessageContext,sources:Knowledg
   return {action:'answer',reason:'approved_knowledge',sources:[...new Map([...(catalog?.sources??[]),...candidates.slice(0,32).map(c=>c.source)].map(s=>[s.id,s])).values()].map(sourceRef),text:[intro,lines.join('\n'),caveat,coverage,
     ar?'اكتب اسم الفرع المطلوب لعرض العنوان الكامل ورابط الموقع'+(product==='btc'?' ورقم خدمة BTC.':'.')
       :'Type a branch name to receive its full address and location link'+(product==='btc'?' and BTC phone number.':'.'),
-    area?(ar?'بيانات المنطقة: © OpenStreetMap contributors':'Area data: © OpenStreetMap contributors'):'',
+    externalArea?(ar?'بيانات المنطقة: © OpenStreetMap contributors':'Area data: © OpenStreetMap contributors'):'',
   ].filter(Boolean).join('\n\n')};
 }
