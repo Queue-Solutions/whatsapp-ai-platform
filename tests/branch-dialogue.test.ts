@@ -67,6 +67,20 @@ describe('product-aware branch navigation',()=>{
   expect((decision.text.match(/^• /gm)??[])).toHaveLength(12);
   expect(decision.text).not.toMatch(/123|https:/);expect(complete).not.toHaveBeenCalled();expect(usage.reserve).not.toHaveBeenCalled();
  });
+ it('renders one localized entry per physical branch when bilingual records are published',async()=>{
+  const localized=(id:string,locale:'en'|'ar',name:string,city:string,map:string):KnowledgeSource=>({id,label:id,kind:'fact',locale,identityKey:`branch:${id}`,updatedAt:'2026-09-28',
+    content:JSON.stringify({category:'branch',value:{name,city,address:`${name} address`,hours:'9–5',mapsUrl:map}})});
+  const records=[
+    localized('korba-en','en','IRAM Korba','Heliopolis','https://maps.app.goo.gl/korba'),
+    localized('korba-ar','ar','IRAM الكربه','مصر الجديدة','https://maps.app.goo.gl/korba?g_st=iw'),
+    localized('nox-en','en','IRAM Nox','New Cairo','https://maps.app.goo.gl/nox'),
+    localized('nox-ar','ar','IRAM نوكس','القاهرة الجديدة','https://maps.app.goo.gl/nox'),
+  ];
+  const decision=await new GroundedStrategy(async()=>records,ledger(),{complete:vi.fn()}).reply({...base,text:'المجوهرات',history:[{role:'assistant',content:'هل ترغب في المجوهرات أم منتجات BTC والسبائك؟'}]});
+  expect((decision.text.match(/^• /gm)??[])).toHaveLength(2);expect(decision.sources).toHaveLength(2);
+  expect(decision.text).toContain('IRAM الكربه');expect(decision.text).toContain('IRAM نوكس');
+  expect(decision.text).not.toMatch(/IRAM Korba|IRAM Nox/);
+ });
  it.each(['التجمع','فرع التجمع'])('returns all three New Cairo branches with full details for %s',async text=>{
   const newCairo=[branch('IRAM Nox','New Cairo','NOX'),branch('IRAM ZIA','New Cairo','ZIA'),branch('TJH Mivida','New Cairo','MIVIDA')];
   const complete=vi.fn(),usage=ledger();

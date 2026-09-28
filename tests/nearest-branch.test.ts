@@ -50,6 +50,12 @@ describe('nearest branch conversation',()=>{
     const detail=await f.strategy.reply({...base,text:'TJH City Stars',history:[...cityHistory!,{role:'user',content:'Obour city'},{role:'assistant',content:result.text}]});
     expect(detail.text).toContain('b2 Test Road');expect(detail.text).toContain('01200000002');expect(detail.text).toContain('https://maps.google.com/');
   });
+  it('ranks each physical branch once when translated records share a location',async()=>{
+    const translated={...branches[0],id:'b1-ar',label:'b1-ar',locale:'ar',identityKey:'branch:korba-ar',content:JSON.stringify({category:'branch',value:{name:'IRAM الكربه',city:'مصر الجديدة',latitude:'30.09',longitude:'31.32',address:'عنوان تجريبي',mapsUrl:'https://maps.google.com/?q=30.09,31.32'}})};
+    const f=fixture([faq,branches[0],translated,branches[1]]),result=await f.strategy.reply({...base,text:'Obour city',history:cityHistory});
+    expect((result.text.match(/— [\d.]+ km/g)??[])).toHaveLength(2);
+    expect((result.text.match(/IRAM Korba|IRAM الكربه/g)??[])).toHaveLength(1);
+  });
   it('extracts an area from a natural full request instead of asking for it again',async()=>{
     const f=fixture(),text='Thanks, what if im at obour city what would be the nearest branch for me that delivers BTC services ?';
     const result=await f.strategy.reply({...base,text,history:[]});

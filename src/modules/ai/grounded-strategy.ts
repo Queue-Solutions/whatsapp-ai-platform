@@ -21,6 +21,7 @@ import {repairFaqReply} from './repair-faq';
 import { formatReply, formatBusinessReply, formatBranchReply } from './reply-format';
 import { buildRequest, ModelFailure, type ModelProvider } from './openai';
 import {buildIntentRequest,catalogFingerprint,contextForIntent,isStoredIntentDecision,type IntentDecision,type StoredIntentDecision} from './intent-classification';
+import {deduplicateBranchKnowledge} from './branch-identity';
 export type SourceLoader = (tenant: string) => Promise<KnowledgeSource[]>;
 export function fallback(context: MessageContext, reason: string, action: AgentDecision['action'] = 'unavailable'): AgentDecision {
   const ar = replyLanguage(context.text ?? '') === 'ar';
@@ -107,7 +108,13 @@ export class GroundedStrategy implements ReplyStrategy {
     // classifier result) can never reopen a completed personal follow-up.
     const social=socialReply(context.text,context.history);if(social)return social;
     let sources:KnowledgeSource[]=[],knowledgeUnavailable=false;
-    try { sources = await this.loadSources(context.tenantId); }
+    try {
+      const loaded=await this.loadSources(context.tenantId);
+      const languageText=context.type==='location'||context.text?.startsWith('geo:')
+        ?[...(context.history??[])].reverse().find(message=>message.role==='user'&&!message.content.startsWith('geo:'))?.content??context.text??''
+        :context.text??'';
+      sources=deduplicateBranchKnowledge(loaded,replyLanguage(languageText));
+    }
     catch { knowledgeUnavailable=true; }
     // Combined details and labelled fields are deterministic. A bare one-word
     // name is intentionally held for semantic validation below so an

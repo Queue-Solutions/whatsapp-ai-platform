@@ -2,7 +2,12 @@ import type { ReplyStrategy, MessageContext } from '../messaging/types';
 export type CustomerAgent = ReplyStrategy;
 export type AgentAction = 'answer' | 'clarify' | 'unavailable' | 'handoff' | 'suppress';
 export interface SourceReference { id: string; kind: 'faq' | 'fact'; updatedAt: string }
-export interface KnowledgeSource extends SourceReference { label: string; content: string }
+export interface KnowledgeSource extends SourceReference {
+  label: string;
+  content: string;
+  locale?: string;
+  identityKey?: string;
+}
 export interface AgentDecision {
   text: string;
   action: AgentAction;

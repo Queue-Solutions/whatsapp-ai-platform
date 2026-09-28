@@ -5,10 +5,11 @@ import { branchSchema } from './questionnaire';
 export class KnowledgeRepository {
   constructor(private db:SupabaseClient){}
   async forAssistant(tenantId: string): Promise<KnowledgeSource[]> {
-    const locales = await Promise.all(['en','ar'].map(locale => this.published(tenantId, locale)));
+    const locales = await Promise.all(['en','ar'].map(async locale => ({locale,...await this.published(tenantId, locale)})));
     const rows = locales.flatMap(data => [
-      ...data.faqs.map(f => ({ id: f.id, kind: 'faq' as const, updatedAt: f.updated_at, content: JSON.stringify({ question: f.question, answer: f.answer }) })),
-      ...data.facts.map(f => ({ id: f.id, kind: 'fact' as const, updatedAt: f.updated_at, content: JSON.stringify({ category: f.category, value: f.value }) })),
+      ...data.faqs.map(f => ({ id: f.id, kind: 'faq' as const, updatedAt: f.updated_at, locale:data.locale, content: JSON.stringify({ question: f.question, answer: f.answer }) })),
+      ...data.facts.map(f => ({ id: f.id, kind: 'fact' as const, updatedAt: f.updated_at, locale:data.locale, identityKey:f.fact_key,
+        content: JSON.stringify({ category: f.category, value: f.value }) })),
     ]).sort((a,b) => `${a.kind}:${a.id}`.localeCompare(`${b.kind}:${b.id}`));
     return rows.map((row,i) => ({ ...row, label: `K${i+1}` }));
   }
