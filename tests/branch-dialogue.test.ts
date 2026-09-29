@@ -89,6 +89,12 @@ describe('product-aware branch navigation',()=>{
   for(const source of newCairo){const name=branchDataName(source);expect(decision.text).toContain(name);expect(decision.text).toContain(`123 ${name} Street`);expect(decision.text).toContain(`https://maps.app.goo.gl/${source.label}`);}
   expect(decision.sources).toHaveLength(3);expect(complete).not.toHaveBeenCalled();expect(usage.reserve).not.toHaveBeenCalled();
  });
+ it('matches a region stored in the address when the city field is broader',()=>{
+  const nox={...branch('IRAM Nox','Cairo','NOX'),content:JSON.stringify({category:'branch',value:{name:'IRAM Nox',city:'Cairo',address:'Nox Mall, Fifth Settlement, New Cairo'}})};
+  const mivida={...branch('TJH Mivida','القاهرة','MIVIDA'),content:JSON.stringify({category:'branch',value:{name:'TJH Mivida',city:'القاهرة',address:'كمبوند ميفيدا، القاهرة الجديدة'}})};
+  const arkan=branch('IRAM Arkan','Sheikh Zayed','ARKAN');
+  expect(matchingBranches('فروع التجمع',[nox,mivida,arkan]).map(source=>source.label)).toEqual(['NOX','MIVIDA']);
+ });
  it('keeps the latest explicit city authoritative when the classifier selects a stale branch',async()=>{
   const cityStars=branch('TJH City Stars','Nasr City','STARS'),arkan=branch('IRAM Arkan','6th of October City','ARKAN');
   const classifyIntent=vi.fn(async()=>({decision:{intent:'branch' as const,confidence:.99,language:'ar' as const,product:'jewelry' as const,

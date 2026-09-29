@@ -9,6 +9,7 @@ interface BtcEntry {name:string;phone:string}
 interface BtcCatalog {entries:BtcEntry[];hours:string[];sources:KnowledgeSource[]}
 const question8=normalizeIntent('What information can you provide about your bullion or BTC products?');
 const digits=(text:string)=>text.replace(/[٠-٩۰-۹]/g,c=>String(c.charCodeAt(0)-(c<='٩'?1632:1776)));
+const goldCoinRequest=(text:string)=>/\bgold coins?\b|جنيهات? (?:ال)?(?:ذهب|دهب)|جنيه (?:ال)?(?:ذهب|دهب)/.test(normalizeIntent(text));
 /** Identity aliases only, never a list of branches providing BTC. Availability always comes from the FAQ. */
 function nameWords(text:string){
   return locationWords(text.replace(/[()\[\]—–_-]/g,' ')).join(' ')
@@ -87,7 +88,7 @@ function hoursText(hours:string[],ar:boolean){
 }
 function directory(context:MessageContext,catalog:BtcCatalog,sources:KnowledgeSource[],entries=catalog.entries,unlisted=false):AgentDecision {
   const ar=replyLanguage(context.text??'')==='ar';
-  const goldCoins=/\bgold coins?\b|جنيهات? (?:ال)?(?:ذهب|دهب)|جنيه (?:ال)?(?:ذهب|دهب)/.test(normalizeIntent(context.text??''));
+  const goldCoins=goldCoinRequest(context.text??'');
   const refs=[...catalog.sources];
   const lines=entries.map(entry=>{
     const records=btcBranchRecords(entry,sources);
@@ -122,12 +123,13 @@ function details(context:MessageContext,catalog:BtcCatalog,entry:BtcEntry,source
 export function btcBranchReply(context:MessageContext,sources:KnowledgeSource[]):AgentDecision|null {
   if(productIntent(context)!=='btc')return null;
   const scope=branchScope(context,sources),catalog=btcCatalog(sources);
+  const goldCoins=goldCoinRequest(context.text??'');
   const queryWords=new Set(nameWords(context.text??''));
   const named=catalog?.entries.filter(e=>meaningful(nameWords(e.name)).every(w=>queryWords.has(w)))??[];
   const requestedRecords=matchingBranches(context.text??'',sources);
   const focusedProduct=/\b(?:price|prices|cost|payment|refund|warranty|weight|karat)\b|اسعار|سعر|بكام|دفع|استرجاع|ضمان|عيار|وزن/.test(normalizeIntent(context.text??''));
   if(focusedProduct)return null;
-  if(scope==='none'&&!named.length&&!requestedRecords.length)return null;
+  if(scope==='none'&&!named.length&&!requestedRecords.length&&!goldCoins)return null;
   if(!catalog)return knowledgeGap(context,'The approved BTC FAQ does not provide one unambiguous branch-to-BTC-phone list. Review its branch entries before directing this customer.');
   let selected=named;
   if(!selected.length&&requestedRecords.length){

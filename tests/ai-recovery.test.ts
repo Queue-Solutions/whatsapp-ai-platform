@@ -3,7 +3,7 @@ import {GroundedStrategy} from '../src/modules/ai/grounded-strategy';
 import {ModelFailure} from '../src/modules/ai/openai';
 import {productIntent} from '../src/modules/ai/branch-dialogue';
 import {SupabaseMessagingRepository} from '../src/modules/messaging/supabase-repository';
-import {processIncomingMessage} from '../src/modules/messaging/process-incoming-message';
+import {drainMessages,processIncomingMessage} from '../src/modules/messaging/process-incoming-message';
 import {SendError} from '../src/modules/whatsapp/sender';
 import {AI_RECOVERY_SUMMARY,RECOVERY_FALLBACK_REASON} from '../src/modules/ai/recovery';
 import {attentionReason} from '../src/modules/admin/inbox';
@@ -104,6 +104,27 @@ describe('bounded and silent model recovery',()=>{
 });
 
 describe('dashboard-only failure review',()=>{
+ it('persists the explicit live-price policy through the restricted policy RPC',async()=>{
+  const reply={outbound_id:'out',phone_number_id:'9001',recipient:'allowed',body:'Prices change constantly.'};
+  const rpc=vi.fn(async()=>({data:reply,error:null}));
+  const repository=new SupabaseMessagingRepository({rpc} as unknown as SupabaseClient,'9001');
+  const job={id:'job',tenant_id:'tenant',inbound_message_id:'one',lease_token:'lease'};
+  expect(await repository.prepareDecision(job,{action:'answer',reason:'live_price_information',text:reply.body,sources:[]})).toEqual(reply);
+  expect(rpc).toHaveBeenCalledWith('prepare_policy_reply',{p_job:'job',p_lease:'lease',p_body:reply.body,p_reason:'live_price_information'});
+  expect(rpc).not.toHaveBeenCalledWith('prepare_followup_reply',expect.anything());
+ });
+ it('releases a pre-send processing failure and retries it immediately without duplicating a send',async()=>{
+  const first:MessageJob={id:'job',tenant_id:'tenant',inbound_message_id:'one',lease_token:'first'};
+  const second={...first,lease_token:'second'};
+  const claim=vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second).mockResolvedValueOnce(null);
+  const contextCall=vi.fn().mockRejectedValueOnce(new Error('temporary database failure')).mockResolvedValue(context);
+  const recover=vi.fn(async()=> 'pending' as const),complete=vi.fn(),send=vi.fn(async()=> 'provider');
+  const prepareDecision=vi.fn(async()=>({outbound_id:'out',phone_number_id:'9001',recipient:'allowed',body:'Cash or card.'}));
+  const repository={claim,context:contextCall,recover,prepareDecision,complete} as unknown as MessagingRepository;
+  expect(await drainMessages({repository,sender:{send},strategy:{reply:async()=>({action:'answer',reason:'approved_knowledge',text:'Cash or card.',sources:[source]})}},3,5_000))
+    .toEqual(['recovered:pending','sent']);
+  expect(recover).toHaveBeenCalledWith(first,'processing_error');expect(send).toHaveBeenCalledOnce();expect(complete).toHaveBeenCalledOnce();
+ });
  it('uses the existing suppress RPC and tenant/epoch-scoped metadata writes without an outbound message',async()=>{
   const queries=new Map<string,{select:ReturnType<typeof vi.fn>;update:ReturnType<typeof vi.fn>;eq:ReturnType<typeof vi.fn>;in:ReturnType<typeof vi.fn>;single:ReturnType<typeof vi.fn>;then:unknown}>();
   const from=vi.fn((table:string)=>{

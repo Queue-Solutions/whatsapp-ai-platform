@@ -80,6 +80,20 @@ describe('blacklist and careers PostgreSQL boundaries',()=>{
   expect((await rows('select state from public.message_jobs'))[0].state).toBe('skipped');
   expect(await ingest('ai-failure')).toBe(id);expect(await claim()).toBeUndefined();
  });
+ it('allows only the explicit source-free price policy through the final send guard',async()=>{
+  await ingest('price-policy');const job=await claim();await moderate(job);
+  const [result]=await rows<{v:{body:string}}>("select public.prepare_policy_reply($1,$2,'Prices change constantly.','live_price_information') as v",[job.id,job.lease_token]);
+  expect(result.v.body).toBe('Prices change constantly.');
+  await expect(db.query("select public.prepare_policy_reply($1,$2,'Unsupported policy','anything_else')",[job.id,job.lease_token])).rejects.toThrow('policy reply reason');
+ });
+ it('releases an exact pre-send lease immediately and stops after the third failed attempt',async()=>{
+  await ingest('recoverable');let job=await claim();await moderate(job);
+  expect((await rows<{v:string}>("select public.recover_processing_job($1,$2,'processing_error') as v",[job.id,job.lease_token]))[0].v).toBe('pending');
+  const oldLease=job.lease_token;job=await claim();expect(job.lease_token).not.toBe(oldLease);
+  expect((await rows<{v:string}>("select public.recover_processing_job($1,$2,'processing_error') as v",[job.id,job.lease_token]))[0].v).toBe('pending');
+  job=await claim();expect((await rows<{v:string}>("select public.recover_processing_job($1,$2,'processing_error') as v",[job.id,job.lease_token]))[0].v).toBe('failed');
+  expect(await claim()).toBeUndefined();
+ });
  it('keeps a block attached to a customer through verified BSUID identity changes',async()=>{
   const b=await block();await db.query("select public.update_whatsapp_identity('9001','change','201000000001',null,'EG.NewUser',now())");
   await ingest('hidden','EG.NewUser');expect(await moderate(await claim())).toBe(false);expect((await rows('select customer_id from public.customer_blacklist'))[0].customer_id).toBe(b.customer_id);

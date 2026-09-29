@@ -35,6 +35,12 @@ describe('BTC FAQ is the branch eligibility authority',()=>{
   expect(decision.text).toMatch(/^أيوه، جنيهات الذهب متاحة لدى IRAM/);expect(decision.text).toContain('IRAM Nox');expect(decision.text).toContain('TJH Mivida');
   expect(f.complete).not.toHaveBeenCalled();expect(f.reserve).not.toHaveBeenCalled();
  });
+ it('answers a standalone Egyptian gold-coin question locally instead of sending it to the model',async()=>{
+  const f=fixture();const decision=await f.strategy.reply({...base,text:'بتبيعوا جنيه دهب؟',history:[]});
+  expect(decision.text).toMatch(/^أيوه، جنيهات الذهب متاحة لدى IRAM/);
+  expect(decision.text.split('\n').filter(line=>line.startsWith('• '))).toHaveLength(8);
+  expect(f.complete).not.toHaveBeenCalled();expect(f.reserve).not.toHaveBeenCalled();
+ });
  it.each(names.map((name,i)=>[name,i] as const))('joins %s to its own address/map and the BTC-specific FAQ phone',async(name,i)=>{
   const f=fixture();const decision=await f.strategy.reply({...base,text:`Tell me more about ${name}`});
   expect(decision.text).toContain(`${i+1} Fictional Street`);expect(decision.text).toContain(`https://maps.app.goo.gl/fixture${i}`);expect(decision.text).toContain(`BTC phone: ${phones[i]}`);
@@ -47,6 +53,15 @@ describe('BTC FAQ is the branch eligibility authority',()=>{
  it.each(['التجمع','التجمع الخامس','القاهرة الجديدة','New Cairo','Fifth Settlement'])('resolves the New Cairo area alias %s to only eligible BTC branches',async text=>{
   const decision=await fixture().strategy.reply({...base,text});
   expect(decision.text.split('\n').filter(line=>line.startsWith('• '))).toEqual([`• ${names[2]} — ${cities[2]}`,`• ${names[3]} — ${cities[3]}`]);
+  expect(decision.text).not.toMatch(/Korba|City stars|Maadi|Arkan|Alex|Mansoura/);
+ });
+ it('uses the saved branch address when localized city labels are only generic Cairo',async()=>{
+  const localized=records.map((source,index)=>index===2||index===3?{...source,content:JSON.stringify({category:'branch',value:{
+    name:index===2?'IRAM نوكس':'TJH ميفيدا',city:'القاهرة',address:index===2?'نوكس مول، التجمع الخامس':'كمبوند ميفيدا، القاهرة الجديدة',
+    mapsUrl:`https://maps.app.goo.gl/fixture${index}`,phone:'09999999999',hours:'Jewelry hours: 9 AM–10 PM',
+  }})}:source);
+  const decision=await fixture([makeFaq(),...localized]).strategy.reply({...base,text:'فيه فرع في التجمع؟'});
+  expect(decision.text.split('\n').filter(line=>line.startsWith('• '))).toEqual(['• IRAM Nox — القاهرة','• TJH Mivida — القاهرة']);
   expect(decision.text).not.toMatch(/Korba|City stars|Maadi|Arkan|Alex|Mansoura/);
  });
  it('keeps a repeated Tagamo3 follow-up scoped to every eligible New Cairo branch',async()=>{

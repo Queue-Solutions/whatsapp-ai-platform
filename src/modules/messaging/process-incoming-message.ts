@@ -30,12 +30,20 @@ export async function processIncomingMessage(job: MessageJob, deps: {
     return state;
   }
 }
-export async function drainMessages(deps: Parameters<typeof processIncomingMessage>[1], limit = 3) {
+export async function drainMessages(deps: Parameters<typeof processIncomingMessage>[1], limit = 3, claimWindowMs = 5_000) {
   const results: string[] = [];
+  const started=Date.now();
   for (let i = 0; i < limit; i++) {
+    // Retry immediate pre-send failures in this invocation, but never start
+    // another potentially slow model request after the bounded claim window.
+    if(i>0&&Date.now()-started>=claimWindowMs)break;
     const job = await deps.repository.claim();
     if (!job) break;
-    results.push(await processIncomingMessage(job, deps));
+    try{results.push(await processIncomingMessage(job, deps));}
+    catch{
+      if(!deps.repository.recover)throw new Error('Processing recovery unavailable');
+      results.push(`recovered:${await deps.repository.recover(job,'processing_error')}`);
+    }
   }
   return results;
 }

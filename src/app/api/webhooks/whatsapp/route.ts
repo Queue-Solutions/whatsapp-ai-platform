@@ -14,7 +14,7 @@ export async function POST(request:Request) {
     const deps=createMessagingRuntime();
     const response=await receiveWebhook(request,{repository:deps.repository,appSecret:deps.env.META_APP_SECRET,
       phoneNumberId:deps.env.WHATSAPP_TEST_PHONE_NUMBER_ID,recipients:deps.env.WHATSAPP_TEST_RECIPIENTS});
-    if(response.ok) after(async()=>{try{await drainMessages(deps,1);}catch{console.error('message_worker_failed');}});
+    if(response.ok) after(async()=>{try{await drainMessages(deps,3);}catch{console.error('message_worker_failed');}});
     return response;
   } catch {console.error('webhook_configuration_failed');return new Response('Not configured',{status:503});}
 }

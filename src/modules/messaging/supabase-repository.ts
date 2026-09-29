@@ -90,8 +90,14 @@ export class SupabaseMessagingRepository implements MessagingRepository {
       }
       return null;
     }
+    if(decision.reason==='live_price_information'){
+      return this.rpc<PreparedReply|null>('prepare_policy_reply',{p_job:job.id,p_lease:job.lease_token,p_body:decision.text,p_reason:decision.reason});
+    }
     return this.rpc<PreparedReply|null>('prepare_followup_reply', { p_job: job.id, p_lease: job.lease_token,
       p_body: decision.text, p_action: decision.action, p_sources: decision.sources, p_reason: decision.reason, p_summary: decision.attentionSummary ?? null, p_contact:decision.followUp??null });
+  }
+  recover(job:MessageJob,code:string){
+    return this.rpc<'pending'|'failed'>('recover_processing_job',{p_job:job.id,p_lease:job.lease_token,p_code:code});
   }
   async complete(job: MessageJob, providerMessageId: string) {
     await this.rpc('complete_message_job',{p_job:job.id,p_lease:job.lease_token,p_provider_id:providerMessageId});

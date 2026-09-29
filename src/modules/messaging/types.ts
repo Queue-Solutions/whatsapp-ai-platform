@@ -65,6 +65,7 @@ export interface MessagingRepository {
   context(job: MessageJob): Promise<MessageContext>;
   prepare(job: MessageJob, text: string): Promise<PreparedReply | null>;
   prepareDecision?(job: MessageJob, decision: AgentDecision): Promise<PreparedReply | null>;
+  recover?(job: MessageJob, code: string): Promise<"pending" | "failed">;
   complete(job: MessageJob, providerMessageId: string): Promise<void>;
   fail(job: MessageJob, state: "failed" | "needs_review", code: string): Promise<void>;
 }

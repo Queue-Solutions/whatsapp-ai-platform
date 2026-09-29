@@ -56,9 +56,11 @@ export function matchingBranches(text:string,sources:KnowledgeSource[]){
     if(d.category!=='branch')return {source,score:0};
     const nameWords=locationWords(String(d.value?.name??''));
     const cityWords=locationWords(String(d.value?.city??''));
+    const addressWords=locationWords(String(d.value?.address??''));
     const meaningful=(word:string)=>word.length>2&&!['iram','ارم','ايرام','branch','mall','btc','tjh','the','city','town','new','مدينه','المدينه','الجديده'].includes(word);
     const score=[...new Set(nameWords.filter(meaningful))].filter(w=>words.has(w)).length*2
-      +[...new Set(cityWords.filter(meaningful))].filter(w=>words.has(w)).length;
+      +[...new Set(cityWords.filter(meaningful))].filter(w=>words.has(w)).length
+      +[...new Set(addressWords.filter(meaningful))].filter(w=>words.has(w)).length;
     return {source,score};
   }catch{return {source,score:0};}});
   const max=Math.max(0,...scored.map(s=>s.score));
