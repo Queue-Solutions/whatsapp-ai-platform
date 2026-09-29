@@ -89,6 +89,22 @@ describe('product-aware branch navigation',()=>{
   for(const source of newCairo){const name=branchDataName(source);expect(decision.text).toContain(name);expect(decision.text).toContain(`123 ${name} Street`);expect(decision.text).toContain(`https://maps.app.goo.gl/${source.label}`);}
   expect(decision.sources).toHaveLength(3);expect(complete).not.toHaveBeenCalled();expect(usage.reserve).not.toHaveBeenCalled();
  });
+ it('uses alternate-language structured cities when preferred localized branch records omit the city',async()=>{
+  const localized=(id:string,locale:'en'|'ar',name:string,city:string,address:string,map:string):KnowledgeSource=>({id,label:id,kind:'fact',locale,identityKey:`branch:${id.replace(/-(?:en|ar)$/,'')}`,updatedAt:'2026-09-30',
+    content:JSON.stringify({category:'branch',value:{name,city,address,hours:'11am–10pm',mapsUrl:map}})});
+  const records=[
+    localized('nox-en','en','IRAM Nox','New Cairo','Nox Mall – Fifth Settlement','https://maps.app.goo.gl/nox'),
+    localized('nox-ar','ar','IRAM نوكس','','نوكس مول – الطابق الأول','https://maps.app.goo.gl/nox'),
+    localized('zia-en','en','IRAM ZIA','New Cairo','South 90th Street','https://maps.app.goo.gl/zia'),
+    localized('zia-ar','ar','IRAM زيا','','شارع التسعين الجنوبي','https://maps.app.goo.gl/zia'),
+    localized('mivida-en','en','TJH Mivida','New Cairo','Mivida Compound','https://maps.app.goo.gl/mivida'),
+    localized('mivida-ar','ar','TJH ميفيدا','','كمبوند ميفيدا','https://maps.app.goo.gl/mivida'),
+  ];
+  const complete=vi.fn();const decision=await new GroundedStrategy(async()=>records,ledger(),{complete}).reply({...base,text:'عندكم فروع مجوهرات في التجمع؟',history:[{role:'user',content:'مجوهرات'}]});
+  expect(decision.sources).toHaveLength(3);
+  for(const name of ['IRAM نوكس','IRAM زيا','TJH ميفيدا'])expect(decision.text).toContain(name);
+  expect(decision.text).not.toMatch(/IRAM Nox|IRAM ZIA|TJH Mivida/);expect(complete).not.toHaveBeenCalled();
+ });
  it('combines deterministic area matches with semantic catalog matches instead of dropping a relevant branch',async()=>{
   const localized=(name:string,address:string,label:string)=>({...branch(name,'القاهرة',label),content:JSON.stringify({category:'branch',value:{name,city:'القاهرة',address,hours:'11am–10pm',mapsUrl:`https://maps.app.goo.gl/${label}`}})});
   const areaBranches=[localized('IRAM Nox','نوكس مول، التجمع الخامس','NOX'),localized('TJH Mivida','كمبوند ميفيدا، القاهرة الجديدة','MIVIDA'),localized('IRAM ZIA','مول زيا، شارع التسعين الجنوبي','ZIA')];
@@ -103,6 +119,14 @@ describe('product-aware branch navigation',()=>{
   const complete=vi.fn();const decision=await new GroundedStrategy(async()=>branches,ledger(),{complete}).reply({...base,text:'طب فيه فروع في الغردقة؟',history:history()});
   expect(decision.text).toContain('IRAM Senzo Mall');expect(decision.text).toContain('IRAM El Kawthar');expect(decision.text).toContain('123 IRAM Senzo Mall Street');expect(decision.text).toContain('123 IRAM El Kawthar Street');
   expect(decision.text).not.toContain('IRAM Riverside');expect(decision.sources).toHaveLength(2);expect(complete).not.toHaveBeenCalled();
+ });
+ it.each(['Show me jewelry branches at Hurghada','عندكم فروع مجوهرات في الغردقة ؟'])('returns every structured city member even when branch addresses have unequal match scores: %s',async text=>{
+  const source=(name:string,address:string,label:string,mapsUrl='')=>({id:label,label,kind:'fact' as const,updatedAt:'2026-09-30',content:JSON.stringify({category:'branch',value:{name,city:'Hurghada',address,hours:'11am–10pm',mapsUrl}})});
+  const hurghada=[source('TJH Kempinski Hotel','Kempinski Hotel – Soma Bay','KEMPINSKI'),source('TJH Senzo Mall','Senzo Mall, Shop No. 5A','SENZO','https://maps.app.goo.gl/senzo'),source('TJH El Kawthar','531 El Bnook Street – Mubarak 2 – El Kawthar Area','KAWTHAR','https://maps.app.goo.gl/kawthar')];
+  expect(matchingBranches(text,hurghada).map(item=>item.label)).toEqual(['KEMPINSKI','SENZO','KAWTHAR']);
+  const complete=vi.fn();const decision=await new GroundedStrategy(async()=>hurghada,ledger(),{complete}).reply({...base,text,history:[{role:'user',content:/[\u0600-\u06ff]/.test(text)?'مجوهرات':'Jewelry'}]});
+  for(const source of hurghada){expect(decision.text).toContain(branchDataName(source));expect(decision.text).toContain(branchData(source)!.address);}
+  expect(decision.sources).toHaveLength(3);expect(complete).not.toHaveBeenCalled();
  });
  it('returns all previously offered jewelry locations when the customer refers to them collectively',async()=>{
   const complete=vi.fn();const decision=await new GroundedStrategy(async()=>branches,ledger(),{complete}).reply({...base,text:'I mean send both branches locations',history:[

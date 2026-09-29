@@ -56,9 +56,22 @@ export function deduplicateBranches(sources:KnowledgeSource[],preferredLocale?:s
   }
   const groups=new Map<number,KnowledgeSource[]>();
   branches.forEach((source,index)=>{const key=root(index),group=groups.get(key)??[];group.push(source);groups.set(key,group);});
-  return [...groups.values()].map(group=>group.slice().sort((a,b)=>
-    Number(b.locale===preferredLocale)-Number(a.locale===preferredLocale)||completeness(b)-completeness(a)
-  )[0]);
+  return [...groups.values()].map(group=>{
+    const selected=group.slice().sort((a,b)=>
+      Number(b.locale===preferredLocale)-Number(a.locale===preferredLocale)||completeness(b)-completeness(a)
+    )[0];
+    if(group.length<2)return selected;
+    try{
+      const data=JSON.parse(selected.content);
+      // Keep the preferred localized record for customer-facing fields, while
+      // retaining the other approved localization as search-only metadata.
+      // This prevents a blank translated city from hiding a branch that has a
+      // complete city in its paired record.
+      const searchAliases=group.map(source=>branchRecord(source)).filter((value):value is Record<string,string>=>!!value)
+        .map(value=>({name:value.name??'',city:value.city??'',address:value.address??''}));
+      return {...selected,content:JSON.stringify({...data,searchAliases})};
+    }catch{return selected;}
+  });
 }
 
 /** Keep non-branch knowledge intact while exposing one localized record per physical branch. */

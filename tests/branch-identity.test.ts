@@ -14,6 +14,13 @@ describe('canonical branch identity',()=>{
     expect(deduplicateBranches(sources,'ar').map(source=>source.id)).toEqual(['ar']);
     expect(deduplicateBranches(sources,'en').map(source=>source.id)).toEqual(['en']);
   });
+  it('retains approved alternate-language locations as search metadata',()=>{
+    const english={...branch('en','IRAM ZIA','https://maps.app.goo.gl/zia','en','branch:en'),content:JSON.stringify({category:'branch',value:{name:'IRAM ZIA',city:'New Cairo',address:'South 90th Street',hours:'9–5',mapsUrl:'https://maps.app.goo.gl/zia'}})};
+    const arabic={...branch('ar','ارم زايا','https://maps.app.goo.gl/zia','ar','branch:ar'),content:JSON.stringify({category:'branch',value:{name:'ارم زايا',city:'',address:'شارع التسعين الجنوبي',hours:'9–5',mapsUrl:'https://maps.app.goo.gl/zia'}})};
+    const selected=deduplicateBranches([english,arabic],'ar')[0],data=JSON.parse(selected.content);
+    expect(selected.id).toBe('ar');expect(data.value.city).toBe('');
+    expect(data.searchAliases).toEqual(expect.arrayContaining([expect.objectContaining({name:'IRAM ZIA',city:'New Cairo'}),expect.objectContaining({name:'ارم زايا',city:''})]));
+  });
   it('uses shared fact identity when translations have no common location fields',()=>{
     const sources=[branch('en','English display name','','en','branch:shared'),branch('ar','اسم عربي مختلف','','ar','branch:shared')];
     expect(deduplicateBranches(sources,'ar').map(source=>source.id)).toEqual(['ar']);

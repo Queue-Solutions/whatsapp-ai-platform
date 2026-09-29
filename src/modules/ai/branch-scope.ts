@@ -69,24 +69,34 @@ export function matchingBranches(text:string,sources:KnowledgeSource[]){
   // "elmaadi" or "alarkan"). Keep the original token and also compare the
   // article-free form against the live branch catalog rather than maintaining
   // one-off aliases for every location.
+  const ignored=new Set(['iram','ارم','ايرام','branch','branches','store','stores','mall','hotel','the','city','town','new','show','send','give','tell','find','jewelry','jewellery','location','locations','address','addresses','please','your','you','me','at','in','of','do','does','are','is','any','all','tjh','el','al','فرع','فروع','الفرع','محل','فندق','مول','في','من','عند','عندكم','عندكو','مجوهرات','المجوهرات','عنوان','عناوين','موقع','مواقع','لوكيشن','المدينه','مدينه','الجديده']);
+  const meaningful=(word:string)=>word.length>2&&!ignored.has(word);
   const words=new Set(locationWords(text).flatMap(word=>{
     const articleFree=/^(?:el|al)[\p{L}\p{N}]{3,}$/u.test(word)?word.slice(2):'';
     return articleFree?[word,articleFree]:[word];
-  }));
+  }).filter(meaningful));
   const scored=sources.map(source=>{try{
     const d=JSON.parse(source.content);
-    if(d.category!=='branch')return {source,score:0};
-    const nameWords=locationWords(String(d.value?.name??''));
-    const cityWords=locationWords(String(d.value?.city??''));
-    const addressWords=locationWords(String(d.value?.address??''));
-    const meaningful=(word:string)=>word.length>2&&!['iram','ارم','ايرام','branch','mall','btc','tjh','the','city','town','new','مدينه','المدينه','الجديده'].includes(word);
+    if(d.category!=='branch')return {source,name:0,city:0,address:0};
+    const aliases=Array.isArray(d.searchAliases)?d.searchAliases:[];
+    const nameWords=locationWords([d.value?.name,...aliases.map((alias:Record<string,string>)=>alias?.name)].filter(Boolean).join(' '));
+    const cityWords=locationWords([d.value?.city,...aliases.map((alias:Record<string,string>)=>alias?.city)].filter(Boolean).join(' '));
+    const addressWords=locationWords([d.value?.address,...aliases.map((alias:Record<string,string>)=>alias?.address)].filter(Boolean).join(' '));
     const matches=(candidates:string[])=>[...new Set(candidates.filter(meaningful))]
       .filter(candidate=>[...words].some(word=>locationWordClose(word,candidate))).length;
-    const score=matches(nameWords)*2+matches(cityWords)+matches(addressWords);
-    return {source,score};
-  }catch{return {source,score:0};}});
-  const max=Math.max(0,...scored.map(s=>s.score));
-  return max?scored.filter(s=>s.score===max).map(s=>s.source):[];
+    return {source,name:matches(nameWords),city:matches(cityWords),address:matches(addressWords)};
+  }catch{return {source,name:0,city:0,address:0};}});
+  // A specific saved branch identity is more precise than its surrounding
+  // area. Otherwise city membership is categorical: every branch with the
+  // requested structured city belongs in the result, regardless of how many
+  // extra address words happen to match. Address scoring is only a fallback
+  // for records whose city is missing or broader than the requested district.
+  const maxName=Math.max(0,...scored.map(item=>item.name));
+  if(maxName)return scored.filter(item=>item.name===maxName).map(item=>item.source);
+  const cityMatches=scored.filter(item=>item.city>0);
+  if(cityMatches.length)return cityMatches.map(item=>item.source);
+  const maxAddress=Math.max(0,...scored.map(item=>item.address));
+  return maxAddress?scored.filter(item=>item.address===maxAddress).map(item=>item.source):[];
 }
 export function nearestIntent(context:MessageContext):boolean {
   const text=normalizeIntent(context.text??'');
