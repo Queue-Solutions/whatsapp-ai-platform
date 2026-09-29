@@ -218,7 +218,7 @@ export class GroundedStrategy implements ReplyStrategy {
     // Preserve the customer's current area wording. Product intent can still be
     // inherited from history, while a classifier rewrite must not broaden a
     // Tagamo3/New Cairo request back into the complete BTC directory.
-    const btcReply=btcBranchReply({...routed,text:context.text},available);if(btcReply)return btcReply;
+    const btcReply=btcBranchReply(routed,available);if(btcReply)return btcReply;
     const branchDetail=directBranchDetail(routed,available);if(branchDetail)return branchDetail;
     const branchDirectory=directJewelryDirectory(routed,available);if(branchDirectory)return branchDirectory;
     // A straightforward return/exchange/refund request is a policy workflow, not

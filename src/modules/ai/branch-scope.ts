@@ -40,7 +40,29 @@ export function locationWords(text:string){
     [/المنصوره|منصوره|mansoura|\bmans\b/g,'mansoura'],
     [/الشيخ زايد|شيخ زايد|sheikh zayed/g,'zayed'],
   ] as const)t=t.replace(pattern,replacement);
-  return t.match(/[\p{L}\p{N}]+/gu)??[];
+  const words=t.match(/[\p{L}\p{N}]+/gu)??[];
+  // Canonical regions keep searchable natural-language forms so ordinary
+  // misspellings can be compared to the live catalog without maintaining a
+  // typo dictionary for each customer phrase.
+  return words.flatMap(word=>word==='newcairo'?['newcairo','fifth','settlement','tagamo3']:word);
+}
+function locationWordClose(value:string,target:string){
+  if(value===target)return true;
+  if(value[0]!==target[0]||Math.min(value.length,target.length)<4||Math.abs(value.length-target.length)>2)return false;
+  const limit=Math.max(value.length,target.length)>=8?2:1;
+  let previous=Array.from({length:target.length+1},(_,index)=>index),beforePrevious:number[]|null=null;
+  for(let row=1;row<=value.length;row++){
+    const current=[row];let minimum=row;
+    for(let column=1;column<=target.length;column++){
+      current[column]=Math.min(current[column-1]+1,previous[column]+1,previous[column-1]+(value[row-1]===target[column-1]?0:1));
+      if(beforePrevious&&row>1&&column>1&&value[row-1]===target[column-2]&&value[row-2]===target[column-1])
+        current[column]=Math.min(current[column],beforePrevious[column-2]+1);
+      minimum=Math.min(minimum,current[column]);
+    }
+    if(minimum>limit)return false;
+    beforePrevious=previous;previous=current;
+  }
+  return previous[target.length]<=limit;
 }
 export function matchingBranches(text:string,sources:KnowledgeSource[]){
   // Arabizi often attaches the Arabic article to a place name (for example,
@@ -58,9 +80,9 @@ export function matchingBranches(text:string,sources:KnowledgeSource[]){
     const cityWords=locationWords(String(d.value?.city??''));
     const addressWords=locationWords(String(d.value?.address??''));
     const meaningful=(word:string)=>word.length>2&&!['iram','ارم','ايرام','branch','mall','btc','tjh','the','city','town','new','مدينه','المدينه','الجديده'].includes(word);
-    const score=[...new Set(nameWords.filter(meaningful))].filter(w=>words.has(w)).length*2
-      +[...new Set(cityWords.filter(meaningful))].filter(w=>words.has(w)).length
-      +[...new Set(addressWords.filter(meaningful))].filter(w=>words.has(w)).length;
+    const matches=(candidates:string[])=>[...new Set(candidates.filter(meaningful))]
+      .filter(candidate=>[...words].some(word=>locationWordClose(word,candidate))).length;
+    const score=matches(nameWords)*2+matches(cityWords)+matches(addressWords);
     return {source,score};
   }catch{return {source,score:0};}});
   const max=Math.max(0,...scored.map(s=>s.score));

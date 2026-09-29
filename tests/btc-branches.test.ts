@@ -55,6 +55,19 @@ describe('BTC FAQ is the branch eligibility authority',()=>{
   expect(decision.text.split('\n').filter(line=>line.startsWith('• '))).toEqual([`• ${names[2]} — ${cities[2]}`,`• ${names[3]} — ${cities[3]}`]);
   expect(decision.text).not.toMatch(/Korba|City stars|Maadi|Arkan|Alex|Mansoura/);
  });
+ it.each(['fiftsh settlement','fith settlement','fifth setlement'])('fuzzily resolves a misspelled area without a typo dictionary: %s',async text=>{
+  const f=fixture();const decision=await f.strategy.reply({...base,text:`Any branches in ${text}?`});
+  expect(decision.text.split('\n').filter(line=>line.startsWith('• '))).toEqual([`• ${names[2]} — ${cities[2]}`,`• ${names[3]} — ${cities[3]}`]);
+  expect(decision.text).not.toMatch(/Korba|City stars|Maadi|Arkan|Alex|Mansoura/);expect(f.complete).not.toHaveBeenCalled();
+ });
+ it.each(['Both','Send both locations','ممكن اللوكيشن بتاعهم هما الاتنين'])('returns every previously offered branch location for a plural follow-up: %s',async text=>{
+  const f=fixture();const directory=`Branches offering BTC / bullion services:\n\n• ${names[2]} — ${cities[2]}\n• ${names[3]} — ${cities[3]}`;
+  const decision=await f.strategy.reply({...base,text,history:[{role:'user',content:'BTC branches in New Cairo'},{role:'assistant',content:directory}]});
+  for(const index of [2,3]){
+   expect(decision.text).toContain(`${index+1} Fictional Street`);expect(decision.text).toContain(`fixture${index}`);expect(decision.text).toContain(phones[index]);
+  }
+  expect(decision.text).not.toMatch(/fixture0|fixture1|fixture4|fixture5|fixture6|fixture7/);expect(f.complete).not.toHaveBeenCalled();
+ });
  it('uses the saved branch address when localized city labels are only generic Cairo',async()=>{
   const localized=records.map((source,index)=>index===2||index===3?{...source,content:JSON.stringify({category:'branch',value:{
     name:index===2?'IRAM نوكس':'TJH ميفيدا',city:'القاهرة',address:index===2?'نوكس مول، التجمع الخامس':'كمبوند ميفيدا، القاهرة الجديدة',

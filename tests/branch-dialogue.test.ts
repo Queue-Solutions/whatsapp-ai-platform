@@ -89,6 +89,28 @@ describe('product-aware branch navigation',()=>{
   for(const source of newCairo){const name=branchDataName(source);expect(decision.text).toContain(name);expect(decision.text).toContain(`123 ${name} Street`);expect(decision.text).toContain(`https://maps.app.goo.gl/${source.label}`);}
   expect(decision.sources).toHaveLength(3);expect(complete).not.toHaveBeenCalled();expect(usage.reserve).not.toHaveBeenCalled();
  });
+ it('combines deterministic area matches with semantic catalog matches instead of dropping a relevant branch',async()=>{
+  const localized=(name:string,address:string,label:string)=>({...branch(name,'القاهرة',label),content:JSON.stringify({category:'branch',value:{name,city:'القاهرة',address,hours:'11am–10pm',mapsUrl:`https://maps.app.goo.gl/${label}`}})});
+  const areaBranches=[localized('IRAM Nox','نوكس مول، التجمع الخامس','NOX'),localized('TJH Mivida','كمبوند ميفيدا، القاهرة الجديدة','MIVIDA'),localized('IRAM ZIA','مول زيا، شارع التسعين الجنوبي','ZIA')];
+  const classifyIntent=vi.fn(async()=>({decision:{intent:'branch' as const,confidence:.99,language:'ar' as const,product:'jewelry' as const,
+    branchMode:'directory' as const,branchDetail:'general' as const,branchLabels:['NOX','MIVIDA','ZIA'],originEvidence:'التجمع',originQuery:'التجمع',
+    normalizedQuery:'فروع المجوهرات في التجمع: IRAM Nox, TJH Mivida, IRAM ZIA',analyticsTopic:'فروع التجمع',summary:'',risk:'none' as const},input:120,output:30}));
+  const complete=vi.fn();const decision=await new GroundedStrategy(async()=>areaBranches,ledger(),{complete,classifyIntent}).reply({...base,text:'فيه فروع في التجمع؟',history:[{role:'user',content:'مجوهرات'}]});
+  for(const source of areaBranches){expect(decision.text).toContain(branchDataName(source));expect(decision.text).toContain(branchData(source)!.address);}
+  expect(decision.sources).toHaveLength(3);expect(classifyIntent).toHaveBeenCalledOnce();expect(complete).not.toHaveBeenCalled();
+ });
+ it('returns every jewelry branch in an arbitrary requested city without a city-specific allowlist',async()=>{
+  const complete=vi.fn();const decision=await new GroundedStrategy(async()=>branches,ledger(),{complete}).reply({...base,text:'طب فيه فروع في الغردقة؟',history:history()});
+  expect(decision.text).toContain('IRAM Senzo Mall');expect(decision.text).toContain('IRAM El Kawthar');expect(decision.text).toContain('123 IRAM Senzo Mall Street');expect(decision.text).toContain('123 IRAM El Kawthar Street');
+  expect(decision.text).not.toContain('IRAM Riverside');expect(decision.sources).toHaveLength(2);expect(complete).not.toHaveBeenCalled();
+ });
+ it('returns all previously offered jewelry locations when the customer refers to them collectively',async()=>{
+  const complete=vi.fn();const decision=await new GroundedStrategy(async()=>branches,ledger(),{complete}).reply({...base,text:'I mean send both branches locations',history:[
+    {role:'user',content:'Jewelry branches in Hurghada'},{role:'assistant',content:'Jewelry branches:\n\n• IRAM Senzo Mall — Hurghada\n• IRAM El Kawthar — Hurghada'},
+  ]});
+  expect(decision.text).toContain('123 IRAM Senzo Mall Street');expect(decision.text).toContain('123 IRAM El Kawthar Street');expect(decision.text).not.toContain('IRAM Riverside');
+  expect(decision.sources).toHaveLength(2);expect(complete).not.toHaveBeenCalled();
+ });
  it('matches a region stored in the address when the city field is broader',()=>{
   const nox={...branch('IRAM Nox','Cairo','NOX'),content:JSON.stringify({category:'branch',value:{name:'IRAM Nox',city:'Cairo',address:'Nox Mall, Fifth Settlement, New Cairo'}})};
   const mivida={...branch('TJH Mivida','القاهرة','MIVIDA'),content:JSON.stringify({category:'branch',value:{name:'TJH Mivida',city:'القاهرة',address:'كمبوند ميفيدا، القاهرة الجديدة'}})};

@@ -83,7 +83,7 @@ export function isStoredIntentDecision(value:unknown,fingerprint:string):value i
   return intentDecisionSchema.safeParse(decision).success;
 }
 export function buildIntentRequest(context:MessageContext,sources:KnowledgeSource[]){
-  const branchCatalog=sources.flatMap(source=>{const value=branchData(source);return value?[{label:source.label,name:value.name,city:value.city??''}]:[];});
+  const branchCatalog=sources.flatMap(source=>{const value=branchData(source);return value?[{label:source.label,name:value.name,city:value.city??'',address:value.address??''}]:[];});
   const allowedLabels=branchCatalog.map(branch=>branch.label);
   const faqTopics=sources.map(faqQuestion).filter((value):value is string=>!!value);
   const history=[...(context.history??[])].slice(-10);
@@ -108,9 +108,16 @@ export function contextForIntent(context:MessageContext,decision:IntentDecision,
   // that evidence from the live catalog first and use model labels only when
   // the current turn contains no deterministic match.
   const currentMatches=decision.intent==='branch'?matchingBranches(context.text??'',sources):[];
-  const names=(currentMatches.length
-    ?currentMatches.map(source=>branchData(source)?.name)
-    :decision.branchLabels.map(label=>branches.get(label)?.name))
+  const directLabels=new Set(currentMatches.map(source=>source.label));
+  const classifierCoversDirect=currentMatches.length>0&&[...directLabels].every(label=>decision.branchLabels.includes(label));
+  // For an area directory, accept a classifier superset only when it contains
+  // every deterministic match. This lets semantic address knowledge add a
+  // branch (for example a landmark inside the area) without allowing a stale
+  // classifier label to replace an explicit current location.
+  const selectedLabels=currentMatches.length
+    ?decision.branchMode==='directory'&&classifierCoversDirect?[...new Set([...directLabels,...decision.branchLabels])]:[...directLabels]
+    :decision.branchLabels;
+  const names=selectedLabels.map(label=>branches.get(label)?.name)
     .filter((value):value is string=>!!value);
   let text=decision.normalizedQuery;
   if(decision.intent==='branch'){

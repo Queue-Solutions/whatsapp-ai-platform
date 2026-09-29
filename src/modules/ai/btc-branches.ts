@@ -1,6 +1,6 @@
 import type {AgentDecision,KnowledgeSource} from './contracts';
 import type {MessageContext} from '../messaging/types';
-import {branchData,productIntent,sourceRef,bullionPattern} from './branch-dialogue';
+import {branchData,productIntent,sourceRef,bullionPattern,contextualBranchRecords} from './branch-dialogue';
 import {branchScope,isBranchSource,normalizeIntent,locationWords,matchingBranches} from './branch-scope';
 import {replyLanguage} from './language';
 import {knowledgeGap} from './knowledge-gap';
@@ -108,14 +108,22 @@ function directory(context:MessageContext,catalog:BtcCatalog,sources:KnowledgeSo
     text:[intro,lines.join('\n'),hours,ar?'اكتب اسم الفرع المطلوب لعرض العنوان الكامل ورابط الموقع ورقم خدمة BTC.':'Type the branch name to receive its full address, location link and BTC phone number.'].filter(Boolean).join('\n\n')};
 }
 function details(context:MessageContext,catalog:BtcCatalog,entry:BtcEntry,sources:KnowledgeSource[]):AgentDecision {
-  const ar=replyLanguage(context.text??'')==='ar',matches=btcBranchRecords(entry,sources);
-  const record=matches.length===1?matches[0]:null,data=record?branchData(record):null;
-  return {action:'answer',reason:'approved_knowledge',sources:[...catalog.sources,...(record?[record]:[])].map(sourceRef),text:[
-    ar?'أكيد، هذه تفاصيل فرع خدمة BTC والسبائك الذي طلبته:':'Of course. Here are the requested BTC / bullion branch details:',
-    `${entry.name}${data?.city?` — ${data.city}`:''}`,
-    data?.address?.trim()||(ar?'العنوان الكامل غير مؤكد لهذا الفرع حاليًا.':'The full address is not confirmed for this branch right now.'),
-    data?.mapsUrl?.trim()||(ar?'رابط الموقع غير متاح لهذا الفرع حاليًا.':'A location link is not currently available for this branch.'),
-    `${ar?'رقم خدمة BTC':'BTC phone'}: ${entry.phone}`,hoursText(catalog.hours,ar),
+  return detailsForEntries(context,catalog,[entry],sources);
+}
+function detailsForEntries(context:MessageContext,catalog:BtcCatalog,entries:BtcEntry[],sources:KnowledgeSource[]):AgentDecision {
+  const ar=replyLanguage(context.text??'')==='ar',refs=[...catalog.sources];
+  const blocks=entries.map(entry=>{
+    const matches=btcBranchRecords(entry,sources),record=matches.length===1?matches[0]:null,data=record?branchData(record):null;
+    if(record)refs.push(record);
+    return [`${entry.name}${data?.city?` — ${data.city}`:''}`,
+      data?.address?.trim()||(ar?'العنوان الكامل غير مؤكد لهذا الفرع حاليًا.':'The full address is not confirmed for this branch right now.'),
+      data?.mapsUrl?.trim()||(ar?'رابط الموقع غير متاح لهذا الفرع حاليًا.':'A location link is not currently available for this branch.'),
+      `${ar?'رقم خدمة BTC':'BTC phone'}: ${entry.phone}`].join('\n\n');
+  });
+  return {action:'answer',reason:'approved_knowledge',sources:[...new Map(refs.map(source=>[source.id,source])).values()].map(sourceRef),text:[
+    entries.length>1?(ar?'أكيد، هذه تفاصيل فروع خدمة BTC والسبائك التي طلبتها:':'Of course. Here are the requested BTC / bullion branch details:')
+      :(ar?'أكيد، هذه تفاصيل فرع خدمة BTC والسبائك الذي طلبته:':'Of course. Here are the requested BTC / bullion branch details:'),
+    blocks.join('\n\n——\n\n'),hoursText(catalog.hours,ar),
   ].filter(Boolean).join('\n\n')};
 }
 
@@ -127,10 +135,15 @@ export function btcBranchReply(context:MessageContext,sources:KnowledgeSource[])
   const queryWords=new Set(nameWords(context.text??''));
   const named=catalog?.entries.filter(e=>meaningful(nameWords(e.name)).every(w=>queryWords.has(w)))??[];
   const requestedRecords=matchingBranches(context.text??'',sources);
+  const contextualRecords=contextualBranchRecords(context,sources);
   const focusedProduct=/\b(?:price|prices|cost|payment|refund|warranty|weight|karat)\b|اسعار|سعر|بكام|دفع|استرجاع|ضمان|عيار|وزن/.test(normalizeIntent(context.text??''));
   if(focusedProduct)return null;
-  if(scope==='none'&&!named.length&&!requestedRecords.length&&!goldCoins)return null;
+  if(scope==='none'&&!named.length&&!requestedRecords.length&&!contextualRecords.length&&!goldCoins)return null;
   if(!catalog)return knowledgeGap(context,'The approved BTC FAQ does not provide one unambiguous branch-to-BTC-phone list. Review its branch entries before directing this customer.');
+  if(contextualRecords.length){
+    const contextualEntries=catalog.entries.filter(entry=>btcBranchRecords(entry,sources).some(source=>contextualRecords.includes(source)));
+    if(contextualEntries.length)return detailsForEntries(context,catalog,contextualEntries,sources);
+  }
   let selected=named;
   if(!selected.length&&requestedRecords.length){
     selected=catalog.entries.filter(e=>btcBranchRecords(e,sources).some(s=>requestedRecords.includes(s)));
