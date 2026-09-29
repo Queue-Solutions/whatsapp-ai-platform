@@ -87,6 +87,7 @@ function hoursText(hours:string[],ar:boolean){
 }
 function directory(context:MessageContext,catalog:BtcCatalog,sources:KnowledgeSource[],entries=catalog.entries,unlisted=false):AgentDecision {
   const ar=replyLanguage(context.text??'')==='ar';
+  const goldCoins=/\bgold coins?\b|جنيهات? الذهب|جنيه ذهب/.test(normalizeIntent(context.text??''));
   const refs=[...catalog.sources];
   const lines=entries.map(entry=>{
     const records=btcBranchRecords(entry,sources);
@@ -94,8 +95,11 @@ function directory(context:MessageContext,catalog:BtcCatalog,sources:KnowledgeSo
     if(city)refs.push(records[0]);
     return `• ${entry.name}${city?` — ${city}`:''}`;
   });
-  const intro=unlisted?(ar?'هذا الفرع غير مدرج ضمن فروع BTC المؤكدة في المعلومات المتاحة. الفروع المدرجة للخدمة هي:':'That branch is not listed for BTC in the approved information. These branches are listed for the service:')
-    :ar?'الفروع المتاحة لخدمة BTC والسبائك:':'Branches offering BTC / bullion services:';
+  const acknowledgement=unlisted?(ar?'فهمت أنك تسأل عن هذا الفرع. هذا الفرع غير مدرج ضمن فروع BTC المؤكدة في المعلومات المتاحة.':'I understand you’re asking about that branch. It is not listed for BTC in the approved information.')
+    :goldCoins
+      ?ar?'نعم، جنيهات الذهب متاحة من خلال خدمة BTC والسبائك.':'Yes, gold coins are available through our BTC / bullion service.'
+      :ar?'أكيد، فهمت أنك تبحث عن فروع خدمة BTC والسبائك.':'Of course. I understand you’re looking for BTC / bullion service branches.';
+  const intro=`${acknowledgement}\n\n${ar?'الفروع المتاحة لخدمة BTC والسبائك:':'Branches offering BTC / bullion services:'}`;
   const hours=hoursText(catalog.hours,ar);
   return {action:'answer',reason:'approved_knowledge',sources:[...new Map(refs.map(s=>[s.id,s])).values()].map(sourceRef),
     text:[intro,lines.join('\n'),hours,ar?'اكتب اسم الفرع المطلوب لعرض العنوان الكامل ورابط الموقع ورقم خدمة BTC.':'Type the branch name to receive its full address, location link and BTC phone number.'].filter(Boolean).join('\n\n')};
@@ -104,6 +108,7 @@ function details(context:MessageContext,catalog:BtcCatalog,entry:BtcEntry,source
   const ar=replyLanguage(context.text??'')==='ar',matches=btcBranchRecords(entry,sources);
   const record=matches.length===1?matches[0]:null,data=record?branchData(record):null;
   return {action:'answer',reason:'approved_knowledge',sources:[...catalog.sources,...(record?[record]:[])].map(sourceRef),text:[
+    ar?'أكيد، هذه تفاصيل فرع خدمة BTC والسبائك الذي طلبته:':'Of course. Here are the requested BTC / bullion branch details:',
     `${entry.name}${data?.city?` — ${data.city}`:''}`,
     data?.address?.trim()||(ar?'العنوان الكامل غير مؤكد لهذا الفرع حاليًا.':'The full address is not confirmed for this branch right now.'),
     data?.mapsUrl?.trim()||(ar?'رابط الموقع غير متاح لهذا الفرع حاليًا.':'A location link is not currently available for this branch.'),

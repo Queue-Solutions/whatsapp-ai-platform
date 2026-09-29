@@ -19,16 +19,16 @@ export function socialReply(text:string,history:ReadonlyArray<{role:'user'|'assi
   // `clarify` is the existing database-safe action for deterministic, source-free
   // conversational replies. The text answers the identity question directly.
   if(identity.test(conversational))return {action:'clarify',reason:'social_identity',sources:[],text:ar
-    ? 'أنا المساعد الافتراضي لـ IRAM، وموجود لمساعدتك في استفسارات المجوهرات ومنتجات BTC والسبائك وخدماتنا. كيف يمكنني مساعدتك؟'
-    : 'I’m IRAM’s virtual assistant, here to help with jewelry, BTC / bullion products and our services. How may I assist you?'};
+    ? 'أنا مساعد IRAM المدعوم بالذكاء الاصطناعي، وموجود لمساعدتك في أي استفسار عن منتجاتنا وخدماتنا. وإذا رغبت في التحدث مع أحد ممثلي IRAM شخصيًا، اطلب ذلك في أي وقت.'
+    : 'I’m IRAM’s AI-powered assistant, here to help with any question about our products and services. If you would prefer to speak with an IRAM representative, just ask at any time.'};
   if(isWellbeing)return {action:'clarify',reason:'social_greeting',sources:[],text:ar
     ? 'أنا بخير، شكرًا لسؤالك.\n\nكيف يمكنني مساعدتك؟'
     : 'I’m doing well, thank you for asking.\n\nHow may I assist you?'};
   if(isGreeting){
     const returning=history.some(message=>message.role==='assistant');
     return {action:'clarify',reason:'social_greeting',sources:[],text:returning
-      ? ar?'أهلًا بعودتك إلى IRAM.\n\nكيف يمكنني مساعدتك؟':'Welcome back to IRAM.\n\nHow may I assist you?'
-      : ar?'أهلًا بك في IRAM ✨\n\nهل ترغب في الاستفسار عن المجوهرات أم منتجات BTC والسبائك؟':'Welcome to IRAM ✨\n\nWould you like assistance with jewelry or BTC / bullion products?'};
+      ? ar?'أهلًا بعودتك إلى IRAM ✨\n\nأنا مساعد IRAM المدعوم بالذكاء الاصطناعي. كيف يمكنني مساعدتك اليوم؟\n\nوإذا رغبت في التحدث مع أحد ممثلي IRAM شخصيًا، اطلب ذلك في أي وقت.':'Welcome back to IRAM ✨\n\nI’m IRAM’s AI-powered assistant. How may I help today?\n\nIf you would prefer to speak with an IRAM representative, just ask at any time.'
+      : ar?'أهلًا وسهلًا بك في IRAM ✨\n\nأنا مساعد IRAM المدعوم بالذكاء الاصطناعي، وموجود لمساعدتك في أي استفسار عن منتجاتنا وخدماتنا، مثل المجوهرات، ومنتجات BTC والسبائك، والفروع، والصيانة، والاستبدال والاسترجاع.\n\nكيف يمكنني مساعدتك اليوم؟\n\nوإذا رغبت في التحدث مع أحد ممثلي IRAM شخصيًا، اطلب ذلك في أي وقت.':'Welcome to IRAM ✨\n\nI’m IRAM’s AI-powered assistant, here to help with any question about our products and services, including jewelry, BTC and bullion, branches, maintenance, exchanges and returns.\n\nHow may I help today?\n\nIf you would prefer to speak with an IRAM representative, just ask at any time.'};
   }
   if (isThanks) return { action: 'clarify', reason: 'social_thanks', sources: [],
     text: ar ? 'على الرحب والسعة.\n\nيسعدني مساعدتك في أي استفسار آخر يخص IRAM.' : 'You’re welcome.\n\nI’ll be pleased to assist with any other IRAM enquiry.' };

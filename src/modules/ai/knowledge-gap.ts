@@ -14,8 +14,8 @@ export function knowledgeGap(context: MessageContext, summary?: string, omittedS
   return {
     action: 'unavailable', reason: 'missing_business_information', sources: [],
     text: ar
-      ? 'هذه المعلومة غير مؤكدة لدي حاليًا وتحتاج إلى مراجعة من فريق IRAM. يمكنني مساعدتك في استفسار آخر، أو يمكنك طلب التحدث مع أحد ممثلي الفريق.'
-      : 'I don’t currently have confirmed information about that. I can assist with another enquiry, or you may ask to speak with an IRAM representative.',
+      ? 'فهمت طلبك، لكن هذه المعلومة غير مؤكدة لدي حاليًا وتحتاج إلى مراجعة من فريق IRAM. يمكنني مساعدتك في استفسار آخر، أو يمكنك طلب التحدث مع أحد ممثلي الفريق.'
+      : 'I understand your request, but I don’t currently have confirmed information about that. I can assist with another enquiry, or you may ask to speak with an IRAM representative.',
     attentionSummary: explanation.slice(0, 240) + coverage,
   };
 }

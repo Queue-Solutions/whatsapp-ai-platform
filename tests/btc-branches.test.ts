@@ -22,7 +22,13 @@ describe('BTC FAQ is the branch eligibility authority',()=>{
   expect(decision.text).not.toMatch(/ZIA|Kawthar|Fictional|https:|09999999999|0120000000/);
   expect(decision.text).toContain('12:00 PM to 8:30 PM');expect(decision.text).toContain('Friday from 2:00 PM to 8:30 PM');
   expect(decision.text.match(/Type the branch/g)).toHaveLength(1);expect(decision.text.match(/Branches offering BTC/g)).toHaveLength(1);
-  expect(f.complete).not.toHaveBeenCalled();expect(f.reserve).not.toHaveBeenCalled();expect(f.load).toHaveBeenCalledWith('trusted-tenant');
+ expect(f.complete).not.toHaveBeenCalled();expect(f.reserve).not.toHaveBeenCalled();expect(f.load).toHaveBeenCalledWith('trusted-tenant');
+ });
+ it('confirms the customer’s gold-coin request before showing only approved BTC branches',async()=>{
+  const f=fixture();const decision=await f.strategy.reply({...base,text:'What branches sell gold coins?',history:[]});
+  expect(decision.text).toMatch(/^Yes, gold coins are available through our BTC \/ bullion service\./);
+  expect(decision.text).toContain('Branches offering BTC / bullion services:');expect(decision.text.split('\n').filter(line=>line.startsWith('• '))).toHaveLength(8);
+  expect(f.complete).not.toHaveBeenCalled();expect(f.reserve).not.toHaveBeenCalled();
  });
  it.each(names.map((name,i)=>[name,i] as const))('joins %s to its own address/map and the BTC-specific FAQ phone',async(name,i)=>{
   const f=fixture();const decision=await f.strategy.reply({...base,text:`Tell me more about ${name}`});

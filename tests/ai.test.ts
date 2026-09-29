@@ -53,6 +53,8 @@ describe('grounded reply strategy', () => {
     const prompt=JSON.parse(buildRequest(context,[source])).instructions;
     expect(prompt).toContain('ask one short clarification first');expect(prompt).toContain('avoid repeating a clarification');
     expect(prompt).toContain('refined, composed and concise');expect(prompt).toContain('Use no emoji by default');
+    expect(prompt).toContain('Begin every ordinary business answer with one short, natural acknowledgment');
+    expect(prompt).toContain('only when the approved sources establish it');
   });
   it('does not flag retrieval, budget, provider or validation failures as missing business information', async () => {
     const cases=[
@@ -80,9 +82,10 @@ describe('grounded reply strategy', () => {
     const first=await strategy.reply({...context,text:'Hi',history:[]});
     const returning=await strategy.reply({...context,text:'Hi',requestKey:'returning',history:[{role:'assistant',content:first.text}]});
     const wellbeing=await strategy.reply({...context,text:'How are you?',requestKey:'wellbeing',history:[{role:'assistant',content:first.text}]});
-    expect(first.text).toContain('Welcome to IRAM');expect(first.text).toContain('jewelry or BTC');
+    expect(first.text).toContain('Welcome to IRAM');expect(first.text).toContain('AI-powered assistant');
+    expect(first.text).toContain('maintenance, exchanges and returns');expect(first.text).toContain('IRAM representative');
     expect(first.text.match(/[🤍💎✨]/gu)).toHaveLength(1);
-    expect(returning.text).toContain('Welcome back');expect(returning.text).not.toContain('jewelry or BTC');
+    expect(returning.text).toContain('Welcome back');expect(returning.text).toContain('AI-powered assistant');
     expect(wellbeing.text).toContain('doing well');expect(wellbeing.text).not.toContain('Welcome');
     expect(load).not.toHaveBeenCalled(); expect(complete).not.toHaveBeenCalled(); expect(ledger.reserve).not.toHaveBeenCalled();
     expect((await strategy.reply({ ...context, text:'Hi', eligible:false })).action).toBe('suppress');

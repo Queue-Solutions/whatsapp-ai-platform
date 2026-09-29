@@ -3,7 +3,7 @@ import type {MessageContext} from '../messaging/types';
 import {branchScope,normalizeIntent,matchingBranches,locationWords} from './branch-scope';
 import {replyLanguage} from './language';
 
-export const bullionPattern=/\bbtc\b|\bbullion\b|\bgold bars?\b|سبائك|سبيكه|جنيهات الذهب/;
+export const bullionPattern=/\bbtc\b|\bbullion\b|\bgold (?:bars?|coins?)\b|سبائك|سبيكه|جنيهات? الذهب|جنيه ذهب/;
 const jewelryPattern=/\bjewel(?:ry|lery)\b|مجوهرات|مشغولات|الماس|دبل|خواتم/;
 export function productIntent(context:MessageContext):'btc'|'jewelry'|null {
   for(const text of [context.text??'',...(context.history??[]).filter(m=>m.role==='user').map(m=>m.content).reverse()]){
@@ -25,8 +25,8 @@ export function branchData(source:KnowledgeSource):Record<string,string>|null {
 export const sourceRef=(s:KnowledgeSource)=>({id:s.id,kind:s.kind,updatedAt:s.updatedAt});
 export function productQuestion(context:MessageContext):AgentDecision {
   return {action:'clarify',reason:'branch_product_clarification',sources:[],text:replyLanguage(context.text??'')==='ar'
-    ?'هل ترغب في الاستفسار عن المجوهرات أم منتجات BTC والسبائك؟ سأعرض لك الفروع المناسبة ومواعيد الخدمة.'
-    :'Would you like information about jewelry or BTC / bullion products? I’ll provide the relevant branches and service hours.'};
+    ?'أكيد، يسعدني مساعدتك في الوصول إلى الفرع المناسب. هل تبحث عن المجوهرات أم منتجات BTC والسبائك؟'
+    :'Of course. I’ll help you find the right branch. Are you looking for jewelry or BTC / bullion products?'};
 }
 export function isLocationRequest(context:MessageContext,sources:KnowledgeSource[]){
   let t=normalizeIntent(context.text??'');
@@ -56,11 +56,11 @@ export function renderBranchAnswer(context:MessageContext,decision:AgentDecision
   const records=sources.filter(s=>branchData(s)&&decision.sources.some(ref=>ref.id===s.id&&ref.kind===s.kind));
   if(scope==='directory'&&productIntent(context)==='jewelry'&&records.length){
     const lines=records.map(s=>{const d=branchData(s)!;return `• ${d.name.trim()}${d.city?.trim()?` — ${d.city.trim()}`:''}`;});
-    return {...decision,text:`${ar?'فروع المجوهرات:':'Jewelry branches:'}\n\n${lines.join('\n')}\n\n${ar?'اكتب اسم الفرع المطلوب لعرض العنوان الكامل ورابط الموقع.':'Type the branch name to receive its full address and location link.'}`};
+    return {...decision,text:`${ar?'أكيد، فهمت أنك تبحث عن فروع المجوهرات.\n\nفروع المجوهرات:':'Of course. I understand you’re looking for jewelry branches.\n\nJewelry branches:'}\n\n${lines.join('\n')}\n\n${ar?'اكتب اسم الفرع المطلوب لعرض العنوان الكامل ورابط الموقع.':'Type the branch name to receive its full address and location link.'}`};
   }
   if(scope==='directory'&&productIntent(context)==='btc'){
     const footer=ar?'اكتب اسم الفرع المطلوب لعرض العنوان الكامل ورابط الموقع.':'Type the branch name to receive its full address and location link.';
-    const intro=ar?'الفروع المتاحة لخدمة BTC والسبائك:':'Branches offering BTC / bullion services:';
+    const intro=ar?'أكيد، فهمت أنك تبحث عن فروع خدمة BTC والسبائك.\n\nالفروع المتاحة لخدمة BTC والسبائك:':'Of course. I understand you’re looking for BTC / bullion service branches.\n\nBranches offering BTC / bullion services:';
     const body=decision.text.startsWith(intro)?decision.text:`${intro}\n\n${decision.text}`;
     return {...decision,text:body.endsWith(footer)?body:`${body}\n\n${footer}`};
   }
@@ -72,9 +72,9 @@ export function renderBranchAnswer(context:MessageContext,decision:AgentDecision
   return decision;
 }
 
-function branchDetailText(value:Record<string,string>,ar:boolean){
+function branchDetailText(value:Record<string,string>,ar:boolean,acknowledge=true){
   const name=value.name.trim(),city=value.city?.trim(),address=value.address.trim(),mapsUrl=value.mapsUrl?.trim();
-  return `${name}${city?` — ${city}`:''}\n\n${address}\n\n${mapsUrl|| (ar?'رابط الموقع غير متاح لهذا الفرع حاليًا.':'A location link is not currently available for this branch.')}`;
+  return `${acknowledge?(ar?'أكيد، هذه تفاصيل الفرع المطلوب:\n\n':'Of course. Here are the requested branch details:\n\n'):''}${name}${city?` — ${city}`:''}\n\n${address}\n\n${mapsUrl|| (ar?'رابط الموقع غير متاح لهذا الفرع حاليًا.':'A location link is not currently available for this branch.')}`;
 }
 
 /** Complete jewelry directories never depend on the model's knowledge-size selection. */
@@ -102,5 +102,5 @@ export function directBranchDetail(context:MessageContext,sources:KnowledgeSourc
   const decision={action:'answer' as const,reason:'approved_knowledge',text:'',sources:matches.map(sourceRef)};
   if(matches.length===1)return renderBranchAnswer(context,decision,sources);
   const ar=replyLanguage(context.text??'')==='ar';
-  return {...decision,text:`${ar?'فروع المجوهرات المتاحة في هذه المنطقة:':'Jewelry branches available in this area:'}\n\n${values.map(value=>branchDetailText(value,ar)).join('\n\n')}`};
+  return {...decision,text:`${ar?'أكيد، فهمت أنك تبحث عن فروع المجوهرات في هذه المنطقة. هذه هي الفروع المتاحة:':'Of course. I understand you’re looking for jewelry branches in this area. These are the available branches:'}\n\n${values.map(value=>branchDetailText(value,ar,false)).join('\n\n')}`};
 }

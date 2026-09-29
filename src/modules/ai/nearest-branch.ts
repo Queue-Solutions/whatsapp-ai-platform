@@ -134,20 +134,20 @@ export async function nearestBranchReply(context:MessageContext,sources:Knowledg
   const mapped=located.filter((v):v is NonNullable<typeof v>=>v!==null);
   const serviceSources=[...(btc?.sources??[]),...(repair?.sources??[])];
   if(!mapped.length)return {action:'answer',reason:'approved_knowledge',sources:[...serviceSources,...candidates.slice(0,32).map(c=>c.source)].map(sourceRef),text:ar
-    ?'إحداثيات الفروع الدقيقة غير متاحة للمقارنة حاليًا، لذلك لا يمكنني تحديد الفرع الأقرب بدقة. اكتب اسم الفرع المطلوب لعرض عنوانه ورابط الموقع المتاح.'
-    :'I don’t have confirmed branch coordinates to compare right now. Type a branch name and I can send its saved address and available location link.'};
+    ?'فهمت أنك تبحث عن أقرب فرع. إحداثيات الفروع الدقيقة غير متاحة للمقارنة حاليًا، لذلك لا يمكنني تحديد الفرع الأقرب بدقة. اكتب اسم الفرع المطلوب لعرض عنوانه ورابط الموقع المتاح.'
+    :'I understand you’re looking for the nearest branch. I don’t have confirmed branch coordinates to compare right now. Type a branch name and I can send its saved address and available location link.'};
   const pin=await locations.pin(query);
   const approvedArea=pin?null:approvedAreaOrigin(query,mapped);
   const externalArea=pin||approvedArea?null:await locations.area(query,mapped.map(m=>m.position));
   const area=approvedArea??externalArea;
   const origin=pin??area;
-  if(!origin)return clarify(ar?'لم أتمكن من تحديد هذه المنطقة بشكل مؤكد. يرجى إرسال موقعك عبر واتساب أو رابط دبوس Google Maps لمقارنة المسافات.'
-    :'I couldn’t identify that area unambiguously. Please share your WhatsApp location or a Google Maps pin so I can compare distances.');
+  if(!origin)return clarify(ar?'فهمت أنك تريد معرفة الفرع الأقرب، لكن لم أتمكن من تحديد هذه المنطقة بشكل مؤكد. يرجى إرسال موقعك عبر واتساب أو رابط دبوس Google Maps لمقارنة المسافات.'
+    :'I understand you want the nearest branch, but I couldn’t identify that area unambiguously. Please share your WhatsApp location or a Google Maps pin so I can compare distances.');
   const ranked=mapped.map(m=>({...m,distance:distanceKm(origin,m.position)})).sort((a,b)=>a.distance-b.distance||a.name.localeCompare(b.name));
   const shown=ranked.slice(0,3),complete=mapped.length===expected;
   const serviceName=repair?(ar?'للصيانة والعناية الفنية':'maintenance'):product==='btc'?'BTC':ar?'للمجوهرات':'jewelry';
-  const intro=ar?`أقرب الخيارات ${serviceName} حسب المسافة المباشرة${area?' من مركز المنطقة تقريبًا':''}:`
-    :`Closest ${serviceName} options by straight-line distance${area?' from the approximate area centre':''}:`;
+  const intro=ar?`أكيد، فهمت أنك تبحث عن أقرب خيار ${serviceName}. هذه أقرب الخيارات حسب المسافة المباشرة${area?' من مركز المنطقة تقريبًا':''}:`
+    :`Of course. I understand you’re looking for the nearest ${serviceName} option. These are the closest options by straight-line distance${area?' from the approximate area centre':''}:`;
   const caveat=ar?'هذه مسافات مباشرة، وليست مسافات قيادة أو أوقات وصول.':'These are straight-line distances, not driving distances or travel times.';
   const coverage=complete?'':ar?'تشمل المقارنة الفروع ذات المواقع المؤكدة فقط. قد يوجد فرع أقرب ضمن الفروع التي لا تتوفر إحداثياتها.'
     :'This comparison includes only branches with confirmed coordinates. A branch with missing location data could be closer.';

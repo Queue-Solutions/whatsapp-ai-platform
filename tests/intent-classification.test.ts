@@ -86,7 +86,7 @@ describe('semantic intent classification',()=>{
     const classifyIntent=vi.fn(),complete=vi.fn(),loadSources=vi.fn();
     const strategy=new GroundedStrategy(loadSources,ledger(),{complete,classifyIntent});
     const first=await strategy.reply({...context,requestKey:'greeting-1',text:'Hi',history:[]});
-    expect(first.text).toContain('Welcome to IRAM');expect(first.text).toContain('jewelry or BTC');
+    expect(first.text).toContain('Welcome to IRAM');expect(first.text).toContain('AI-powered assistant');expect(first.text).toContain('IRAM representative');
     const history=[{role:'user' as const,content:'Hi'},{role:'assistant' as const,content:first.text}];
     const second=await strategy.reply({...context,requestKey:'greeting-2',text:'How are u ?',history});
     expect(second.text).toContain('doing well');expect(second.text).not.toContain('Welcome to IRAM');expect(second.text).not.toContain('jewelry or BTC');

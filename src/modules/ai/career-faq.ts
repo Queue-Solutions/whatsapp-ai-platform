@@ -21,8 +21,8 @@ function isCareerFaq(source:KnowledgeSource){
 function localizedAnswer(answer:string,context:MessageContext){
   const email=answer.match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/i)?.[0];
   if(email&&/\b(?:cv|resume|résumé)\b/i.test(answer))return replyLanguage(context.text??'')==='ar'
-    ? `يرجى إرسال السيرة الذاتية إلى بريد الموارد البشرية:\n${email}`
-    : `Please send your CV to the Human Resources email address:\n${email}`;
+    ? `يسعدنا اهتمامك بالانضمام إلى فريق IRAM. يرجى إرسال السيرة الذاتية إلى بريد الموارد البشرية:\n${email}`
+    : `Thank you for your interest in joining IRAM. Please send your CV to the Human Resources email address:\n${email}`;
   return answer.trim();
 }
 

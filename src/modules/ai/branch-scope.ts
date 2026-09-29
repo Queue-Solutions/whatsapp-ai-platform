@@ -105,6 +105,6 @@ export function unsolicitedBranches(context:MessageContext,decision:Pick<AgentDe
 export function scopeClarification(context:MessageContext):AgentDecision {
   const ar=replyLanguage(context.text??'')==='ar',branchRelated=branchScope(context)==='detail';
   return {action:'clarify',reason:'reply_scope_clarification',sources:[],text:branchRelated
-    ? ar?'تقصد أي فرع؟ اكتب اسم الفرع أو المنطقة وسأساعدك مباشرة.':'Which branch do you mean? Share its name or area and I’ll help directly.'
-    : ar?'تحب أساعدك في المجوهرات، منتجات BTC والسبائك، الفروع، ولا خدمة أخرى من IRAM؟':'What can I help with at IRAM—jewelry, BTC / bullion, branches, or another service?'};
+    ? ar?'فهمت أنك تسأل عن أحد الفروع. تقصد أي فرع؟ اكتب اسم الفرع أو المنطقة وسأساعدك مباشرة.':'I understand you’re asking about a branch. Which one do you mean? Share its name or area and I’ll help directly.'
+    : ar?'يسعدني مساعدتك. هل استفسارك عن المجوهرات، أو منتجات BTC والسبائك، أو الفروع، أو خدمة أخرى من IRAM؟':'I’ll be happy to help. Is your enquiry about jewelry, BTC / bullion, branches, or another IRAM service?'};
 }

@@ -98,5 +98,7 @@ export function repairFaqReply(context:MessageContext,sources:KnowledgeSource[],
   if(!source||!value)return null;
   const text=replyLanguage(context.text??'')==='ar'?arabicRepairAnswer(value.answer):value.answer.trim();
   if(!text)return null;
-  return {action:'answer',reason:'approved_knowledge',text,sources:[sourceRef(source)]};
+  const ar=replyLanguage(context.text??'')==='ar';
+  const acknowledgement=ar?'أكيد، يمكننا مساعدتك بخصوص الصيانة والعناية الفنية.':'Of course. We can help with maintenance and technical care.';
+  return {action:'answer',reason:'approved_knowledge',text:`${acknowledgement}\n\n${text}`,sources:[sourceRef(source)]};
 }

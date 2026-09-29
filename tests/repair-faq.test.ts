@@ -29,7 +29,7 @@ describe('approved repair FAQ routing',()=>{
  });
  it('keeps the approved English FAQ answer for an English repair request',async()=>{
   const complete=vi.fn(),decision=await new GroundedStrategy(async()=>[repair],ledger(),{complete}).reply({...context,text:'I need to repair a necklace I bought from you'});
-  expect(decision.text).toBe(answer);expect(complete).not.toHaveBeenCalled();
+  expect(decision.text).toBe(`Of course. We can help with maintenance and technical care.\n\n${answer}`);expect(complete).not.toHaveBeenCalled();
  });
  it('does not confuse a new jewelry purchase with a repair request',()=>{
   expect(isRepairEnquiry('عايز اشتري سلسلة من عندكم')).toBe(false);expect(isRepairEnquiry('السلسلة دي تصلح هدية؟')).toBe(false);
