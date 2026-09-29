@@ -35,6 +35,20 @@ function asksContactTiming(text:string){
   return /\b(?:when|how soon)\b.{0,45}\b(?:call|contact|reach|reply|get back)\b|\b(?:call|contact|reach|get back)\b.{0,45}\bwhen\b/i.test(normalized)
     || /(?:امتي|متى).{0,24}(?:هيكلمني|هتكلمني|هيتصل|هتتصل|هيتواصل|هتتواصل|حد|مندوب|ممثل)|(?:هيكلمني|هتكلمني|هيتصل|هتتصل|هيتواصل|هتتواصل|حد|مندوب|ممثل).{0,24}(?:امتي|متى)/i.test(normalized);
 }
+function asksFollowUpReason(text:string){
+  return /^(?:why|why is that|how come|ليه|ليه كده|ليه كدا|لماذا)[.!،,؟? ]*$/i.test(normalizeIntent(text).trim());
+}
+function followUpReasonReply(context:MessageContext,current:FollowUpContext):AgentDecision {
+  const pending=reply(context,current.reason,current.summary,current);
+  const question=pending.text.split('\n\n').at(-1)??pending.text;
+  const ar=followUpArabic(context);
+  const explanation=current.reason==='missing_business_information'
+    ?ar?'لأن المعلومة المطلوبة غير متاحة للمساعد الذكي بشكل مؤكد حاليًا، تم تحويل طلبك حتى يتمكن أحد ممثلي IRAM من تزويدك بالمعلومة الصحيحة.':'Because the requested information is not currently confirmed for the AI assistant, your request was referred so an IRAM representative can provide the correct information.'
+    :current.reason==='complaint'
+      ?ar?'لأن رسالتك تتضمن مشكلة تحتاج إلى مراجعة شخصية، سيتابعها أحد ممثلي IRAM معك مباشرة.':'Because your message describes an issue that needs personal review, an IRAM representative will follow it up with you directly.'
+      :ar?'لأنك طلبت التحدث مع شخص من فريق IRAM، بدأنا طلب المتابعة الشخصية.':'Because you asked to speak with a person from the IRAM team, a personal follow-up was started.';
+  return {...pending,text:`${explanation}\n\n${question}`};
+}
 function reply(context:MessageContext,reason:string,summary:string,details:FollowUpDetails):AgentDecision {
   const ar=followUpArabic(context);
   let text:string;
@@ -81,6 +95,7 @@ export function continueFollowUp(context:MessageContext):AgentDecision|null {
   const text=context.text?.trim()??'';
   if(/^(?:no thanks|skip)[.! ]*$|(?:don't|do not|won't|rather not).{0,20}(?:share|give).{0,20}(?:number|name|details)|(?:مش|لا).{0,15}(?:هدي|هقول|اشارك)|بدون رقم|مش حابب.{0,20}(?:رقم|بيانات|اسم)/i.test(text))
     return reply(context,current.reason,current.summary,{...current,state:'declined'});
+  if(current.purpose!=='career'&&asksFollowUpReason(text))return followUpReasonReply(context,current);
   if(current.purpose!=='career'&&asksContactTiming(text))return contactTimingReply(context,current);
   if(current.purpose==='career'&&!current.role){
     // A role is user-provided text, not an inferred vacancy. New questions can leave this flow.

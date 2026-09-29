@@ -2,7 +2,7 @@ import type {AgentDecision,KnowledgeSource} from './contracts';
 import type {MessageContext} from '../messaging/types';
 import {branchData,productIntent,productQuestion,sourceRef} from './branch-dialogue';
 import {btcCatalog,btcBranchRecords} from './btc-branches';
-import {nearestIntent,normalizeIntent,locationWords} from './branch-scope';
+import {nearestIntent,normalizeIntent,locationWords,matchingBranches} from './branch-scope';
 import {distanceKm,point,coordinates,type LocationResolver} from './branch-location';
 import {replyLanguage} from './language';
 import {knowledgeGap} from './knowledge-gap';
@@ -28,7 +28,8 @@ function cleanArea(value:string){
 function inlineArea(text:string){
   const english=text.match(/\b(?:(?:i(?:'m|\s+am)\s+)?(?:located\s+)?(?:in|from|at|near|around)|close\s+to)\s+(.+?)(?=\s+(?:what|which|where|who|how|would|could|can|should|and\s+i|so\s+i)\b|[?؟!]|$)/i);
   const arabic=text.match(/(?:^|\s)(?:(?:انا|اني)\s+)?(?:في|من|عند|قريب\s+من|جنب)\s+(.+?)(?=\s+(?:ايه|فين|ازاي|ازاى|اقرب|أقرب|عايز|عاوز|محتاج|ممكن)\b|[?؟!]|$)/i);
-  return cleanArea(english?.[1]??arabic?.[1]??'');
+  const arabicDestination=text.match(/(?:^|\s)لل\s*(.+?)(?=\s+(?:ايه|فين|ازاي|ازاى|اقرب|أقرب|عايز|عاوز|محتاج|ممكن)\b|[?؟!]|$)/i);
+  return cleanArea(english?.[1]??arabic?.[1]??arabicDestination?.[1]??'');
 }
 function areaReply(text:string){
   return inlineArea(text)||cleanArea(text);
@@ -125,6 +126,27 @@ export async function nearestBranchReply(context:MessageContext,sources:Knowledg
     :repair?repairMatches.map(({entry,matches})=>({source:matches[0],name:branchData(matches[0])?.name??entry.name}))
       :sources.filter(s=>branchData(s)).map(source=>({source,name:branchData(source)!.name}));
   if(!expected)return knowledgeGap(context,'No approved branch records are available for a location comparison.');
+  // A named area that already contains eligible branches is more useful than a
+  // global top-three distance list. Return every eligible branch registered in
+  // that area, including equivalent names such as Tagamo3, Fifth Settlement and
+  // New Cairo, before falling back to geographic ranking.
+  const areaMatches=context.type==='location'||coordinates(query)||/^https:\/\//.test(query)
+    ?[]:matchingBranches(query,candidates.map(candidate=>candidate.source));
+  if(areaMatches.length>1){
+    const matchedIds=new Set(areaMatches.map(source=>source.id));
+    const inArea=candidates.filter(candidate=>matchedIds.has(candidate.source.id));
+    const serviceSources=[...(btc?.sources??[]),...(repair?.sources??[])];
+    const intro=product==='btc'
+      ?ar?`بالنسبة لمنطقة ${query}، فروع خدمة BTC والسبائك المسجلة فيها هي:`:`For ${query}, these are the registered BTC / bullion service branches:`
+      :repair
+        ?ar?`بالنسبة لمنطقة ${query}، فروع الصيانة والعناية الفنية المسجلة فيها هي:`:`For ${query}, these are the registered maintenance branches:`
+        :ar?`بالنسبة لمنطقة ${query}، فروع المجوهرات المسجلة فيها هي:`:`For ${query}, these are the registered jewelry branches:`;
+    const lines=inArea.map(candidate=>{const data=branchData(candidate.source);return `• ${candidate.name}${data?.city?` — ${data.city}`:''}`;});
+    const footer=ar?'اكتب اسم الفرع المطلوب لعرض العنوان الكامل ورابط الموقع'+(product==='btc'?' ورقم خدمة BTC.':'.')
+      :'Type a branch name to receive its full address and location link'+(product==='btc'?' and BTC phone number.':'.');
+    return {action:'answer',reason:'approved_knowledge',sources:[...new Map([...serviceSources,...inArea.map(candidate=>candidate.source)].map(source=>[source.id,source])).values()].map(sourceRef),
+      text:[intro,lines.join('\n'),footer].join('\n\n')};
+  }
   // Bound outbound map lookups; missing/unmatched records remain part of the coverage check.
   const located=await Promise.all(candidates.slice(0,32).map(async entry=>{
     const data=branchData(entry.source)!;

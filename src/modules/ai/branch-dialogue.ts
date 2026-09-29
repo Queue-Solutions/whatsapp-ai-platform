@@ -3,7 +3,7 @@ import type {MessageContext} from '../messaging/types';
 import {branchScope,normalizeIntent,matchingBranches,locationWords} from './branch-scope';
 import {replyLanguage} from './language';
 
-export const bullionPattern=/\bbtc\b|\bbullion\b|\bgold (?:bars?|coins?)\b|سبائك|سبيكه|جنيهات? الذهب|جنيه ذهب/;
+export const bullionPattern=/\bbtc\b|\bbullion\b|\bgold (?:bars?|coins?)\b|سبائك|سبيكه|جنيهات? (?:ال)?(?:ذهب|دهب)|جنيه (?:ال)?(?:ذهب|دهب)/;
 const jewelryPattern=/\bjewel(?:ry|lery)\b|مجوهرات|مشغولات|الماس|دبل|خواتم/;
 export function productIntent(context:MessageContext):'btc'|'jewelry'|null {
   for(const text of [context.text??'',...(context.history??[]).filter(m=>m.role==='user').map(m=>m.content).reverse()]){

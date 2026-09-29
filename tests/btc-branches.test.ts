@@ -26,8 +26,13 @@ describe('BTC FAQ is the branch eligibility authority',()=>{
  });
  it('confirms the customer’s gold-coin request before showing only approved BTC branches',async()=>{
   const f=fixture();const decision=await f.strategy.reply({...base,text:'What branches sell gold coins?',history:[]});
-  expect(decision.text).toMatch(/^Yes, gold coins are available through our BTC \/ bullion service\./);
+  expect(decision.text).toMatch(/^Yes, IRAM offers gold coins through its BTC \/ bullion service\./);
   expect(decision.text).toContain('Branches offering BTC / bullion services:');expect(decision.text.split('\n').filter(line=>line.startsWith('• '))).toHaveLength(8);
+  expect(f.complete).not.toHaveBeenCalled();expect(f.reserve).not.toHaveBeenCalled();
+ });
+ it('understands Egyptian دهب and gives a product-specific confirmation',async()=>{
+  const f=fixture();const decision=await f.strategy.reply({...base,text:'ايه الفروع اللي عندها جنيهات دهب؟',history:[]});
+  expect(decision.text).toMatch(/^أيوه، جنيهات الذهب متاحة لدى IRAM/);expect(decision.text).toContain('IRAM Nox');expect(decision.text).toContain('TJH Mivida');
   expect(f.complete).not.toHaveBeenCalled();expect(f.reserve).not.toHaveBeenCalled();
  });
  it.each(names.map((name,i)=>[name,i] as const))('joins %s to its own address/map and the BTC-specific FAQ phone',async(name,i)=>{
@@ -43,6 +48,16 @@ describe('BTC FAQ is the branch eligibility authority',()=>{
   const decision=await fixture().strategy.reply({...base,text});
   expect(decision.text.split('\n').filter(line=>line.startsWith('• '))).toEqual([`• ${names[2]} — ${cities[2]}`,`• ${names[3]} — ${cities[3]}`]);
   expect(decision.text).not.toMatch(/Korba|City stars|Maadi|Arkan|Alex|Mansoura/);
+ });
+ it('keeps a repeated Tagamo3 follow-up scoped to every eligible New Cairo branch',async()=>{
+  const classifyIntent=vi.fn(async()=>({decision:{intent:'branch' as const,confidence:.99,language:'ar' as const,product:'btc' as const,
+    branchMode:'directory' as const,branchDetail:'general' as const,branchLabels:[],originEvidence:'',originQuery:'',
+    normalizedQuery:'كل فروع BTC',analyticsTopic:'فروع BTC',summary:'',risk:'none' as const},input:100,output:20}));
+  const complete=vi.fn(),usage={reserve:vi.fn(async()=>({status:'new' as const,id:'reservation'})),finish:vi.fn()};
+  const decision=await new GroundedStrategy(async()=>[makeFaq(),...records],usage,{complete,classifyIntent}).reply({...base,text:'ايه منهم في التجمع؟',
+    history:[{role:'user',content:'عندكم جنيهات دهب؟'},{role:'assistant',content:'الفروع المتاحة لخدمة BTC والسبائك: IRAM Nox, TJH Mivida'}]});
+  expect(decision.text.split('\n').filter(line=>line.startsWith('• '))).toEqual([`• ${names[2]} — ${cities[2]}`,`• ${names[3]} — ${cities[3]}`]);
+  expect(decision.text).not.toMatch(/Korba|City stars|Maadi|Arkan|Alex|Mansoura/);expect(complete).not.toHaveBeenCalled();
  });
  it('does not let a stale classifier branch override the latest explicit BTC city',async()=>{
   const classifyIntent=vi.fn(async()=>({decision:{intent:'branch' as const,confidence:.99,language:'ar' as const,product:'btc' as const,

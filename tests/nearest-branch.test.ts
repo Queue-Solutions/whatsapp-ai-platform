@@ -107,6 +107,15 @@ describe('nearest branch conversation',()=>{
     expect(result.reason).toBe('approved_knowledge');expect(result.text).toContain('IRAM Korba — Heliopolis — 0.0 كم');
     expect(f.locations.area).not.toHaveBeenCalled();expect(f.complete).not.toHaveBeenCalled();
   });
+  it('returns every eligible BTC branch registered in Tagamo3 before global distance ranking',async()=>{
+    const localBranches=[branch('nox','IRAM Nox','Fifth Settlement','30.02','31.49'),branch('mivida','TJH Mivida','New Cairo','30.01','31.48'),branch('korba','IRAM Korba','Heliopolis','30.09','31.32')];
+    const localFaq:KnowledgeSource={...faq,content:JSON.stringify({question:'What information can you provide about your bullion or BTC products?',answer:'IRAM Nox: 01200000001\nTJH Mivida: 01200000002\nIRAM Korba: 01200000003\nBTC working hours: Daily from 12:00 PM to 8:30 PM.'})};
+    const locations:LocationResolver={pin:vi.fn(),area:vi.fn()};
+    const strategy=new GroundedStrategy(async()=>[localFaq,...localBranches],{reserve:vi.fn(),finish:vi.fn()},{complete:vi.fn()},'whatsapp',locations);
+    const result=await strategy.reply({...base,text:'ايه اقرب فرع للتجمع الخامس؟',requestKey:'nearest:tagamo3',history:[{role:'user',content:'BTC'}]});
+    expect(result.text.split('\n').filter(line=>line.startsWith('• '))).toEqual(['• IRAM Nox — Fifth Settlement','• TJH Mivida — New Cairo']);
+    expect(result.text).not.toContain('IRAM Korba');expect(locations.pin).not.toHaveBeenCalled();expect(locations.area).not.toHaveBeenCalled();
+  });
   it('keeps a typed area in nearest-branch recovery after an unsuccessful location prompt',async()=>{
     const f=fixture();vi.mocked(f.locations.area).mockResolvedValue(null);
     const history:MessageContext['history']=[

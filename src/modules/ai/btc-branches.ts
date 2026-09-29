@@ -87,7 +87,7 @@ function hoursText(hours:string[],ar:boolean){
 }
 function directory(context:MessageContext,catalog:BtcCatalog,sources:KnowledgeSource[],entries=catalog.entries,unlisted=false):AgentDecision {
   const ar=replyLanguage(context.text??'')==='ar';
-  const goldCoins=/\bgold coins?\b|جنيهات? الذهب|جنيه ذهب/.test(normalizeIntent(context.text??''));
+  const goldCoins=/\bgold coins?\b|جنيهات? (?:ال)?(?:ذهب|دهب)|جنيه (?:ال)?(?:ذهب|دهب)/.test(normalizeIntent(context.text??''));
   const refs=[...catalog.sources];
   const lines=entries.map(entry=>{
     const records=btcBranchRecords(entry,sources);
@@ -97,8 +97,10 @@ function directory(context:MessageContext,catalog:BtcCatalog,sources:KnowledgeSo
   });
   const acknowledgement=unlisted?(ar?'فهمت أنك تسأل عن هذا الفرع. هذا الفرع غير مدرج ضمن فروع BTC المؤكدة في المعلومات المتاحة.':'I understand you’re asking about that branch. It is not listed for BTC in the approved information.')
     :goldCoins
-      ?ar?'نعم، جنيهات الذهب متاحة من خلال خدمة BTC والسبائك.':'Yes, gold coins are available through our BTC / bullion service.'
-      :ar?'أكيد، فهمت أنك تبحث عن فروع خدمة BTC والسبائك.':'Of course. I understand you’re looking for BTC / bullion service branches.';
+      ?ar?'أيوه، جنيهات الذهب متاحة لدى IRAM من خلال خدمة BTC والسبائك.':'Yes, IRAM offers gold coins through its BTC / bullion service.'
+      :entries.length<catalog.entries.length
+        ?ar?'أكيد، دي فروع خدمة BTC والسبائك المتاحة في المنطقة اللي سألت عنها.':'Of course. These are the BTC / bullion service branches in the area you asked about.'
+        :ar?'أكيد، خدمة BTC والسبائك متاحة في الفروع التالية.':'Of course. BTC / bullion service is available at the following branches.';
   const intro=`${acknowledgement}\n\n${ar?'الفروع المتاحة لخدمة BTC والسبائك:':'Branches offering BTC / bullion services:'}`;
   const hours=hoursText(catalog.hours,ar);
   return {action:'answer',reason:'approved_knowledge',sources:[...new Map(refs.map(s=>[s.id,s])).values()].map(sourceRef),

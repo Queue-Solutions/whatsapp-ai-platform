@@ -18,6 +18,7 @@ import { knowledgeGap } from './knowledge-gap';
 import { assistantResumedReply, beginFollowUp, continueFollowUp, isCareerEnquiry, repeatFollowUp } from './follow-up';
 import {careerFaqReply} from './career-faq';
 import {repairFaqReply} from './repair-faq';
+import {pricingReply} from './pricing';
 import { formatReply, formatBusinessReply, formatBranchReply } from './reply-format';
 import { buildRequest, ModelFailure, type ModelProvider } from './openai';
 import {buildIntentRequest,catalogFingerprint,contextForIntent,isStoredIntentDecision,type IntentDecision,type StoredIntentDecision} from './intent-classification';
@@ -105,6 +106,17 @@ export class GroundedStrategy implements ReplyStrategy {
     if (context.eligible === false) return fallback(context, 'ineligible', 'suppress');
     if(context.resumeRequested)return assistantResumedReply(context);
     const careerIntent=isCareerEnquiry(context.text??'');
+    if (!['text','location'].includes(context.type) || !context.text?.trim()) return fallback(context, 'unsupported_message');
+    if (!context.requestKey) return fallback(context, 'missing_request_identity');
+    if (Buffer.byteLength(context.text, 'utf8') > 3500) return fallback(context, 'message_too_long');
+    // Exact standalone greetings and thanks describe the latest turn completely.
+    // Resolve them before classification so stale issue history (or a cached
+    // classifier result) can never reopen a completed personal follow-up.
+    const social=socialReply(context.text,context.history);if(social)return social;
+    // Live prices are deliberately handled as a known policy, not as missing
+    // knowledge. This also explains an immediate "why?" from older conversations
+    // that entered contact collection before the price policy existed.
+    const pricing=pricingReply(context);if(pricing)return pricing;
     // Career collection was retired: ignore any legacy in-progress career form and answer from the approved FAQ instead.
     // A new hiring/HR question also exits any unrelated contact-collection flow.
     const contactReply=context.followUp?.purpose==='career'||careerIntent?null:continueFollowUp(context);
@@ -114,13 +126,6 @@ export class GroundedStrategy implements ReplyStrategy {
     // take precedence below (for example, "Alexandria").
     const inferredName=contactReply?.followUp?.name&&!context.followUp?.name&&!/(?:my name is|name\s*:|اسمي|إسمي|الاسم\s*:)/i.test(context.text??'');
     if(contactReply&&(!inferredName||contactReply.followUp?.phone))return contactReply;
-    if (!['text','location'].includes(context.type) || !context.text?.trim()) return fallback(context, 'unsupported_message');
-    if (!context.requestKey) return fallback(context, 'missing_request_identity');
-    if (Buffer.byteLength(context.text, 'utf8') > 3500) return fallback(context, 'message_too_long');
-    // Exact standalone greetings and thanks describe the latest turn completely.
-    // Resolve them before classification so stale issue history (or a cached
-    // classifier result) can never reopen a completed personal follow-up.
-    const social=socialReply(context.text,context.history);if(social)return social;
     let sources:KnowledgeSource[]=[],knowledgeUnavailable=false;
     try {
       const loaded=await this.loadSources(context.tenantId);
@@ -210,7 +215,10 @@ export class GroundedStrategy implements ReplyStrategy {
     const classifiedOrigin=useClassification?.intent==='nearest_branch'
       ?{evidence:useClassification.originEvidence,query:useClassification.originQuery}:null;
     const nearest=await nearestBranchReply(context,available,this.locations,classifiedProduct,classifiedOrigin);if(nearest)return nearest;
-    const btcReply=btcBranchReply(routed,available);if(btcReply)return btcReply;
+    // Preserve the customer's current area wording. Product intent can still be
+    // inherited from history, while a classifier rewrite must not broaden a
+    // Tagamo3/New Cairo request back into the complete BTC directory.
+    const btcReply=btcBranchReply({...routed,text:context.text},available);if(btcReply)return btcReply;
     const branchDetail=directBranchDetail(routed,available);if(branchDetail)return branchDetail;
     const branchDirectory=directJewelryDirectory(routed,available);if(branchDirectory)return branchDirectory;
     // A straightforward return/exchange/refund request is a policy workflow, not
