@@ -1,7 +1,7 @@
 import {continuesNearestBranch,nearestBranchReply} from './nearest-branch';
 import {GeoLocations,type LocationResolver} from './branch-location';
 import {btcBranchReply} from './btc-branches';
-import {technicalFailure,recoverableFailure} from './recovery';
+import {technicalFailure,recoverableFailure,RECOVERY_FALLBACK_REASON} from './recovery';
 import {hasUnsupportedLink,offeredLinks} from './approved-links';
 import {needsProductQuestion,productQuestion,renderBranchAnswer,directBranchDetail,directJewelryDirectory,productIntent,bullionPattern} from './branch-dialogue';
 import {resolveContinuation,isProductChoiceContinuation,isShortAcceptance} from './conversation-context';
@@ -42,8 +42,17 @@ function isAgentDecision(value:unknown):value is AgentDecision {
   return typeof decision.text==='string'&&typeof decision.action==='string'&&typeof decision.reason==='string'&&Array.isArray(decision.sources);
 }
 const defaultLocations=new GeoLocations();
-export const AI_RETRY_DELAY_MS=4000;
+export const AI_RETRY_DELAYS_MS=[3000,7000] as const;
+export const AI_INTENT_TIMEOUT_MS=8000;
+export const AI_ANSWER_TIMEOUT_MS=12000;
+export const AI_RECOVERY_TIMEOUT_MS=8000;
 const defaultRetryDelay=(milliseconds:number)=>new Promise<void>(resolve=>setTimeout(resolve,milliseconds));
+function safeRecoveryFallback(context:MessageContext):AgentDecision {
+  const ar=replyLanguage(context.text??'')==='ar';
+  return {action:'clarify',reason:RECOVERY_FALLBACK_REASON,sources:[],text:ar
+    ?'وصلتني رسالتك. لم أتمكن من تأكيد الإجابة الآن، لكن يمكنني مساعدتك في المجوهرات، منتجات BTC والسبائك، الفروع، الصيانة، الاسترجاع والاستبدال، أو التواصل مع أحد ممثلي IRAM. اكتب الخدمة التي تريدها وسأكمل معك.'
+    :'I received your message. I could not confirm the answer right now, but I can help with jewelry, BTC and bullion, branches, repairs, returns and exchanges, or contacting an IRAM representative. Tell me which service you need and I’ll continue with you.'};
+}
 export class GroundedStrategy implements ReplyStrategy {
   constructor(private loadSources: SourceLoader, private ledger: UsageLedger, private provider: ModelProvider,
     private purpose: 'whatsapp'|'acceptance' = 'whatsapp', private locations:LocationResolver=defaultLocations,
@@ -52,11 +61,16 @@ export class GroundedStrategy implements ReplyStrategy {
     const resolved=resolveContinuation(context);
     let decision=await this.generate(resolved);
     for(let attempt=1;attempt<=2&&context.requestKey&&context.eligible!==false&&recoverableFailure(decision.reason);attempt++){
-      await this.retryDelay(AI_RETRY_DELAY_MS);
+      await this.retryDelay(AI_RETRY_DELAYS_MS[attempt-1]);
       decision=await this.generate(resolved,decision.reason,attempt);
     }
-    // Includes cached decisions from older deployments: never return their technical-error prose.
-    if(technicalFailure(decision.reason))return {...decision,text:'',action:'suppress',sources:[]};
+    // Includes cached decisions from older deployments. A verified local
+    // continuity reply is safer than silence and does not depend on the model,
+    // approved business facts, or another retry inside the serverless deadline.
+    if(technicalFailure(decision.reason)){
+      const recovery=safeRecoveryFallback(resolved);
+      return {...recovery,...(decision.usage?{usage:decision.usage}:{}),text:formatBusinessReply(recovery.text)};
+    }
     const followUp=decision.followUp?decision:decision.action==='handoff'||decision.reason==='missing_business_information'
       ? beginFollowUp(context,decision):decision;
     return {...followUp,text:followUp.reason.startsWith('social_')?formatReply(followUp.text):formatBusinessReply(followUp.text),
@@ -73,7 +87,7 @@ export class GroundedStrategy implements ReplyStrategy {
     if(reservation.status!=='new'||!reservation.id)return null;
     const start=Date.now();
     try{
-      const result=await this.provider.classifyIntent(request,{timeoutMs:10000});
+      const result=await this.provider.classifyIntent(request,{timeoutMs:AI_INTENT_TIMEOUT_MS});
       const allowed=new Set(sources.map(source=>source.label));
       if(result.decision.branchLabels.some(label=>!allowed.has(label)))throw new ModelFailure('openai_invalid_intent',result);
       const stored:StoredIntentDecision={kind:'intent_classification',catalogFingerprint:fingerprint,...result.decision};
@@ -227,7 +241,7 @@ export class GroundedStrategy implements ReplyStrategy {
     if (reservation.status !== 'new' || !reservation.id) return fallback(context, reservation.status==='failed'&&reservation.errorCode?reservation.errorCode:`ai_${reservation.status}`);
     const start = Date.now();
     let result: Awaited<ReturnType<ModelProvider['complete']>>;
-    try { result = await this.provider.complete(request,{timeoutMs:recoveryAttempt?10000:16000}); }
+    try { result = await this.provider.complete(request,{timeoutMs:recoveryAttempt?AI_RECOVERY_TIMEOUT_MS:AI_ANSWER_TIMEOUT_MS}); }
     catch (error) {
       const known = error instanceof ModelFailure ? error : new ModelFailure('openai_unknown_failure');
       await this.ledger.finish(context.tenantId, reservation.id, { state: 'failed', input: known.usage?.input ?? null,

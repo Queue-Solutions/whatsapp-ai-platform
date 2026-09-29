@@ -50,12 +50,12 @@ describe('branch listings require a request',()=>{
  it('blocks unsolicited branchLines and directories hidden in prose, including cached replies',async()=>{
   const text='IRAM Riverside — Riverside Road. IRAM Garden — Garden Road.';
   for(const branchLines of [[],['Riverside','Garden']]){
-   const result=await new GroundedStrategy(async()=>[...branches,faq],ledger(),{complete:async()=>({decision:{action:'answer',text,branchLines,sourceLabels:['F1']},input:100,output:40})}).reply({...context,text:'How can I pay?'});
-   expect(result).toMatchObject({action:'suppress',reason:'invalid_intent_action',text:''});
+   const result=await new GroundedStrategy(async()=>[...branches,faq],ledger(),{complete:async()=>({decision:{action:'answer',text,branchLines,sourceLabels:['F1']},input:100,output:40})},'whatsapp',undefined,async()=>{}).reply({...context,text:'How can I pay?'});
+   expect(result).toMatchObject({action:'clarify',reason:'recovery_safe_fallback'});expect(result.text).not.toMatch(/Riverside|Garden/);
   }
   const cached:AgentDecision={action:'answer',text,reason:'approved_knowledge',sources:branches.map(({id,kind,updatedAt})=>({id,kind,updatedAt}))};
-  const result=await new GroundedStrategy(async()=>[...branches,faq],{reserve:async()=>({status:'completed',decision:cached}),finish:vi.fn()},{complete:vi.fn()}).reply({...context,text:'How can I pay?'});
-  expect(result).toMatchObject({action:'suppress',reason:'invalid_intent_action',text:''});
+  const result=await new GroundedStrategy(async()=>[...branches,faq],{reserve:async()=>({status:'completed',decision:cached}),finish:vi.fn()},{complete:vi.fn()},'whatsapp',undefined,async()=>{}).reply({...context,text:'How can I pay?'});
+  expect(result).toMatchObject({action:'clarify',reason:'recovery_safe_fallback'});expect(result.text).not.toMatch(/Riverside|Garden/);
  });
  it('keeps focused branch questions concise without discarding relevant FAQs or valid aggregate citations',async()=>{
   const payment={...faq,content:JSON.stringify({question:'What payment methods do your branches accept?',answer:'Cash or card.'})};

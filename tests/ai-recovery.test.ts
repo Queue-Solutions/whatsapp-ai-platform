@@ -5,7 +5,7 @@ import {productIntent} from '../src/modules/ai/branch-dialogue';
 import {SupabaseMessagingRepository} from '../src/modules/messaging/supabase-repository';
 import {processIncomingMessage} from '../src/modules/messaging/process-incoming-message';
 import {SendError} from '../src/modules/whatsapp/sender';
-import {AI_RECOVERY_SUMMARY} from '../src/modules/ai/recovery';
+import {AI_RECOVERY_SUMMARY,RECOVERY_FALLBACK_REASON} from '../src/modules/ai/recovery';
 import {attentionReason} from '../src/modules/admin/inbox';
 import type {Reservation,UsageLedger} from '../src/modules/ai/ledger';
 import type {KnowledgeSource} from '../src/modules/ai/contracts';
@@ -41,7 +41,7 @@ describe('bounded and silent model recovery',()=>{
   expect(usage.saved.size).toBe(2);expect(usage.reserve).toHaveBeenCalledWith('tenant','message:one:recovery:1','whatsapp');
   expect(usage.finish.mock.calls[0][2]).toMatchObject({state:'failed',input:300,output:650});
   const recovery=JSON.parse(complete.mock.calls[1][0]);expect(recovery.instructions).toContain('internal recovery attempt 1 of 2');expect(recovery.text.format.schema.properties.text.maxLength).toBe(450);
-  expect(delay).toHaveBeenCalledWith(4000);expect(complete.mock.calls[0][1]).toEqual({timeoutMs:16000});expect(complete.mock.calls[1][1]).toEqual({timeoutMs:10000});
+  expect(delay).toHaveBeenCalledWith(3000);expect(complete.mock.calls[0][1]).toEqual({timeoutMs:12000});expect(complete.mock.calls[1][1]).toEqual({timeoutMs:8000});
  });
  it('reprocesses a rejected citation without ever returning its unsupported answer',async()=>{
   const usage=ledger(),complete=vi.fn().mockResolvedValueOnce({...result(),decision:{...result().decision,text:'Invented answer.',sourceLabels:['other-tenant']}}).mockResolvedValue(result());
@@ -62,43 +62,44 @@ describe('bounded and silent model recovery',()=>{
   const delay=vi.fn(noDelay);expect((await new GroundedStrategy(load,usage,{complete},'whatsapp',undefined,delay).reply(context)).action).toBe('answer');
   expect(load).toHaveBeenCalledTimes(2);expect(complete).toHaveBeenCalledOnce();expect(usage.reserve).toHaveBeenCalledOnce();expect(delay).toHaveBeenCalledOnce();
  });
- it('stops after two silent retries and never sends technical prose, including on replay',async()=>{
+ it('stops after two silent retries and returns a local continuity reply, including on replay',async()=>{
   const usage=ledger(),delay=vi.fn(noDelay),complete=vi.fn().mockRejectedValue(new ModelFailure('openai_network_unknown'));
   const strategy=new GroundedStrategy(async()=>[source],usage,{complete},'whatsapp',undefined,delay);
-  for(let i=0;i<3;i++)expect(await strategy.reply(context)).toMatchObject({action:'suppress',text:'',reason:'openai_network_unknown'});
+  for(let i=0;i<3;i++)expect(await strategy.reply(context)).toMatchObject({action:'clarify',reason:RECOVERY_FALLBACK_REASON});
   expect(complete).toHaveBeenCalledTimes(3);expect(usage.reserve).toHaveBeenCalledWith('tenant','message:one:recovery:2','whatsapp');expect(delay).toHaveBeenCalledTimes(6);
   expect(usage.finish.mock.calls.every(c=>c[2].input===null&&c[2].output===null)).toBe(true);
  });
  it.each(['openai_http_401','openai_http_403','openai_refusal'])('does not retry permanent or policy failure %s',async code=>{
   const complete=vi.fn().mockRejectedValue(new ModelFailure(code));
-  expect(await new GroundedStrategy(async()=>[source],ledger(),{complete},'whatsapp',undefined,noDelay).reply(context)).toMatchObject({action:'suppress',text:''});expect(complete).toHaveBeenCalledOnce();
+  expect(await new GroundedStrategy(async()=>[source],ledger(),{complete},'whatsapp',undefined,noDelay).reply(context)).toMatchObject({action:'clarify',reason:RECOVERY_FALLBACK_REASON});expect(complete).toHaveBeenCalledOnce();
  });
  it('honors exhausted budgets and does not open another reservation while the first is still running',async()=>{
   for(const status of ['budget_exhausted','reserved'] as const){
    const usage={reserve:vi.fn(async()=>({status})),finish:vi.fn()},complete=vi.fn();
-   expect(await new GroundedStrategy(async()=>[source],usage,{complete},'whatsapp',undefined,noDelay).reply(context)).toMatchObject({action:'suppress',text:''});expect(usage.reserve).toHaveBeenCalledOnce();expect(complete).not.toHaveBeenCalled();
+   expect(await new GroundedStrategy(async()=>[source],usage,{complete},'whatsapp',undefined,noDelay).reply(context)).toMatchObject({action:'clarify',reason:RECOVERY_FALLBACK_REASON});expect(usage.reserve).toHaveBeenCalledOnce();expect(complete).not.toHaveBeenCalled();
   }
  });
  it('cannot recover when the second budget reservation is denied',async()=>{
   const usage=ledger();usage.reserve.mockResolvedValueOnce({status:'new',id:'first'}).mockResolvedValueOnce({status:'budget_exhausted'});
   const complete=vi.fn().mockRejectedValue(new ModelFailure('openai_network_unknown'));
-  expect(await new GroundedStrategy(async()=>[source],usage,{complete},'whatsapp',undefined,noDelay).reply(context)).toMatchObject({action:'suppress',text:'',reason:'ai_budget_exhausted'});expect(complete).toHaveBeenCalledOnce();
+  expect(await new GroundedStrategy(async()=>[source],usage,{complete},'whatsapp',undefined,noDelay).reply(context)).toMatchObject({action:'clarify',reason:RECOVERY_FALLBACK_REASON});expect(complete).toHaveBeenCalledOnce();
  });
  it('suppresses technical prose in decisions cached by an older deployment',async()=>{
   const complete=vi.fn();const usage={reserve:async()=>({status:'completed' as const,decision:{action:'unavailable' as const,text:'Sorry, a technical issue occurred.',reason:'openai_http_401',sources:[]}}),finish:vi.fn()};
-  expect(await new GroundedStrategy(async()=>[source],usage,{complete}).reply(context)).toMatchObject({action:'suppress',text:''});expect(complete).not.toHaveBeenCalled();
+  expect(await new GroundedStrategy(async()=>[source],usage,{complete}).reply(context)).toMatchObject({action:'clarify',reason:RECOVERY_FALLBACK_REASON});expect(complete).not.toHaveBeenCalled();
  });
- it('never sends a reply when recovery fails and never retries an uncertain WhatsApp send',async()=>{
+ it('sends the local continuity reply when recovery fails and never retries an uncertain WhatsApp send',async()=>{
   const job:MessageJob={id:'job',tenant_id:'tenant',inbound_message_id:'one',lease_token:'lease'};
   const complete=vi.fn().mockRejectedValueOnce(new ModelFailure('openai_incomplete')).mockResolvedValue(result());
   const prepareDecision=vi.fn(async()=>({outbound_id:'out',phone_number_id:'9001',recipient:'allowed',body:'Cash or card.'}));
   const fail=vi.fn(),send=vi.fn().mockRejectedValue(new SendError(true,'timeout'));
   const repository={context:async()=>context,prepareDecision,fail} as unknown as MessagingRepository;
   expect(await processIncomingMessage(job,{repository,sender:{send},strategy:new GroundedStrategy(async()=>[source],ledger(),{complete},'whatsapp',undefined,noDelay)})).toBe('needs_review');expect(send).toHaveBeenCalledOnce();expect(fail).toHaveBeenCalledWith(job,'needs_review','timeout');
-  const suppress=vi.fn(async()=>null),failedComplete=vi.fn().mockRejectedValue(new ModelFailure('openai_incomplete')),delay=vi.fn(noDelay);send.mockClear();
-  expect(await processIncomingMessage(job,{repository:{...repository,prepareDecision:suppress},sender:{send},strategy:new GroundedStrategy(async()=>[source],ledger(),{complete:failedComplete},'whatsapp',undefined,delay)})).toBe('skipped');
-  expect(failedComplete).toHaveBeenCalledTimes(3);expect(delay).toHaveBeenCalledTimes(2);expect(suppress).toHaveBeenCalledOnce();
-  expect(suppress).toHaveBeenCalledWith(job,expect.objectContaining({action:'suppress',text:''}));expect(send).not.toHaveBeenCalled();
+  const safePrepare=vi.fn(async(_job:MessageJob,decision:{text:string})=>({outbound_id:'fallback',phone_number_id:'9001',recipient:'allowed',body:decision.text}));
+  const failedComplete=vi.fn().mockRejectedValue(new ModelFailure('openai_incomplete')),delay=vi.fn(noDelay),fallbackSend=vi.fn(async()=> 'fallback-provider');
+  expect(await processIncomingMessage(job,{repository:{...repository,prepareDecision:safePrepare,complete:vi.fn()},sender:{send:fallbackSend},strategy:new GroundedStrategy(async()=>[source],ledger(),{complete:failedComplete},'whatsapp',undefined,delay)})).toBe('sent');
+  expect(failedComplete).toHaveBeenCalledTimes(3);expect(delay).toHaveBeenCalledTimes(2);expect(safePrepare).toHaveBeenCalledOnce();
+  expect(safePrepare).toHaveBeenCalledWith(job,expect.objectContaining({action:'clarify',reason:RECOVERY_FALLBACK_REASON}));expect(fallbackSend).toHaveBeenCalledOnce();
  });
 });
 

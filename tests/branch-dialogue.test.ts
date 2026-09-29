@@ -213,8 +213,8 @@ describe('approved links and source labels',()=>{
   expect(decision.action).toBe('answer');
  });
  it('rejects lookalike and unapproved URL paths even when they contain an approved hostname',async()=>{
-  const decision=await new GroundedStrategy(async()=>[website],ledger(),{complete:async()=>({decision:{action:'answer',text:'Visit https://shop.example.test/collect',sourceLabels:['W1']},input:100,output:30})}).reply({...base,text:'Could you explain the purchasing page?'});
-  expect(decision.reason).toBe('unsupported_link');
+  const decision=await new GroundedStrategy(async()=>[website],ledger(),{complete:async()=>({decision:{action:'answer',text:'Visit https://shop.example.test/collect',sourceLabels:['W1']},input:100,output:30})},'whatsapp',undefined,async()=>{}).reply({...base,text:'Could you explain the purchasing page?'});
+  expect(decision.reason).toBe('recovery_safe_fallback');expect(decision.text).not.toContain('https://shop.example.test/collect');
  });
  it('restricts generated citations to the actual selected labels',()=>{
   const request=JSON.parse(buildRequest({...base,text:'Online shopping?'},[website]));

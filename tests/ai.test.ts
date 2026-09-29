@@ -128,13 +128,13 @@ describe('grounded reply strategy', () => {
     for (const status of ['reserved','failed','budget_exhausted'] as const) {
       const complete = vi.fn(); const ledger = {reserve:vi.fn(async()=>({status})),finish:vi.fn()};
       const result = await new GroundedStrategy(async()=>[source],ledger,{complete}).reply(context);
-      expect(result.action).toBe('suppress'); expect(result.text).toBe(''); expect(complete).not.toHaveBeenCalled();
+      expect(result).toMatchObject({action:'clarify',reason:'recovery_safe_fallback'});expect(result.text).not.toBe('');expect(complete).not.toHaveBeenCalled();
     }
   });
   it('retains uncertain exposure and never repeats any of the three reserved attempts', async () => {
     const ledger = fakeLedger(); const complete = vi.fn().mockRejectedValue(new ModelFailure('openai_network_unknown'));
     const strategy = new GroundedStrategy(async()=>[source],ledger,{complete},'whatsapp',undefined,noDelay);
-    expect((await strategy.reply(context)).action).toBe('suppress');
+    expect((await strategy.reply(context))).toMatchObject({action:'clarify',reason:'recovery_safe_fallback'});
     await strategy.reply(context); expect(complete).toHaveBeenCalledTimes(3);
     expect(ledger.finish).toHaveBeenCalledWith(tenant,expect.any(String),expect.objectContaining({state:'failed',input:null,output:null}));
   });
@@ -149,21 +149,21 @@ describe('grounded reply strategy', () => {
       { ...modelResult(), decision: { ...modelResult().decision, text:'See https://invented.example.test' } },
     ]) {
       const ledger = fakeLedger(); const decision = await new GroundedStrategy(async()=>[source],ledger,{complete:async()=>result},'whatsapp',undefined,noDelay).reply(context);
-      expect(decision.action).toBe('suppress'); expect(decision.text).toBe(''); expect(decision.usage).toBeDefined(); expect(ledger.finish).toHaveBeenCalledTimes(3);
+      expect(decision).toMatchObject({action:'clarify',reason:'recovery_safe_fallback'});expect(decision.text).not.toContain('invented.example.test');expect(decision.usage).toBeDefined();expect(ledger.finish).toHaveBeenCalledTimes(3);
     }
   });
   it('rejects the wrong reply language even when the model cites the right source', async () => {
     const decision=await new GroundedStrategy(async()=>[source],fakeLedger(),{complete:async()=>({
       ...modelResult(),decision:{...modelResult().decision,text:'فرع الاختبار بيقفل الساعة تسعة مساءً.'},
     })},'whatsapp',undefined,noDelay).reply(context);
-    expect(decision.reason).toBe('wrong_response_language');expect(decision.action).toBe('suppress');
+    expect(decision.reason).toBe('recovery_safe_fallback');expect(decision.action).toBe('clarify');
     expect(decision.text).not.toMatch(/[\u0600-\u06ff]/);
     expect(JSON.parse(buildRequest(context,[{...source,content:'كوبر: test branch hours'}])).instructions).toContain('REQUIRED OUTPUT LANGUAGE: English');
   });
   it('does not reuse a cached answer after its source was changed or unpublished', async () => {
     const load = vi.fn(async()=>[source]); const complete = vi.fn(async()=>modelResult()); const strategy = new GroundedStrategy(load,fakeLedger(),{complete});
     await strategy.reply(context); load.mockResolvedValue([{...source,updatedAt:'2026-09-13T00:00:00.000Z'}]);
-    expect((await strategy.reply(context)).reason).toBe('cached_knowledge_changed'); expect(complete).toHaveBeenCalledOnce();
+    expect((await strategy.reply(context)).reason).toBe('recovery_safe_fallback');expect(complete).toHaveBeenCalledOnce();
   });
   it('keeps unknown-answer fallback in the customer language and overrides unsupported model claims', async () => {
     const decision = await new GroundedStrategy(async()=>[source],fakeLedger(),{ complete:async()=>({
@@ -174,8 +174,8 @@ describe('grounded reply strategy', () => {
   it('does not call the provider when approved knowledge exceeds the input allowance', async () => {
     const complete=vi.fn(); const ledger=fakeLedger();
     const result = await new GroundedStrategy(async()=>[{...source,content:'x'.repeat(9000)}],ledger,{complete}).reply(context);
-    expect(result.reason).toBe('knowledge_selection_empty');
-    expect(result.text).toBe('');expect(result.action).toBe('suppress');
+    expect(result.reason).toBe('recovery_safe_fallback');
+    expect(result.text).not.toBe('');expect(result.action).toBe('clarify');
     expect(ledger.reserve).not.toHaveBeenCalled();
   });
 });

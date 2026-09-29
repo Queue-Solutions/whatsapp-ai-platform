@@ -90,7 +90,7 @@ describe('bounded approved knowledge selection', () => {
     expect(await new GroundedStrategy(async()=>available,{reserve:async()=>({status:'completed',decision:cached}),finish:vi.fn()},{complete}).reply(productContext)).toEqual(cached);
     expect(complete).not.toHaveBeenCalled();
     const result=await new GroundedStrategy(async()=>available,{reserve:async()=>({status:'new',id:'test'}),finish:vi.fn()},
-      {complete:async()=>({decision:{action:'answer',text:'Unsupported.',sourceLabels:[omitted.label]},input:100,output:10})}).reply(productContext);
-    expect(result.reason).toBe('invalid_source_reference');
+      {complete:async()=>({decision:{action:'answer',text:'Unsupported.',sourceLabels:[omitted.label]},input:100,output:10})},'whatsapp',undefined,async()=>{}).reply(productContext);
+    expect(result).toMatchObject({reason:'recovery_safe_fallback',action:'clarify'});expect(result.text).not.toContain('Unsupported');
   });
 });
