@@ -1,6 +1,7 @@
 import {z} from 'zod';
 import {AI_MODEL,AI_REASONING_EFFORT,MAX_OUTPUT_TOKENS,MAX_REQUEST_BYTES} from './config';
 import {branchData} from './branch-dialogue';
+import {matchingBranches} from './branch-scope';
 import type {KnowledgeSource} from './contracts';
 import type {MessageContext} from '../messaging/types';
 
@@ -102,7 +103,15 @@ export function buildIntentRequest(context:MessageContext,sources:KnowledgeSourc
 export function contextForIntent(context:MessageContext,decision:IntentDecision,sources:KnowledgeSource[]):MessageContext {
   const ar=decision.language==='ar',product=decision.product==='btc'?'BTC':decision.product==='jewelry'?(ar?'مجوهرات':'jewelry'):'';
   const branches=new Map(sources.map(source=>[source.label,branchData(source)]));
-  const names=decision.branchLabels.map(label=>branches.get(label)?.name).filter((value):value is string=>!!value);
+  // A model classifier may use history to understand a follow-up, but it must
+  // never replace an explicit branch/city/area in the latest message. Resolve
+  // that evidence from the live catalog first and use model labels only when
+  // the current turn contains no deterministic match.
+  const currentMatches=decision.intent==='branch'?matchingBranches(context.text??'',sources):[];
+  const names=(currentMatches.length
+    ?currentMatches.map(source=>branchData(source)?.name)
+    :decision.branchLabels.map(label=>branches.get(label)?.name))
+    .filter((value):value is string=>!!value);
   let text=decision.normalizedQuery;
   if(decision.intent==='branch'){
     const detail=decision.branchDetail==='address'?(ar?'عنوان موقع':'address location'):decision.branchDetail==='hours'?(ar?'مواعيد':'hours'):

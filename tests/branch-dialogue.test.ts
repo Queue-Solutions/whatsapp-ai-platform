@@ -81,13 +81,35 @@ describe('product-aware branch navigation',()=>{
   expect(decision.text).toContain('IRAM الكربه');expect(decision.text).toContain('IRAM نوكس');
   expect(decision.text).not.toMatch(/IRAM Korba|IRAM Nox/);
  });
- it.each(['التجمع','فرع التجمع'])('returns all three New Cairo branches with full details for %s',async text=>{
+ it.each(['التجمع','التجمع الخامس','القاهرة الجديدة','New Cairo','Fifth Settlement','فرع التجمع'])('returns all three New Cairo branches with full details for %s',async text=>{
   const newCairo=[branch('IRAM Nox','New Cairo','NOX'),branch('IRAM ZIA','New Cairo','ZIA'),branch('TJH Mivida','New Cairo','MIVIDA')];
   const complete=vi.fn(),usage=ledger();
   expect(matchingBranches(text,newCairo)).toHaveLength(3);
   const decision=await new GroundedStrategy(async()=>newCairo,usage,{complete}).reply({...base,text,history:[{role:'assistant',content:'فروع المجوهرات:\n\n• IRAM Nox — New Cairo'}]});
   for(const source of newCairo){const name=branchDataName(source);expect(decision.text).toContain(name);expect(decision.text).toContain(`123 ${name} Street`);expect(decision.text).toContain(`https://maps.app.goo.gl/${source.label}`);}
   expect(decision.sources).toHaveLength(3);expect(complete).not.toHaveBeenCalled();expect(usage.reserve).not.toHaveBeenCalled();
+ });
+ it('keeps the latest explicit city authoritative when the classifier selects a stale branch',async()=>{
+  const cityStars=branch('TJH City Stars','Nasr City','STARS'),arkan=branch('IRAM Arkan','6th of October City','ARKAN');
+  const classifyIntent=vi.fn(async()=>({decision:{intent:'branch' as const,confidence:.99,language:'ar' as const,product:'jewelry' as const,
+    branchMode:'detail' as const,branchDetail:'general' as const,branchLabels:['ARKAN'],originEvidence:'',originQuery:'',
+    normalizedQuery:'فرع مدينة نصر',analyticsTopic:'فرع مدينة نصر',summary:'',risk:'none' as const},input:100,output:20}));
+  const complete=vi.fn();
+  const decision=await new GroundedStrategy(async()=>[cityStars,arkan],ledger(),{complete,classifyIntent}).reply({...base,text:'فرع مدينة نصر',
+    history:[{role:'user',content:'فرع اركان'},{role:'assistant',content:'IRAM Arkan — 6th of October City'}]});
+  expect(decision.text).toContain('TJH City Stars — Nasr City');expect(decision.text).toContain('https://maps.app.goo.gl/STARS');
+  expect(decision.text).not.toMatch(/Arkan|ARKAN|October/);expect(complete).not.toHaveBeenCalled();
+ });
+ it('uses every current New Cairo match instead of one stale classifier label',async()=>{
+  const newCairo=[branch('IRAM Nox','Fifth Settlement','NOX'),branch('IRAM ZIA','New Cairo','ZIA'),branch('TJH Mivida','القاهرة الجديدة','MIVIDA')];
+  const korba=branch('IRAM Korba','Heliopolis','KORBA');
+  const classifyIntent=vi.fn(async()=>({decision:{intent:'branch' as const,confidence:.99,language:'ar' as const,product:'jewelry' as const,
+    branchMode:'detail' as const,branchDetail:'general' as const,branchLabels:['KORBA'],originEvidence:'',originQuery:'',
+    normalizedQuery:'فرع التجمع الخامس',analyticsTopic:'فروع التجمع',summary:'',risk:'none' as const},input:100,output:20}));
+  const decision=await new GroundedStrategy(async()=>[korba,...newCairo],ledger(),{complete:vi.fn(),classifyIntent}).reply({...base,text:'فرع التجمع الخامس',
+    history:[{role:'user',content:'فرع مصر الجديدة'},{role:'assistant',content:'IRAM Korba — Heliopolis'}]});
+  for(const source of newCairo)expect(decision.text).toContain(branchDataName(source));
+  expect(decision.sources).toHaveLength(3);expect(decision.text).not.toMatch(/Korba|KORBA|Heliopolis/);
  });
  it.each(['طب فرع مصر الجديدة','طب فرع هليوبوليس'])('maps Heliopolis aliases only to the Heliopolis branch: %s',async text=>{
   const korba=branch('IRAM Korba','Heliopolis','KORBA'),mivida=branch('TJH Mivida','New Cairo','MIVIDA'),complete=vi.fn(),usage=ledger();

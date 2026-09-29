@@ -16,6 +16,10 @@ function directScope(text:string):'none'|'detail'|'directory'{
 export function locationWords(text:string){
   let t=normalizeIntent(text);
   for(const [pattern,replacement] of [
+    // Treat regional names as identities, not loose city words. In particular,
+    // New Cairo/Fifth Settlement must not collapse to generic "Cairo", which
+    // can either miss eligible branches or let an unrelated Cairo branch win.
+    [/(?:القاهره|قاهره)\s*الجديده|التجمع(?:\s*الخامس)?|تجمع(?:\s*خامس)?|\bnew\s+cairo\b|\bfifth\s+settlement\b|\b5th\s+settlement\b/g,'newcairo'],
     [/المعادي|المعادى|معادي|معادى|\bmaadi\b/g,'maadi'],
     [/الكربه|كربه|كوربه|كوربا|\bcorba\b|\bkorba\b/g,'korba'],
     [/سيتي\s*ستارز?|سيتى\s*ستارز?|\bcity\s+stars?\b/g,'stars'],
@@ -26,7 +30,6 @@ export function locationWords(text:string){
     [/زيا|زايا|\bzia\b/g,'zia'],
     [/كمبنسكي|كمبينسكي|\bkempinski\b/g,'kempinski'],
     [/سنزو|\bsenzo\b/g,'senzo'],
-    [/التجمع(?: الخامس)?|تجمع(?: خامس)?/g,'cairo'],
     [/مصر الجديده|هليوبوليس|هليوبلس|هليوبولس|\bheliopolis\b/g,'heliopolis'],
     [/مدينه نصر|مدينة نصر|\bnasr(?: city)?\b/g,'nasr'],
     [/اكتوبر|أكتوبر|\boctober\b/g,'october'],

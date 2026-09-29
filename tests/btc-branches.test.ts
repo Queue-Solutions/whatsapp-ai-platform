@@ -33,6 +33,21 @@ describe('BTC FAQ is the branch eligibility authority',()=>{
  it.each([['كوربة',0],['سيتي ستارز',1],['نوكس',2],['ميفيدا',3],['المعادي',4],['أركان',5],['الاسكندرية',6],['المنصورة',7]] as const)('resolves the Arabic branch selection %s without switching the BTC phone',async(text,i)=>{
   const decision=await fixture().strategy.reply({...base,text});expect(decision.text).toContain(phones[i]);expect(decision.text).toContain(`https://maps.app.goo.gl/fixture${i}`);
  });
+ it.each(['التجمع','التجمع الخامس','القاهرة الجديدة','New Cairo','Fifth Settlement'])('resolves the New Cairo area alias %s to only eligible BTC branches',async text=>{
+  const decision=await fixture().strategy.reply({...base,text});
+  expect(decision.text.split('\n').filter(line=>line.startsWith('• '))).toEqual([`• ${names[2]} — ${cities[2]}`,`• ${names[3]} — ${cities[3]}`]);
+  expect(decision.text).not.toMatch(/Korba|City stars|Maadi|Arkan|Alex|Mansoura/);
+ });
+ it('does not let a stale classifier branch override the latest explicit BTC city',async()=>{
+  const classifyIntent=vi.fn(async()=>({decision:{intent:'branch' as const,confidence:.99,language:'ar' as const,product:'btc' as const,
+    branchMode:'detail' as const,branchDetail:'general' as const,branchLabels:['B5'],originEvidence:'',originQuery:'',
+    normalizedQuery:'فرع مدينة نصر',analyticsTopic:'فرع مدينة نصر',summary:'',risk:'none' as const},input:100,output:20}));
+  const complete=vi.fn(),usage={reserve:vi.fn(async()=>({status:'new' as const,id:'reservation'})),finish:vi.fn()};
+  const result=await new GroundedStrategy(async()=>[makeFaq(),...records],usage,{complete,classifyIntent}).reply({...base,text:'فرع مدينة نصر',
+    history:[{role:'user',content:'BTC'},{role:'user',content:'فرع اركان'},{role:'assistant',content:'IRAM Arkan — Sheikh Zayed'}]});
+  expect(result.text).toContain(phones[1]);expect(result.text).toContain('fixture1');expect(result.text).not.toMatch(new RegExp(`${phones[5]}|fixture5|Arkan`));
+  expect(complete).not.toHaveBeenCalled();
+ });
  it.each(['Elmaadi','elmaadi','Almaadi','El Maadi'])('resolves the Arabizi branch selection %s on the first turn',async text=>{
   const f=fixture();const decision=await f.strategy.reply({...base,text});
   expect(decision.text).toContain(phones[4]);expect(decision.text).toContain('https://maps.app.goo.gl/fixture4');
