@@ -13,6 +13,7 @@ const seriesSchema=z.object({period:z.string(),customers:z.coerce.number(),spamO
 const customerSchema=z.object({id:z.string().uuid(),name:z.string(),phone:z.string().nullable(),username:z.string().nullable(),firstContact:z.string().nullable(),lastContact:z.string().nullable(),
   inboundMessages:z.coerce.number(),chats:z.coerce.number(),spamOrFraud:z.coerce.number(),abuseOrSexualHarassment:z.coerce.number(),complaints:z.coerce.number(),contactRequests:z.coerce.number(),knowledgeGaps:z.coerce.number()});
 const recommendationSchema=z.object({kind:z.enum(['faq_gap','complaint_theme']),topic:z.string(),mentions:z.coerce.number(),customers:z.coerce.number(),lastSeen:z.string(),reason:z.string()});
+const recommendationsSchema=z.array(recommendationSchema);
 export const analyticsReportSchema=z.object({summary:summarySchema,series:z.array(seriesSchema),customers:z.array(customerSchema),recommendations:z.array(recommendationSchema)});
 export type AnalyticsReport=z.infer<typeof analyticsReportSchema>;
 export type AnalyticsCustomer=z.infer<typeof customerSchema>;
@@ -26,6 +27,17 @@ export class AnalyticsRepository{
     const parsed=analyticsReportSchema.safeParse(data);
     if(!parsed.success)throw new Error('Analytics data is unavailable. Ask your administrator to apply the latest database update.');
     return parsed.data;
+  }
+  async recommendations(tenant:string):Promise<AnalyticsRecommendation[]>{
+    const {data,error}=await this.db.rpc('get_ai_recommendations',{p_tenant:tenant});
+    if(error)throw new Error('Could not load AI recommendations. Check your access and try again.');
+    const parsed=recommendationsSchema.safeParse(data);
+    if(!parsed.success)throw new Error('AI recommendations are unavailable. Ask your administrator to apply the latest database update.');
+    return parsed.data;
+  }
+  async resetRecommendations(tenant:string){
+    const {error}=await this.db.rpc('reset_ai_recommendations',{p_tenant:tenant});
+    if(error)throw new Error('Could not reset AI recommendations. Check your owner/admin access and try again.');
   }
   async download(tenant:string,from:string,to:string,granularity:AnalyticsGranularity){
     const {data,error}=await this.db.auth.getSession();

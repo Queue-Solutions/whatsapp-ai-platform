@@ -10,6 +10,7 @@ import {Blacklist} from './blacklist-ui';
 import { Inbox } from './inbox-ui';
 import { AttentionLink } from './inbox-attention';
 import {Analytics} from './analytics-ui';
+import {RecommendationIndicator} from './recommendation-indicator';
 
 type Config = { url: string; key: string } | null;
 type DashboardView='knowledge'|'inbox'|'blacklist'|'analytics'|'recommendations';
@@ -29,7 +30,7 @@ export function Dashboard({ config, view='knowledge' }: { config: Config; view?:
       <div className="workspace-label">YOUR WORKSPACE</div><a href="/dashboard" className={view==='knowledge'?'nav-active':'nav-link'}><span aria-hidden="true">▤</span> Business knowledge</a><a href="/dashboard/inbox" className={view==='inbox'?'nav-active':'nav-link'}><span aria-hidden="true">☷</span> Inbox {userId && db && <AttentionLink key={userId} db={db} compact />}</a>
       <a href="/dashboard/blacklist" className={view==='blacklist'?'nav-active':'nav-link'}><span aria-hidden="true">⊘</span> Blacklist {userId && db && <BlacklistIndicator key={userId} db={db}/>}</a>
       <a href="/dashboard/analytics" className={view==='analytics'?'nav-active':'nav-link'}><span aria-hidden="true">⌁</span> Analytics</a>
-      <a href="/dashboard/recommendations" className={view==='recommendations'?'nav-active':'nav-link'}><span aria-hidden="true">✦</span> AI recommendations</a>
+      <a href="/dashboard/recommendations" className={view==='recommendations'?'nav-active':'nav-link'}><span aria-hidden="true">✦</span> AI recommendations {userId && db && <RecommendationIndicator key={userId} db={db}/>}</a>
       <div className="sidebar-bottom"><span className="status-dot" /> Your business, in your words.<p>Give your assistant the answers your customers need.</p></div>
     </aside>
     <div className="dashboard-main"><header className="topbar"><span>Workspace <span className="slash">/</span> {view==='blacklist'?'Blacklist':view==='inbox'?'Inbox':view==='analytics'?'Analytics':view==='recommendations'?'AI recommendations':'Business knowledge'}</span>{userId && db ? <AttentionLink key={userId} db={db} /> : <span className="workspace-badge">Queue Solutions</span>}</header>

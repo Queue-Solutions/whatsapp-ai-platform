@@ -15,6 +15,7 @@ describe('chat analytics database boundary',()=>{
   async function report(t=tenant,from='2026-09-01T00:00:00Z',to='2026-10-01T00:00:00Z'){
     return (await rows<{value:{summary:Record<string,number>;customers:Array<Record<string,unknown>>;recommendations:Array<Record<string,unknown>>;series:Array<Record<string,unknown>>}}>('select public.get_chat_analytics($1,$2,$3,$4) value',[t,from,to,'day']))[0].value;
   }
+  async function recommendations(t=tenant){return (await rows<{value:Array<Record<string,unknown>>}>('select public.get_ai_recommendations($1) value',[t]))[0].value;}
   async function insight(request:string,message:string,decision:Record<string,unknown>){
     await db.query("insert into public.ai_requests(tenant_id,request_key,purpose,model,prompt_version,state,reserved_nano,decision,created_at,completed_at) values($1,$2,'whatsapp','gpt-4.1-mini-2025-04-14','test','completed',10640000,$3,'2026-09-20T12:01:00Z','2026-09-20T12:01:00Z')",[tenant,`message:${message}:${request}`,JSON.stringify(decision)]);
   }
@@ -50,8 +51,17 @@ describe('chat analytics database boundary',()=>{
     await db.query("insert into public.faqs(tenant_id,question,answer,is_published) values($1,'Do you offer gift wrapping?','Yes.',true)",[tenant]);await asUser(owner);
     expect((await report()).recommendations).toEqual([]);
   });
+  it('resets current recommendations without deleting insights and allows new activity to create them again',async()=>{
+    await asUser(owner);expect(await recommendations()).toEqual([expect.objectContaining({topic:'Do you offer gift wrapping?',mentions:2})]);
+    await rows('select public.reset_ai_recommendations($1)',[tenant]);
+    expect(await recommendations()).toEqual([]);expect(await rows('select count(*)::int count from public.message_insights where tenant_id=$1',[tenant])).toEqual([{count:2}]);
+    await db.exec('reset role');
+    await db.query("insert into public.messages(id,tenant_id,conversation_id,channel_id,direction,provider_message_id,message_type,body,delivery_status,occurred_at,moderation_state) values('30000000-0000-4000-8000-000000000005',$1,$2,'40000000-0000-4000-8000-000000000001','inbound','new-1','text','new private one','received',clock_timestamp()+interval '1 second','clear'),('30000000-0000-4000-8000-000000000006',$1,$3,'40000000-0000-4000-8000-000000000001','inbound','new-2','text','new private two','received',clock_timestamp()+interval '1 second','clear')",[tenant,conversation1,conversation2]);
+    await db.query("insert into public.message_insights(tenant_id,message_id,conversation_id,intent,topic,language) values($1,'30000000-0000-4000-8000-000000000005',$2,'business_question','Do you provide engraving?','en'),($1,'30000000-0000-4000-8000-000000000006',$3,'business_question','Do you provide engraving?','en')",[tenant,conversation1,conversation2]);
+    await asUser(owner);expect(await recommendations()).toEqual([expect.objectContaining({topic:'Do you provide engraving?',mentions:2})]);
+  });
   it('enforces tenant membership in the RPC and RLS-protected insight rows',async()=>{
     await asUser(owner);expect(await rows('select tenant_id from public.message_insights')).toHaveLength(2);await expect(report(other)).rejects.toThrow('access denied');
-    await asUser(outsider);expect(await rows('select tenant_id from public.message_insights')).toEqual([]);await expect(report(tenant)).rejects.toThrow('access denied');
+    await asUser(outsider);expect(await rows('select tenant_id from public.message_insights')).toEqual([]);await expect(report(tenant)).rejects.toThrow('access denied');await expect(recommendations(tenant)).rejects.toThrow('access denied');await expect(rows('select public.reset_ai_recommendations($1)',[tenant])).rejects.toThrow('access denied');
   });
 });
