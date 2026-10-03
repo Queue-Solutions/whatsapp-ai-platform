@@ -135,7 +135,7 @@ describe('BTC FAQ is the branch eligibility authority',()=>{
  it('uses current FAQ entries after an edit instead of a previously cached model list',async()=>{
   const f=fixture([makeFaq(`IRAM Korba: ${phones[0]}\n${hours}`),...records]);
   f.reserve.mockResolvedValue({status:'completed',decision:{action:'answer',text:'IRAM ZIA and El Kawthar offer BTC.',reason:'approved_knowledge',sources:[]} as AgentDecision});
-  const decision=await f.strategy.reply(base);expect(numberedLines(decision.text)).toHaveLength(1);expect(decision.text).not.toMatch(/ZIA|Kawthar/);expect(f.reserve).not.toHaveBeenCalled();
+  const decision=await f.strategy.reply(base);expect(decision.text).toContain('• IRAM Korba — Heliopolis');expect(numberedLines(decision.text)).toHaveLength(0);expect(decision.text).not.toMatch(/ZIA|Kawthar/);expect(f.reserve).not.toHaveBeenCalled();
  });
  it('keeps ineligible branch records and generic directory FAQs out of other BTC model requests',()=>{
   const generic={...makeFaq(),id:'generic',label:'G1',content:JSON.stringify({question:'Where are your branches?',answer:'IRAM ZIA and IRAM El Kawthar.'})};

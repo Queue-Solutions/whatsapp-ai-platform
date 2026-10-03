@@ -32,7 +32,7 @@ export function orderedBranchSources<T extends KnowledgeSource>(sources:T[]):T[]
     return a.index-b.index;
   }).map(item=>item.source);
 }
-export const numberedBranchLines=(lines:string[])=>lines.map((line,index)=>`${index+1}. ${line}`);
+export const numberedBranchLines=(lines:string[])=>lines.map((line,index)=>`${lines.length>1?`${index+1}.`:'•'} ${line}`);
 const contextualDetailRequest=/\b(?:both|all|them|their|these|those|locations?|addresses?|details?|maps?|links?)\b|(?:الاتنين|الاثنين|كلاهما|كلهم|مواقعهم|عناوينهم|لوكيشن|لوكيشنات|موقع|مواقع|عناوين|تفاصيل)/;
 const selectionNumber=(text:string)=>{
   const normalized=text.replace(/[٠-٩۰-۹]/g,c=>String(c.charCodeAt(0)-(c<='٩'?1632:1776))).trim();
