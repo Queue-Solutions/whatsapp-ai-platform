@@ -21,7 +21,7 @@ import {repairFaqReply} from './repair-faq';
 import {pricingReply} from './pricing';
 import { formatReply, formatBusinessReply, formatBranchReply } from './reply-format';
 import { buildRequest, ModelFailure, type ModelProvider } from './openai';
-import {buildIntentRequest,catalogFingerprint,contextForIntent,isStoredIntentDecision,type IntentDecision,type StoredIntentDecision} from './intent-classification';
+import {buildIntentRequest,catalogFingerprint,contextForIntent,isStoredIntentDecision,validatedContactName,type IntentDecision,type StoredIntentDecision} from './intent-classification';
 import {deduplicateBranchKnowledge} from './branch-identity';
 export type SourceLoader = (tenant: string) => Promise<KnowledgeSource[]>;
 export function fallback(context: MessageContext, reason: string, action: AgentDecision['action'] = 'unavailable'): AgentDecision {
@@ -91,7 +91,9 @@ export class GroundedStrategy implements ReplyStrategy {
       const result=await this.provider.classifyIntent(request,{timeoutMs:AI_INTENT_TIMEOUT_MS});
       const allowed=new Set(sources.map(source=>source.label));
       if(result.decision.branchLabels.some(label=>!allowed.has(label)))throw new ModelFailure('openai_invalid_intent',result);
-      const stored:StoredIntentDecision={kind:'intent_classification',catalogFingerprint:fingerprint,...result.decision};
+      const contactName=validatedContactName(result.decision,context.text??'')??'';
+      const repeatFollowup=!!result.decision.repeatFollowup&&['human_followup','complaint'].includes(result.decision.intent);
+      const stored:StoredIntentDecision={kind:'intent_classification',catalogFingerprint:fingerprint,...result.decision,contactName,repeatFollowup};
       await this.ledger.finish(context.tenantId,reservation.id,{state:'completed',input:result.input,output:result.output,
         latency:Date.now()-start,decision:stored,error:null});
       return stored;
@@ -120,12 +122,11 @@ export class GroundedStrategy implements ReplyStrategy {
     // Career collection was retired: ignore any legacy in-progress career form and answer from the approved FAQ instead.
     // A new hiring/HR question also exits any unrelated contact-collection flow.
     const contactReply=context.followUp?.purpose==='career'||careerIntent?null:continueFollowUp(context);
-    // A completed contact form is deterministic and must not go back through intent
-    // classification, which can discard the fields and restart the form. An
-    // unlabelled name by itself is held briefly so approved branch names can still
-    // take precedence below (for example, "Alexandria").
-    const inferredName=contactReply?.followUp?.name&&!context.followUp?.name&&!/(?:my name is|name\s*:|اسمي|إسمي|الاسم\s*:)/i.test(context.text??'');
-    if(contactReply&&(!inferredName||contactReply.followUp?.phone))return contactReply;
+    // Phone numbers remain deterministically validated, but every newly proposed
+    // personal name is held until the semantic classifier confirms it. This keeps
+    // ordinary statements, places and acknowledgements out of the name field.
+    const proposedName=contactReply?.followUp?.name&&!context.followUp?.name;
+    if(contactReply&&!proposedName)return contactReply;
     let sources:KnowledgeSource[]=[],knowledgeUnavailable=false;
     try {
       const loaded=await this.loadSources(context.tenantId);
@@ -135,11 +136,6 @@ export class GroundedStrategy implements ReplyStrategy {
       sources=deduplicateBranchKnowledge(loaded,replyLanguage(languageText));
     }
     catch { knowledgeUnavailable=true; }
-    // Combined details and labelled fields are deterministic. A bare one-word
-    // name is intentionally held for semantic validation below so an
-    // acknowledgement cannot silently become customer data. If classification
-    // is unavailable, retain the safe legacy fallback after excluding branches.
-    if(contactReply&&inferredName&&!this.provider.classifyIntent&&(knowledgeUnavailable||!matchingBranches(context.text??'',sources).length))return contactReply;
     // Employment and HR requests use the approved hiring FAQ. They must win over
     // generic phrases such as "reach the HR department", which also resemble a
     // request for a person and previously opened an unnecessary follow-up.
@@ -166,18 +162,14 @@ export class GroundedStrategy implements ReplyStrategy {
     const classified=await this.classifyIntent(context,sources);
     const useClassification=classified&&classified.confidence>=0.6?classified:null;
     const routed=useClassification?contextForIntent(context,useClassification,sources):context;
-    if(contactReply&&inferredName){
-      if(useClassification?.intent==='contact_details')return contactReply;
-      // The active form already established why this value was requested. Do not
-      // let a semantic false positive turn a valid supplied name (for example,
-      // "زياد") into an unrelated hiring enquiry. Explicit hiring language was
-      // handled by careerIntent before contact extraction.
-      if(useClassification?.intent==='career')return contactReply;
-      if(!useClassification&&(knowledgeUnavailable||!matchingBranches(context.text??'',sources).length))return contactReply;
-      // Acknowledgements are filtered before the classifier. This guard covers
-      // other non-detail replies without saving them as a name or losing the
-      // active form state.
-      if(useClassification&&['greeting','thanks','unrelated','ambiguous'].includes(useClassification.intent))return repeatFollowUp(context)??contactReply;
+    if(contactReply&&proposedName){
+      if(useClassification?.intent==='contact_details'){
+        const validated=continueFollowUp(context,{validatedName:validatedContactName(useClassification,context.text??'')});
+        return validated??repeatFollowUp(context)??contactReply;
+      }
+      // A missing/failed semantic classification must never cause a locally
+      // guessed name to be persisted. Keep collecting without mutating details.
+      if(!useClassification&&!matchingBranches(context.text??'',sources).length)return repeatFollowUp(context)??contactReply;
     }
     if(useClassification?.intent==='career'){
       if(knowledgeUnavailable)return fallback(context,'knowledge_unavailable');
@@ -185,7 +177,8 @@ export class GroundedStrategy implements ReplyStrategy {
     }
     if(useClassification?.intent==='human_followup'||useClassification?.intent==='complaint'){
       const reason=useClassification.intent==='complaint'?'complaint':'human_requested';
-      return {...fallback(context,reason,'handoff'),attentionSummary:useClassification.summary||summarizeAttention(context.text,reason)};
+      return {...fallback(context,reason,'handoff'),attentionSummary:useClassification.summary||summarizeAttention(context.text,reason),
+        contactName:validatedContactName(useClassification,context.text??'')??undefined,repeatFollowup:!!useClassification.repeatFollowup};
     }
     if(useClassification?.intent==='greeting'||useClassification?.intent==='thanks'){
       return socialReply(useClassification.normalizedQuery,context.history,useClassification.intent)!;

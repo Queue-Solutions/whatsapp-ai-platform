@@ -23,6 +23,8 @@ export const intentDecisionSchema=z.object({
   analyticsTopic:z.string().trim().max(120).default(''),
   summary:z.string().trim().max(240),
   risk:z.enum(['none','spam_or_fraud']).default('none'),
+  contactName:z.string().trim().max(80).optional(),
+  repeatFollowup:z.boolean().optional(),
 }).strict();
 export type IntentDecision=z.infer<typeof intentDecisionSchema>;
 export type StoredIntentDecision=IntentDecision&{kind:'intent_classification';catalogFingerprint:string};
@@ -33,8 +35,9 @@ const outputSchema={type:'object',properties:{
   branchDetail:{type:'string',enum:['none','general','address','hours','phone']},
   branchLabels:{type:'array',items:{type:'string'},maxItems:40},normalizedQuery:{type:'string',maxLength:500},analyticsTopic:{type:'string',maxLength:120},summary:{type:'string',maxLength:240},
   risk:{type:'string',enum:['none','spam_or_fraud']},
+  contactName:{type:'string',maxLength:80},repeatFollowup:{type:'boolean'},
   originEvidence:{type:'string',maxLength:160},originQuery:{type:'string',maxLength:120},
-},required:['intent','confidence','language','product','branchMode','branchDetail','branchLabels','originEvidence','originQuery','normalizedQuery','analyticsTopic','summary','risk'],additionalProperties:false} as const;
+},required:['intent','confidence','language','product','branchMode','branchDetail','branchLabels','originEvidence','originQuery','normalizedQuery','analyticsTopic','summary','risk','contactName','repeatFollowup'],additionalProperties:false} as const;
 
 const instructions=`Classify the latest customer message for a business WhatsApp assistant. Perform semantic interpretation, not keyword matching. Understand Egyptian Arabic, English, Arabizi, ordinary spelling mistakes, phonetic spellings, missing punctuation and changed word order. The latest message has priority over older conversation topics. human_followup and complaint must be supported by the latest customer message itself; history may resolve a reference in that message but must never carry an old personal-contact request or complaint forward. A standalone greeting after an older issue or contact request is greeting, not human_followup or complaint.
 
@@ -44,8 +47,10 @@ analyticsTopic is a short, stable 2-to-8-word topic label in the same language f
 
 risk is spam_or_fraud only when the latest message itself is clearly unsolicited promotion, repetitive spam, phishing, impersonation, a fraudulent payment request or an attempt to involve the business in fraud. A customer reporting suspected fraud, asking whether something is genuine or complaining about a scam is not spam_or_fraud. Use none when uncertain. risk is reporting metadata only and does not change the intent.
 
+contactName is the customer's actual personal name copied exactly from the latest message, or an empty string. Set it only when the latest message genuinely supplies the requested name during active contact collection, or explicitly introduces the customer's own name together with a personal-contact request. A normal sentence, acknowledgement, branch/place, product, role, complaint description or statement such as "I sent it before" / "ارسلت من قبل" is not a name. Never infer a name from the WhatsApp profile or history. repeatFollowup is true only when the latest message says an earlier promised callback or personal follow-up did not happen, for example "nobody contacted me". It is false for an ordinary first-time contact request or unrelated complaint.
+
 Intent priority:
-1. When activeContactCollection is true and the latest customer message actually supplies a requested personal name or phone number, use contact_details. A person's name may be one word and may arrive separately from the phone number. A standalone personal name such as "Ziad" or "زياد" is contact_details, never career merely because its spelling resembles another word. Agreement or acknowledgement expressions such as "of course", "yes", "sure", "okay", "تمام" and "أكيد" are not names and must not be contact_details. If the customer asks a new business question instead, classify that new request normally.
+1. When activeContactCollection is true and the latest customer message actually supplies a requested personal name or phone number, use contact_details. A person's name may be one word and may arrive separately from the phone number. A standalone personal name such as "Ziad" or "زياد" is contact_details, never career merely because its spelling resembles another word. Put only the actual name in contactName. A phone-only reply has an empty contactName. Agreement or acknowledgement expressions such as "of course", "yes", "sure", "okay", "تمام" and "أكيد" are not names and must not be contact_details. If the customer makes a normal statement or asks a new business question instead, classify that message normally and leave contactName empty.
 2. Employment, HR/human-resources, recruitment, job, vacancy, application, CV or résumé enquiries are career, including a request to reach, contact or speak to HR or recruitment. This overrides human_followup. Never classify a hiring enquiry as human_followup merely because it asks to contact a department or person.
 3. An explicit request for a person, employee, callback or personal contact that is not about hiring or HR is human_followup even when it also mentions a branch, product or website. Never use human_followup merely because the request is unclear, information may be missing, the customer says no, or the customer is choosing a product.
 4. A report of a bad experience, damaged/wrong/missing order, poor service, an explicitly stated complaint, or an unresolved earlier attempt is complaint. Wanting a return, exchange, cancellation or refund does not by itself prove a complaint.
@@ -73,7 +78,9 @@ export function catalogFingerprint(sources:KnowledgeSource[]){
     first=Math.imul(first^text.charCodeAt(index),16777619)>>>0;
     second=((second<<5)+second+text.charCodeAt(index))>>>0;
   }
-  return `${first.toString(36)}${second.toString(36)}`;
+  // Version the semantic contract so durable decisions made before new fields
+  // or classification rules cannot be replayed under a newer workflow.
+  return `v2-${first.toString(36)}${second.toString(36)}`;
 }
 export function isStoredIntentDecision(value:unknown,fingerprint:string):value is StoredIntentDecision {
   if(!value||typeof value!=='object')return false;
@@ -82,8 +89,16 @@ export function isStoredIntentDecision(value:unknown,fingerprint:string):value i
   const decision={...stored};delete decision.kind;delete decision.catalogFingerprint;
   return intentDecisionSchema.safeParse(decision).success;
 }
+function evidenceText(value:string){return value.normalize('NFKC').toLocaleLowerCase().replace(/\s+/g,' ').trim();}
+/** Accept only a model-classified personal name that is visibly present in the latest message. */
+export function validatedContactName(decision:Pick<IntentDecision,'contactName'>|null|undefined,message:string){
+  const name=decision?.contactName?.trim()??'';
+  if(!name||!/^[\p{L}\p{M}][\p{L}\p{M}'’ -]{0,79}$/u.test(name)||name.split(/\s+/).length>5)return null;
+  return evidenceText(message).includes(evidenceText(name))?name:null;
+}
 export function buildIntentRequest(context:MessageContext,sources:KnowledgeSource[]){
-  const branchCatalog=sources.flatMap(source=>{const value=branchData(source);return value?[{label:source.label,name:value.name,city:value.city??'',address:value.address??''}]:[];});
+  const branchCatalog=sources.flatMap((source,index)=>{const value=branchData(source);return value?[{label:source.label,name:value.name,city:value.city??'',address:value.address??'',order:source.branchOrder??index}]:[];})
+    .sort((a,b)=>a.order-b.order);
   const allowedLabels=branchCatalog.map(branch=>branch.label);
   const faqTopics=sources.map(faqQuestion).filter((value):value is string=>!!value);
   const history=[...(context.history??[])].slice(-10);

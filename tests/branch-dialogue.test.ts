@@ -64,7 +64,7 @@ describe('product-aware branch navigation',()=>{
   const decision=await new GroundedStrategy(async()=>allBranches,usage,{complete}).reply({...base,text:'مجوهرات',history:[{role:'assistant',content:'مهتم بالمجوهرات ولا منتجات BTC والسبائك؟'}]});
   expect(decision.action).toBe('answer');expect(decision.sources).toHaveLength(12);
   for(const source of allBranches)expect(decision.text).toContain(branchDataName(source));
-  expect((decision.text.match(/^• /gm)??[])).toHaveLength(12);
+  expect((decision.text.match(/^\d+\. /gm)??[])).toHaveLength(12);
   expect(decision.text).not.toMatch(/123|https:/);expect(complete).not.toHaveBeenCalled();expect(usage.reserve).not.toHaveBeenCalled();
  });
  it('renders one localized entry per physical branch when bilingual records are published',async()=>{
@@ -77,9 +77,23 @@ describe('product-aware branch navigation',()=>{
     localized('nox-ar','ar','IRAM نوكس','القاهرة الجديدة','https://maps.app.goo.gl/nox'),
   ];
   const decision=await new GroundedStrategy(async()=>records,ledger(),{complete:vi.fn()}).reply({...base,text:'المجوهرات',history:[{role:'assistant',content:'هل ترغب في المجوهرات أم منتجات BTC والسبائك؟'}]});
-  expect((decision.text.match(/^• /gm)??[])).toHaveLength(2);expect(decision.sources).toHaveLength(2);
+  expect((decision.text.match(/^\d+\. /gm)??[])).toHaveLength(2);expect(decision.sources).toHaveLength(2);
   expect(decision.text).toContain('IRAM الكربه');expect(decision.text).toContain('IRAM نوكس');
-  expect(decision.text).not.toMatch(/IRAM Korba|IRAM Nox/);
+ expect(decision.text).not.toMatch(/IRAM Korba|IRAM Nox/);
+ });
+ it('uses dashboard order, numbers every multi-branch list, and resolves a numeric reply',async()=>{
+  const third={...branch('IRAM Third','Cairo','THIRD'),branchOrder:2};
+  const first={...branch('IRAM First','Cairo','FIRST'),branchOrder:0};
+  const second={...branch('IRAM Second','Cairo','SECOND'),branchOrder:1};
+  const unordered=[third,first,second];
+  const strategy=new GroundedStrategy(async()=>unordered,ledger(),{complete:vi.fn()});
+  const directory=await strategy.reply({...base,text:'Jewelry',history:[{role:'assistant',content:'Are you looking for jewelry or BTC / bullion products?'}]});
+  expect(directory.text.split('\n').filter(line=>/^\d+\. /.test(line))).toEqual([
+    '1. IRAM First — Cairo','2. IRAM Second — Cairo','3. IRAM Third — Cairo',
+  ]);
+  const selected=await strategy.reply({...base,text:'2',requestKey:'numeric-selection',history:[{role:'user',content:'Jewelry'},{role:'assistant',content:directory.text}]});
+  expect(selected.text).toContain('123 IRAM Second Street');expect(selected.text).toContain('https://maps.app.goo.gl/SECOND');
+  expect(selected.text).not.toMatch(/IRAM First|IRAM Third/);
  });
  it.each(['التجمع','التجمع الخامس','القاهرة الجديدة','New Cairo','Fifth Settlement','فرع التجمع'])('returns all three New Cairo branches with full details for %s',async text=>{
   const newCairo=[branch('IRAM Nox','New Cairo','NOX'),branch('IRAM ZIA','New Cairo','ZIA'),branch('TJH Mivida','New Cairo','MIVIDA')];

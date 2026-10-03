@@ -16,42 +16,52 @@ describe('personal follow-up collection',()=>{
   expect(ready).toMatchObject({action:'handoff',followUp:{state:'ready',name:'Maya Hassan',phone:'201012345678'}});
   expect(ready.text).toContain('within the next 24 hours');expect(ready.text).toContain('type Cancel');expect(ready.text).not.toContain('type AI or');expect(ready.text).toContain('AI assistant is now turned off');
  });
- it('accepts combined details, international and Arabic digits without paid calls',async()=>{
+ it('accepts combined details only after semantic name classification',async()=>{
   expect(contactPhone('٠١٠١٢٣٤٥٦٧٨')).toBe('201012345678');expect(contactPhone('+44 7700 900123')).toBe('447700900123');expect(contactPhone('123')).toBeNull();
-  const ledger={reserve:vi.fn(),finish:vi.fn()};const complete=vi.fn();
+  const ledger={reserve:vi.fn(async()=>({status:'new' as const,id:'contact-intent'})),finish:vi.fn()};const complete=vi.fn();
+  const classifyIntent=vi.fn(async()=>({decision:{intent:'contact_details' as const,confidence:.99,language:'ar' as const,product:'unknown' as const,branchMode:'none' as const,branchDetail:'none' as const,branchLabels:[],originEvidence:'',originQuery:'',normalizedQuery:'اسمي منى حسن ورقمي ٠١٠١٢٣٤٥٦٧٨',analyticsTopic:'',summary:'',risk:'none' as const,contactName:'منى حسن',repeatFollowup:false},input:100,output:20}));
   const start=beginFollowUp({...context,text:'الطلب وصل غلط'},issue);
-  const result=await new GroundedStrategy(vi.fn(),ledger,{complete}).reply({...context,text:'اسمي منى حسن، رقمي ٠١٠١٢٣٤٥٦٧٨',followUp:pending,history:[{role:'assistant',content:start.text}]});
-  expect(result.followUp).toEqual({state:'ready',name:'منى حسن',phone:'201012345678'});expect(result.text).toContain('IRAM');expect(result.text).toContain('24 ساعة');expect(result.text).toContain('اكتب Cancel');expect(result.text).not.toContain('AI أو Cancel');
-  expect(ledger.reserve).not.toHaveBeenCalled();expect(complete).not.toHaveBeenCalled();
+  const result=await new GroundedStrategy(async()=>[],ledger,{complete,classifyIntent}).reply({...context,text:'اسمي منى حسن، رقمي ٠١٠١٢٣٤٥٦٧٨',followUp:pending,history:[{role:'assistant',content:start.text}]});
+  expect(result.followUp).toEqual({state:'ready',name:'منى حسن',phone:'201012345678'});expect(result.text).toContain('IRAM');expect(result.text).toContain('24 ساعة');expect(result.text).toContain('اكتب الغاء');expect(result.text).not.toContain('AI أو Cancel');
+  expect(classifyIntent).toHaveBeenCalledOnce();expect(ledger.finish).toHaveBeenCalledOnce();expect(complete).not.toHaveBeenCalled();
  });
  it.each(['Ziad 01067945993','Ziad\n01067945993'])('saves unlabelled name and phone details from the requested contact form: %j',async text=>{
-  const ledger={reserve:vi.fn(),finish:vi.fn()};
-  const complete=vi.fn();const classifyIntent=vi.fn();const loadSources=vi.fn();
+  const ledger={reserve:vi.fn(async()=>({status:'new' as const,id:'contact-intent'})),finish:vi.fn()};
+  const complete=vi.fn();const classifyIntent=vi.fn(async()=>({decision:{intent:'contact_details' as const,confidence:.99,language:'en' as const,product:'unknown' as const,branchMode:'none' as const,branchDetail:'none' as const,branchLabels:[],originEvidence:'',originQuery:'',normalizedQuery:text,analyticsTopic:'',summary:'',risk:'none' as const,contactName:'Ziad',repeatFollowup:false},input:100,output:20}));const loadSources=vi.fn(async()=>[]);
   const start=beginFollowUp(context,issue);
   const result=await new GroundedStrategy(loadSources,ledger,{complete,classifyIntent}).reply({...context,text,followUp:pending,history:[{role:'assistant',content:start.text}]});
   expect(result).toMatchObject({action:'handoff',followUp:{state:'ready',name:'Ziad',phone:'201067945993'}});
   expect(result.text).toContain('within the next 24 hours');
-  expect(loadSources).not.toHaveBeenCalled();expect(classifyIntent).not.toHaveBeenCalled();expect(complete).not.toHaveBeenCalled();
-  expect(ledger.reserve).not.toHaveBeenCalled();expect(ledger.finish).not.toHaveBeenCalled();
+  expect(loadSources).toHaveBeenCalledOnce();expect(classifyIntent).toHaveBeenCalledOnce();expect(complete).not.toHaveBeenCalled();
+  expect(ledger.reserve).toHaveBeenCalledOnce();expect(ledger.finish).toHaveBeenCalledOnce();
  });
  it('retains a one-word name sent separately and asks only for the missing phone',async()=>{
   const loadSources=vi.fn(async()=>[]),complete=vi.fn();
   const reserve=vi.fn(async()=>({status:'new' as const,id:'contact-intent'})),finish=vi.fn();
-  const classifyIntent=vi.fn(async()=>({decision:{intent:'contact_details' as const,confidence:.99,language:'en' as const,product:'unknown' as const,branchMode:'none' as const,branchDetail:'none' as const,branchLabels:[],originEvidence:'',originQuery:'',normalizedQuery:'Emad',analyticsTopic:'',summary:'',risk:'none' as const},input:100,output:20}));
+  const classifyIntent=vi.fn(async()=>({decision:{intent:'contact_details' as const,confidence:.99,language:'en' as const,product:'unknown' as const,branchMode:'none' as const,branchDetail:'none' as const,branchLabels:[],originEvidence:'',originQuery:'',normalizedQuery:'Emad',analyticsTopic:'',summary:'',risk:'none' as const,contactName:'emad',repeatFollowup:false},input:100,output:20}));
   const start=beginFollowUp(context,issue);
   const result=await new GroundedStrategy(loadSources,{reserve,finish},{complete,classifyIntent}).reply({...context,text:'emad',followUp:pending,history:[{role:'assistant',content:start.text}]});
   expect(result).toMatchObject({action:'clarify',followUp:{state:'collecting',name:'emad',phone:null}});
   expect(result.text).toContain('phone number');expect(result.text).not.toContain('share your name and');
   expect(loadSources).toHaveBeenCalledOnce();expect(classifyIntent).toHaveBeenCalledOnce();expect(finish).toHaveBeenCalledOnce();expect(complete).not.toHaveBeenCalled();
  });
- it('keeps an Arabic name in active contact collection even if the classifier falsely labels it as career',async()=>{
-  const loadSources=vi.fn(async()=>[{id:'career-faq',kind:'faq' as const,label:'F9',updatedAt:'2026-09-20',content:JSON.stringify({question:'Do you have job vacancies?',answer:'Send a CV to hr@example.test.'})}]);
+ it('accepts an Arabic name only when the semantic classifier identifies it as a name',async()=>{
+  const loadSources=vi.fn(async()=>[]);
   const reserve=vi.fn(async()=>({status:'new' as const,id:'contact-intent'})),finish=vi.fn(),complete=vi.fn();
-  const classifyIntent=vi.fn(async()=>({decision:{intent:'career' as const,confidence:.99,language:'ar' as const,product:'unknown' as const,branchMode:'none' as const,branchDetail:'none' as const,branchLabels:[],originEvidence:'',originQuery:'',normalizedQuery:'زياد',analyticsTopic:'',summary:'',risk:'none' as const},input:100,output:20}));
+  const classifyIntent=vi.fn(async()=>({decision:{intent:'contact_details' as const,confidence:.99,language:'ar' as const,product:'unknown' as const,branchMode:'none' as const,branchDetail:'none' as const,branchLabels:[],originEvidence:'',originQuery:'',normalizedQuery:'زياد',analyticsTopic:'',summary:'',risk:'none' as const,contactName:'زياد',repeatFollowup:false},input:100,output:20}));
   const result=await new GroundedStrategy(loadSources,{reserve,finish},{complete,classifyIntent}).reply({...context,text:'زياد',followUp:{...pending,reason:'human_requested',summary:'العميل يطلب التواصل'},history:[{role:'assistant',content:'يرجى إرسال اسمك ورقم الهاتف الأنسب للتواصل.'}]});
   expect(result).toMatchObject({action:'clarify',reason:'human_requested',followUp:{state:'collecting',name:'زياد',phone:null}});
-  expect(result.text).toContain('رقم');expect(result.text).not.toContain('السيرة الذاتية');expect(result.text).not.toContain('hr@example.test');
+  expect(result.text).toContain('رقم');
   expect(classifyIntent).toHaveBeenCalledOnce();expect(finish).toHaveBeenCalledOnce();expect(complete).not.toHaveBeenCalled();
+ });
+ it('does not save a normal statement as a name and reassures a customer whose earlier callback never happened',async()=>{
+  const loadSources=vi.fn(async()=>[]),complete=vi.fn();
+  const reserve=vi.fn(async()=>({status:'new' as const,id:'contact-intent'})),finish=vi.fn();
+  const classifyIntent=vi.fn(async()=>({decision:{intent:'human_followup' as const,confidence:.99,language:'ar' as const,product:'unknown' as const,branchMode:'none' as const,branchDetail:'none' as const,branchLabels:[],originEvidence:'',originQuery:'',normalizedQuery:'محدش كلمني',analyticsTopic:'',summary:'العميل لم يتلق الاتصال السابق',risk:'none' as const,contactName:'',repeatFollowup:true},input:100,output:20}));
+  const result=await new GroundedStrategy(loadSources,{reserve,finish},{complete,classifyIntent}).reply({...context,text:'محدش كلمني',followUp:pending,history:[{role:'assistant',content:'يرجى إرسال اسمك ورقم الهاتف الأنسب للتواصل.'}]});
+  expect(result).toMatchObject({action:'clarify',reason:'human_requested',followUp:{state:'collecting',name:null,phone:null}});
+  expect(result.text).toMatch(/نعتذر|آسف/);expect(result.text).toContain('هذه المرة');expect(result.text).not.toContain('محدش كلمني');
+  expect(classifyIntent).toHaveBeenCalledOnce();expect(complete).not.toHaveBeenCalled();
  });
  it.each(['Ofcourse','of course','SURE','Absolutely','تمام','حاضر'])('does not save an acknowledgement as a customer name: %j',async text=>{
   const loadSources=vi.fn(),reserve=vi.fn(),complete=vi.fn(),classifyIntent=vi.fn();
@@ -93,7 +103,7 @@ describe('personal follow-up collection',()=>{
   const strategy=new GroundedStrategy(load,{reserve,finish:vi.fn()},{complete,classifyIntent});
   const english=await strategy.reply({...context,text:'Cancel',resumeRequested:true,history:[{role:'assistant',content:'The AI assistant is now turned off for this chat.'}]});
   expect(english).toMatchObject({action:'clarify',reason:'assistant_resumed'});expect(english.text).toContain('follow-up has been cancelled');expect(english.text).toContain('AI assistant is active again');
-  const arabic=await strategy.reply({...context,text:'cAnCeL',resumeRequested:true,history:[{role:'assistant',content:'المساعد الذكي اتوقف دلوقتي في المحادثة دي.'}]});
+  const arabic=await strategy.reply({...context,text:'الغاء',resumeRequested:true,history:[{role:'assistant',content:'المساعد الذكي اتوقف دلوقتي في المحادثة دي.'}]});
   expect(arabic.text).toContain('تم إلغاء طلب المتابعة');expect(load).not.toHaveBeenCalled();expect(reserve).not.toHaveBeenCalled();expect(classifyIntent).not.toHaveBeenCalled();expect(complete).not.toHaveBeenCalled();
  });
  it('never collects or sends after a manual takeover invalidates the job',async()=>{
@@ -110,14 +120,14 @@ describe('WhatsApp reply presentation',()=>{
   expect(formatBusinessReply('A polished answer 😊 🤍 💎')).toBe('A polished answer 🤍');
  });
  it('places each branch on its own line with a blank line between entries',()=>{
-  expect(formatReply(formatBranchReply('Our branches:', ['Riverside — River Road','Garden — Park Road']))).toBe('Our branches:\n\n• Riverside — River Road\n\n• Garden — Park Road');
+  expect(formatReply(formatBranchReply('Our branches:', ['Riverside — River Road','Garden — Park Road']))).toBe('Our branches:\n\n1. Riverside — River Road\n\n2. Garden — Park Road');
  });
  it('formats a cited model branch response and keeps its grounding checks',async()=>{
   const source={id:'branch-source',kind:'fact' as const,updatedAt:'2026-09-17',label:'K1',content:'IRAM Riverside on River Road and Garden on Park Road.'};
   const strategy=new GroundedStrategy(async()=>[source],{reserve:async()=>({status:'new',id:'reservation'}),finish:vi.fn()},{complete:async()=>({decision:{action:'answer',text:'Visit IRAM; here are our branches',branchLines:['Riverside — River Road','Garden — Park Road'],sourceLabels:['K1']},input:100,output:80})});
   const result=await strategy.reply({...context,text:'Your branches?'});
   expect(result.action).toBe('answer');expect(result.text).not.toMatch(/[;؛]/);
-  expect(result.text).toContain('\\n\\n• Riverside — River Road\\n\\n• Garden — Park Road'.replaceAll('\\n','\n'));
+  expect(result.text).toContain('\\n\\n1. Riverside — River Road\\n\\n2. Garden — Park Road'.replaceAll('\\n','\n'));
   expect(result.sources).toEqual([{id:source.id,kind:'fact',updatedAt:source.updatedAt}]);
  });
  it('greets customers elegantly and consistently in English and Arabic',async()=>{

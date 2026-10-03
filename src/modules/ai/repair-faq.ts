@@ -1,7 +1,7 @@
 import type {AgentDecision,KnowledgeSource} from './contracts';
 import type {MessageContext} from '../messaging/types';
 import {locationWords,normalizeIntent} from './branch-scope';
-import {branchData,sourceRef} from './branch-dialogue';
+import {branchData,sourceRef,numberedBranchLines} from './branch-dialogue';
 import {replyLanguage} from './language';
 
 function faq(source:KnowledgeSource):{question:string;answer:string}|null {
@@ -73,8 +73,16 @@ export function isRepairEnquiry(text:string){
   return /\b(?:repair|repairs|repaired|repairing|maintenance|technical care)\b|\b(?:need|want|can you|could you|would like to).{0,30}\bfix(?:ed|ing)?\b|\bfix(?:ing)?\b.{0,30}\b(?:necklace|chain|ring|bracelet|jewelry|jewellery|item|product)\b|(?:اصلح|نصلح|يتصلح|تتصلح|تصليح|اصلاح|صيانه)/.test(value);
 }
 
-function arabicRepairAnswer(answer:string){
-  if(replyLanguage(answer)==='ar')return answer.trim();
+function numberedRepairAnswer(answer:string,branches:string[]){
+  const lines=answer.split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
+  const start=lines.findIndex(line=>/^(?:available branches|الفروع المتاحه):?$/i.test(normalizeIntent(line)));
+  if(start<0)return null;
+  const end=lines.findIndex((line,index)=>index>start&&/^(?:you may drop off\b|يمكنك.*(?:تسليم|ترك))/i.test(normalizeIntent(line)));
+  if(end<=start||!branches.length)return null;
+  return [...lines.slice(0,start+1),...numberedBranchLines(branches),...lines.slice(end)].join('\n');
+}
+function arabicRepairAnswer(answer:string,branches:string[]){
+  if(replyLanguage(answer)==='ar')return numberedRepairAnswer(answer,branches);
   const lines=answer.split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
   const scheduleLine=lines.find(line=>/^daily from\b/i.test(line));
   const availableIndex=lines.findIndex(line=>/^available branches:?$/i.test(line));
@@ -86,9 +94,8 @@ function arabicRepairAnswer(answer:string){
     .replace(/\band friday from\b/i,'ويوم الجمعة من')
     .replace(/\bto\b/gi,'إلى');
   if(/\b(?:daily|except|sunday|weekly|friday|from|to)\b/i.test(schedule))return null;
-  const branches=lines.slice(availableIndex+1,dropIndex).map(line=>line.replace(/^[\s\t•*-]*(?:\d+\ufe0f?\u20e3?)?[.)-]?\s*/u,'').trim()).filter(Boolean);
   if(!branches.length)return null;
-  return `مواعيد العناية الفنية والصيانة:\n${schedule}\n\nالفروع المتاحة:\n${branches.map(branch=>`• ${branch}`).join('\n')}\n\nيمكنك أيضًا تسليم القطعة للصيانة في أي فرع آخر من فروعنا، ثم استلامها من الفرع نفسه.`;
+  return `مواعيد العناية الفنية والصيانة:\n${schedule}\n\nالفروع المتاحة:\n${numberedBranchLines(branches).join('\n')}\n\nيمكنك أيضًا تسليم القطعة للصيانة في أي فرع آخر من فروعنا، ثم استلامها من الفرع نفسه.`;
 }
 
 /** Clear repair requests use the approved technical-care FAQ without a paid model call. */
@@ -96,9 +103,16 @@ export function repairFaqReply(context:MessageContext,sources:KnowledgeSource[],
   if(!force&&!isRepairEnquiry(context.text??''))return null;
   const source=sources.find(isRepairFaq),value=source&&faq(source);
   if(!source||!value)return null;
-  const text=replyLanguage(context.text??'')==='ar'?arabicRepairAnswer(value.answer):value.answer.trim();
+  const catalog=repairBranchCatalog(sources);
+  const entries=(catalog?.entries??[]).map((entry,index)=>{
+    const records=repairBranchRecords(entry,sources);
+    return {entry,index,records,order:Math.min(...records.map(record=>record.branchOrder??Number.MAX_SAFE_INTEGER))};
+  }).sort((a,b)=>a.order-b.order||a.index-b.index);
+  const branchNames=entries.map(item=>item.entry.name);
+  const text=replyLanguage(context.text??'')==='ar'?arabicRepairAnswer(value.answer,branchNames):numberedRepairAnswer(value.answer,branchNames);
   if(!text)return null;
   const ar=replyLanguage(context.text??'')==='ar';
   const acknowledgement=ar?'أكيد، يمكننا مساعدتك بخصوص الصيانة والعناية الفنية.':'Of course. We can help with maintenance and technical care.';
-  return {action:'answer',reason:'approved_knowledge',text:`${acknowledgement}\n\n${text}`,sources:[sourceRef(source)]};
+  const refs=[source,...entries.flatMap(item=>item.records)];
+  return {action:'answer',reason:'approved_knowledge',text:`${acknowledgement}\n\n${text}`,sources:[...new Map(refs.map(item=>[item.id,item])).values()].map(sourceRef)};
 }

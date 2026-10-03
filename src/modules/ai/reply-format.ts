@@ -26,5 +26,5 @@ export function formatBusinessReply(text:string) {
     .trim()).trim();
 }
 export function formatBranchReply(text:string, lines:string[] = []) {
-  return lines.length ? `${text.trim()}\n\n${lines.map(line=>`• ${line.replace(/\s+/g,' ').trim()}`).join('\n\n')}` : text;
+  return lines.length ? `${text.trim()}\n\n${lines.map((line,index)=>`${lines.length>1?`${index+1}.`:'•'} ${line.replace(/\s+/g,' ').trim()}`).join('\n\n')}` : text;
 }

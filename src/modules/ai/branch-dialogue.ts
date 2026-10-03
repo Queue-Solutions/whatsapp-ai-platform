@@ -23,18 +23,45 @@ export function branchData(source:KnowledgeSource):Record<string,string>|null {
   try{const d=JSON.parse(source.content);return source.kind==='fact'&&d.category==='branch'?d.value:null;}catch{return null;}
 }
 export const sourceRef=(s:KnowledgeSource)=>({id:s.id,kind:s.kind,updatedAt:s.updatedAt});
+/** Match the stable order shown in the branch menu, preserving input order for legacy/test sources. */
+export function orderedBranchSources<T extends KnowledgeSource>(sources:T[]):T[]{
+  return sources.map((source,index)=>({source,index})).sort((a,b)=>{
+    const first=a.source.branchOrder,second=b.source.branchOrder;
+    if(first!=null&&second!=null&&first!==second)return first-second;
+    if(first!=null&&second==null)return -1;if(first==null&&second!=null)return 1;
+    return a.index-b.index;
+  }).map(item=>item.source);
+}
+export const numberedBranchLines=(lines:string[])=>lines.map((line,index)=>`${index+1}. ${line}`);
 const contextualDetailRequest=/\b(?:both|all|them|their|these|those|locations?|addresses?|details?|maps?|links?)\b|(?:الاتنين|الاثنين|كلاهما|كلهم|مواقعهم|عناوينهم|لوكيشن|لوكيشنات|موقع|مواقع|عناوين|تفاصيل)/;
+const selectionNumber=(text:string)=>{
+  const normalized=text.replace(/[٠-٩۰-۹]/g,c=>String(c.charCodeAt(0)-(c<='٩'?1632:1776))).trim();
+  const match=normalized.match(/^(?:branch\s*|فرع\s*)?(\d{1,2})[.)]?[.!،,؟? ]*$/i);
+  return match?Number(match[1]):null;
+};
+export function branchReplyArabic(context:MessageContext){
+  const lastAssistant=[...(context.history??[])].reverse().find(message=>message.role==='assistant')?.content??'';
+  return replyLanguage(selectionNumber(context.text??'')!=null&&lastAssistant?lastAssistant:context.text??'')==='ar';
+}
 /** Resolve plural branch references from the most recent assistant directory. */
 export function contextualBranchRecords(context:MessageContext,sources:KnowledgeSource[]){
-  if(!contextualDetailRequest.test(normalizeIntent(context.text??'')))return [];
+  const selectedNumber=selectionNumber(context.text??'');
+  if(selectedNumber==null&&!contextualDetailRequest.test(normalizeIntent(context.text??'')))return [];
   for(const message of [...(context.history??[])].reverse().filter(item=>item.role==='assistant').slice(0,6)){
+    if(selectedNumber!=null){
+      const numbered=message.content.split(/\r?\n/).flatMap(line=>{
+        const match=line.trim().match(/^(\d{1,2})[.)]\s+(.+)$/);return match?[{number:Number(match[1]),text:match[2]}]:[];
+      });
+      const chosen=numbered.find(item=>item.number===selectedNumber);
+      if(chosen){const records=matchingBranches(chosen.text,sources);if(records.length)return orderedBranchSources(records);}
+    }
     const words=new Set(locationWords(message.content));
     const records=sources.filter(source=>{
       const value=branchData(source);if(!value?.name)return false;
       const identity=locationWords(value.name).filter(word=>!['iram','tjh','branch','store','mall','hotel','the','el','al','فرع','الفرع','فندق','مول'].includes(word));
       return identity.length>0&&identity.every(word=>words.has(word));
     });
-    if(records.length>1)return records;
+    if(records.length>1)return orderedBranchSources(records);
   }
   return [];
 }
@@ -73,14 +100,14 @@ export function branchSourceContent(context:MessageContext,source:KnowledgeSourc
 /** Render confirmed record fields, never model-generated addresses or map links. */
 export function renderBranchAnswer(context:MessageContext,decision:AgentDecision,sources:KnowledgeSource[]):AgentDecision {
   if(decision.action!=='answer')return decision;
-  const scope=branchScope(context,sources),ar=replyLanguage(context.text??'')==='ar';
-  const records=sources.filter(s=>branchData(s)&&decision.sources.some(ref=>ref.id===s.id&&ref.kind===s.kind));
+  const scope=branchScope(context,sources),ar=branchReplyArabic(context);
+  const records=orderedBranchSources(sources.filter(s=>branchData(s)&&decision.sources.some(ref=>ref.id===s.id&&ref.kind===s.kind)));
   if(scope==='directory'&&productIntent(context)==='jewelry'&&records.length){
-    const lines=records.map(s=>{const d=branchData(s)!;return `• ${d.name.trim()}${d.city?.trim()?` — ${d.city.trim()}`:''}`;});
-    return {...decision,text:`${ar?'أكيد، فهمت أنك تبحث عن فروع المجوهرات.\n\nفروع المجوهرات:':'Of course. I understand you’re looking for jewelry branches.\n\nJewelry branches:'}\n\n${lines.join('\n')}\n\n${ar?'اكتب اسم الفرع المطلوب لعرض العنوان الكامل ورابط الموقع.':'Type the branch name to receive its full address and location link.'}`};
+    const lines=numberedBranchLines(records.map(s=>{const d=branchData(s)!;return `${d.name.trim()}${d.city?.trim()?` — ${d.city.trim()}`:''}`;}));
+    return {...decision,text:`${ar?'أكيد، فهمت أنك تبحث عن فروع المجوهرات.\n\nفروع المجوهرات:':'Of course. I understand you’re looking for jewelry branches.\n\nJewelry branches:'}\n\n${lines.join('\n')}\n\n${ar?'اكتب رقم الفرع أو اسمه لعرض العنوان الكامل ورابط الموقع.':'Type the branch number or name to receive its full address and location link.'}`};
   }
   if(scope==='directory'&&productIntent(context)==='btc'){
-    const footer=ar?'اكتب اسم الفرع المطلوب لعرض العنوان الكامل ورابط الموقع.':'Type the branch name to receive its full address and location link.';
+    const footer=ar?'اكتب رقم الفرع أو اسمه لعرض العنوان الكامل ورابط الموقع.':'Type the branch number or name to receive its full address and location link.';
     const intro=ar?'أكيد، فهمت أنك تبحث عن فروع خدمة BTC والسبائك.\n\nالفروع المتاحة لخدمة BTC والسبائك:':'Of course. I understand you’re looking for BTC / bullion service branches.\n\nBranches offering BTC / bullion services:';
     const body=decision.text.startsWith(intro)?decision.text:`${intro}\n\n${decision.text}`;
     return {...decision,text:body.endsWith(footer)?body:`${body}\n\n${footer}`};
@@ -101,7 +128,7 @@ function branchDetailText(value:Record<string,string>,ar:boolean,acknowledge=tru
 /** Complete jewelry directories never depend on the model's knowledge-size selection. */
 export function directJewelryDirectory(context:MessageContext,sources:KnowledgeSource[]):AgentDecision|null {
   if(branchScope(context,sources)!=='directory'||productIntent(context)!=='jewelry'||matchingBranches(context.text??'',sources).length)return null;
-  const records=sources.filter(source=>branchData(source));
+  const records=orderedBranchSources(sources.filter(source=>branchData(source)));
   if(!records.length)return null;
   return renderBranchAnswer(context,{action:'answer',reason:'approved_knowledge',text:'',sources:records.map(sourceRef)},sources);
 }
@@ -112,7 +139,7 @@ export function directBranchDetail(context:MessageContext,sources:KnowledgeSourc
   if(productIntent(context)!=='jewelry')return null;
   const contextual=contextualBranchRecords(context,sources);
   if(!contextual.length&&(!['detail','directory'].includes(scope)||!isLocationRequest(context,sources)))return null;
-  let matches=contextual.length?contextual:matchingBranches(context.text??'',sources);
+  let matches=orderedBranchSources(contextual.length?contextual:matchingBranches(context.text??'',sources));
   if(!matches.length&&/^(?:btc|bullion|jewel(?:ry|lery)|سبائك|السبائك|مجوهرات|المجوهرات)[.!؟? ]*$/i.test(normalizeIntent(context.text??''))) {
     const previous=[...(context.history??[])].reverse().find(m=>m.role==='user');
     if(previous)matches=matchingBranches(previous.content,sources);
@@ -120,7 +147,7 @@ export function directBranchDetail(context:MessageContext,sources:KnowledgeSourc
   if(!matches.length||matches.some(source=>!branchData(source)?.address?.trim()))return null;
   const values=matches.map(source=>branchData(source)!);
   const decision={action:'answer' as const,reason:'approved_knowledge',text:'',sources:matches.map(sourceRef)};
-  if(matches.length===1)return renderBranchAnswer(context,decision,sources);
-  const ar=replyLanguage(context.text??'')==='ar';
-  return {...decision,text:`${ar?'أكيد، فهمت أنك تبحث عن فروع المجوهرات في هذه المنطقة. هذه هي الفروع المتاحة:':'Of course. I understand you’re looking for jewelry branches in this area. These are the available branches:'}\n\n${values.map(value=>branchDetailText(value,ar,false)).join('\n\n')}`};
+  if(matches.length===1)return {...decision,text:branchDetailText(values[0],branchReplyArabic(context))};
+  const ar=branchReplyArabic(context),blocks=numberedBranchLines(values.map(value=>branchDetailText(value,ar,false)));
+  return {...decision,text:`${ar?'أكيد، فهمت أنك تبحث عن فروع المجوهرات في هذه المنطقة. هذه هي الفروع المتاحة:':'Of course. I understand you’re looking for jewelry branches in this area. These are the available branches:'}\n\n${blocks.join('\n\n')}`};
 }

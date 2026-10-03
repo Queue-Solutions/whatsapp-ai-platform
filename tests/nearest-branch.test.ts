@@ -113,7 +113,7 @@ describe('nearest branch conversation',()=>{
     const locations:LocationResolver={pin:vi.fn(),area:vi.fn()};
     const strategy=new GroundedStrategy(async()=>[localFaq,...localBranches],{reserve:vi.fn(),finish:vi.fn()},{complete:vi.fn()},'whatsapp',locations);
     const result=await strategy.reply({...base,text:'ايه اقرب فرع للتجمع الخامس؟',requestKey:'nearest:tagamo3',history:[{role:'user',content:'BTC'}]});
-    expect(result.text.split('\n').filter(line=>line.startsWith('• '))).toEqual(['• IRAM Nox — Fifth Settlement','• TJH Mivida — New Cairo']);
+    expect(result.text.split('\n').filter(line=>/^\d+\. /.test(line))).toEqual(['1. IRAM Nox — Fifth Settlement','2. TJH Mivida — New Cairo']);
     expect(result.text).not.toContain('IRAM Korba');expect(locations.pin).not.toHaveBeenCalled();expect(locations.area).not.toHaveBeenCalled();
   });
   it('keeps a typed area in nearest-branch recovery after an unsuccessful location prompt',async()=>{

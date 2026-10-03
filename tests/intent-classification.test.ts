@@ -30,19 +30,20 @@ describe('semantic intent classification',()=>{
     const input=JSON.parse(request.input);
     expect(input.latestCustomerMessage).toBe(context.text);
     expect(input.activeContactCollection).toBe(false);
-    expect(input.branchCatalog).toEqual([{label:'B1',name:'IRAM Nox',city:'New Cairo',address:'Nox Mall, New Cairo'}]);
+    expect(input.branchCatalog).toEqual([{label:'B1',name:'IRAM Nox',city:'New Cairo',address:'Nox Mall, New Cairo',order:0}]);
     expect(input.faqTopics).toEqual(['Where can I see the collection online?']);
     expect(request.input).not.toContain('https://iram.example');
     expect(request.instructions).toContain('Perform semantic interpretation, not keyword matching');
     expect(request.instructions).toContain('Agreement or acknowledgement expressions');
     expect(request.instructions).toContain('"Ziad" or "زياد" is contact_details');
+    expect(request.instructions).toContain('statement such as "I sent it before" / "ارسلت من قبل" is not a name');
     expect(request.instructions).toContain('Wanting a return, exchange, cancellation or refund does not by itself prove a complaint');
     expect(request.instructions).toContain('A customer reporting suspected fraud');
     expect(request.instructions).toContain('originEvidence must be the exact consecutive words copied from the latest customer message');
     expect(request).toMatchObject({model:AI_MODEL,store:false,reasoning:{effort:'none'},max_output_tokens:600});
     expect(request.temperature).toBeUndefined();
     expect(request.text.format.schema.required).toEqual(expect.arrayContaining(['originEvidence','originQuery']));
-    expect(request.text.format.schema.required).toEqual(expect.arrayContaining(['risk','analyticsTopic']));
+    expect(request.text.format.schema.required).toEqual(expect.arrayContaining(['risk','analyticsTopic','contactName','repeatFollowup']));
     expect(request.text.format.schema.properties.branchLabels.items.enum).toEqual(['B1']);
   });
 

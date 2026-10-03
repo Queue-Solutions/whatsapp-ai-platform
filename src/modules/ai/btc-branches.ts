@@ -1,8 +1,7 @@
 import type {AgentDecision,KnowledgeSource} from './contracts';
 import type {MessageContext} from '../messaging/types';
-import {branchData,productIntent,sourceRef,bullionPattern,contextualBranchRecords} from './branch-dialogue';
+import {branchData,productIntent,sourceRef,bullionPattern,contextualBranchRecords,branchReplyArabic,numberedBranchLines} from './branch-dialogue';
 import {branchScope,isBranchSource,normalizeIntent,locationWords,matchingBranches} from './branch-scope';
-import {replyLanguage} from './language';
 import {knowledgeGap} from './knowledge-gap';
 
 interface BtcEntry {name:string;phone:string}
@@ -86,16 +85,20 @@ function hoursText(hours:string[],ar:boolean){
       .replace(/\bto\b/gi,'إلى').replace(/\bPM\b/gi,'مساءً').replace(/\bAM\b/gi,'صباحًا')}`;
   }).join('\n');
 }
+function orderedEntries(entries:BtcEntry[],sources:KnowledgeSource[]){
+  return entries.map((entry,index)=>({entry,index,order:Math.min(...btcBranchRecords(entry,sources).map(source=>source.branchOrder??Number.MAX_SAFE_INTEGER))}))
+    .sort((a,b)=>a.order-b.order||a.index-b.index).map(item=>item.entry);
+}
 function directory(context:MessageContext,catalog:BtcCatalog,sources:KnowledgeSource[],entries=catalog.entries,unlisted=false):AgentDecision {
-  const ar=replyLanguage(context.text??'')==='ar';
+  const ar=branchReplyArabic(context);entries=orderedEntries(entries,sources);
   const goldCoins=goldCoinRequest(context.text??'');
   const refs=[...catalog.sources];
-  const lines=entries.map(entry=>{
+  const lines=numberedBranchLines(entries.map(entry=>{
     const records=btcBranchRecords(entry,sources);
     const city=records.length===1?branchData(records[0])?.city:'';
     if(city)refs.push(records[0]);
-    return `• ${entry.name}${city?` — ${city}`:''}`;
-  });
+    return `${entry.name}${city?` — ${city}`:''}`;
+  }));
   const acknowledgement=unlisted?(ar?'فهمت أنك تسأل عن هذا الفرع. هذا الفرع غير مدرج ضمن فروع BTC المؤكدة في المعلومات المتاحة.':'I understand you’re asking about that branch. It is not listed for BTC in the approved information.')
     :goldCoins
       ?ar?'أيوه، جنيهات الذهب متاحة لدى IRAM من خلال خدمة BTC والسبائك.':'Yes, IRAM offers gold coins through its BTC / bullion service.'
@@ -105,13 +108,13 @@ function directory(context:MessageContext,catalog:BtcCatalog,sources:KnowledgeSo
   const intro=`${acknowledgement}\n\n${ar?'الفروع المتاحة لخدمة BTC والسبائك:':'Branches offering BTC / bullion services:'}`;
   const hours=hoursText(catalog.hours,ar);
   return {action:'answer',reason:'approved_knowledge',sources:[...new Map(refs.map(s=>[s.id,s])).values()].map(sourceRef),
-    text:[intro,lines.join('\n'),hours,ar?'اكتب اسم الفرع المطلوب لعرض العنوان الكامل ورابط الموقع ورقم خدمة BTC.':'Type the branch name to receive its full address, location link and BTC phone number.'].filter(Boolean).join('\n\n')};
+    text:[intro,lines.join('\n'),hours,ar?'اكتب رقم الفرع أو اسمه لعرض العنوان الكامل ورابط الموقع ورقم خدمة BTC.':'Type the branch number or name to receive its full address, location link and BTC phone number.'].filter(Boolean).join('\n\n')};
 }
 function details(context:MessageContext,catalog:BtcCatalog,entry:BtcEntry,sources:KnowledgeSource[]):AgentDecision {
   return detailsForEntries(context,catalog,[entry],sources);
 }
 function detailsForEntries(context:MessageContext,catalog:BtcCatalog,entries:BtcEntry[],sources:KnowledgeSource[]):AgentDecision {
-  const ar=replyLanguage(context.text??'')==='ar',refs=[...catalog.sources];
+  const ar=branchReplyArabic(context),refs=[...catalog.sources];entries=orderedEntries(entries,sources);
   const blocks=entries.map(entry=>{
     const matches=btcBranchRecords(entry,sources),record=matches.length===1?matches[0]:null,data=record?branchData(record):null;
     if(record)refs.push(record);
@@ -123,7 +126,7 @@ function detailsForEntries(context:MessageContext,catalog:BtcCatalog,entries:Btc
   return {action:'answer',reason:'approved_knowledge',sources:[...new Map(refs.map(source=>[source.id,source])).values()].map(sourceRef),text:[
     entries.length>1?(ar?'أكيد، هذه تفاصيل فروع خدمة BTC والسبائك التي طلبتها:':'Of course. Here are the requested BTC / bullion branch details:')
       :(ar?'أكيد، هذه تفاصيل فرع خدمة BTC والسبائك الذي طلبته:':'Of course. Here are the requested BTC / bullion branch details:'),
-    blocks.join('\n\n——\n\n'),hoursText(catalog.hours,ar),
+    (blocks.length>1?numberedBranchLines(blocks):blocks).join('\n\n——\n\n'),hoursText(catalog.hours,ar),
   ].filter(Boolean).join('\n\n')};
 }
 

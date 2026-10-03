@@ -24,12 +24,14 @@ describe('approved repair FAQ routing',()=>{
   const decision=await new GroundedStrategy(async()=>[repair],usage,{complete}).reply({...context,text,requestKey:`message:${text}`});
   expect(decision).toMatchObject({action:'answer',reason:'approved_knowledge',sources:[{id:'repair'}]});
   expect(decision.text).toContain('مواعيد العناية الفنية والصيانة');expect(decision.text).toContain('يوميًا من 1:00 PM إلى 9:00 PM');
-  expect(decision.text).toContain('• IRAM KORBA (Heliopolis)');expect(decision.text).toContain('• Hurghada');expect(decision.text).toContain('أي فرع آخر من فروعنا');
+  expect(decision.text).toContain('1. IRAM KORBA (Heliopolis)');expect(decision.text).toContain('6. Hurghada');expect(decision.text).toContain('أي فرع آخر من فروعنا');
   expect(decision.text).not.toMatch(/شكرًا لتواصلك|توضح طلبك|المجوهرات ولا منتجات BTC|Technical Care/);expect(complete).not.toHaveBeenCalled();expect(usage.reserve).not.toHaveBeenCalled();
  });
  it('keeps the approved English FAQ answer for an English repair request',async()=>{
   const complete=vi.fn(),decision=await new GroundedStrategy(async()=>[repair],ledger(),{complete}).reply({...context,text:'I need to repair a necklace I bought from you'});
-  expect(decision.text).toBe(`Of course. We can help with maintenance and technical care.\n\n${answer}`);expect(complete).not.toHaveBeenCalled();
+  expect(decision.text).toContain('Of course. We can help with maintenance and technical care.');
+  expect(decision.text).toContain('1. IRAM KORBA (Heliopolis)');expect(decision.text).toContain('6. Hurghada');expect(decision.text).not.toContain('1️⃣');
+  expect(complete).not.toHaveBeenCalled();
  });
  it('does not confuse a new jewelry purchase with a repair request',()=>{
   expect(isRepairEnquiry('عايز اشتري سلسلة من عندكم')).toBe(false);expect(isRepairEnquiry('السلسلة دي تصلح هدية؟')).toBe(false);

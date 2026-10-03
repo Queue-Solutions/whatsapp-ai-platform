@@ -15,10 +15,11 @@ function fixture(sources=[makeFaq(),...records]){
  const complete=vi.fn(),reserve=vi.fn(),load=vi.fn(async()=>sources);
  return {complete,reserve,load,strategy:new GroundedStrategy(load,{reserve,finish:vi.fn()},{complete})};
 }
+const numberedLines=(text:string)=>text.split('\n').filter(line=>/^\d+\. /.test(line));
 describe('BTC FAQ is the branch eligibility authority',()=>{
  it('renders exactly the eight FAQ branches, excludes jewelry-only branches and never calls the model',async()=>{
   const f=fixture();const decision=await f.strategy.reply(base);
-  expect(decision.action).toBe('answer');expect(decision.text.split('\n').filter(l=>l.startsWith('• '))).toEqual(names.map((n,i)=>`• ${n} — ${cities[i]}`));
+  expect(decision.action).toBe('answer');expect(numberedLines(decision.text)).toEqual(names.map((n,i)=>`${i+1}. ${n} — ${cities[i]}`));
   expect(decision.text).not.toMatch(/ZIA|Kawthar|Fictional|https:|09999999999|0120000000/);
   expect(decision.text).toContain('12:00 PM to 8:30 PM');expect(decision.text).toContain('Friday from 2:00 PM to 8:30 PM');
   expect(decision.text.match(/Type the branch/g)).toHaveLength(1);expect(decision.text.match(/Branches offering BTC/g)).toHaveLength(1);
@@ -27,7 +28,7 @@ describe('BTC FAQ is the branch eligibility authority',()=>{
  it('confirms the customer’s gold-coin request before showing only approved BTC branches',async()=>{
   const f=fixture();const decision=await f.strategy.reply({...base,text:'What branches sell gold coins?',history:[]});
   expect(decision.text).toMatch(/^Yes, IRAM offers gold coins through its BTC \/ bullion service\./);
-  expect(decision.text).toContain('Branches offering BTC / bullion services:');expect(decision.text.split('\n').filter(line=>line.startsWith('• '))).toHaveLength(8);
+  expect(decision.text).toContain('Branches offering BTC / bullion services:');expect(numberedLines(decision.text)).toHaveLength(8);
   expect(f.complete).not.toHaveBeenCalled();expect(f.reserve).not.toHaveBeenCalled();
  });
  it('understands Egyptian دهب and gives a product-specific confirmation',async()=>{
@@ -38,7 +39,7 @@ describe('BTC FAQ is the branch eligibility authority',()=>{
  it('answers a standalone Egyptian gold-coin question locally instead of sending it to the model',async()=>{
   const f=fixture();const decision=await f.strategy.reply({...base,text:'بتبيعوا جنيه دهب؟',history:[]});
   expect(decision.text).toMatch(/^أيوه، جنيهات الذهب متاحة لدى IRAM/);
-  expect(decision.text.split('\n').filter(line=>line.startsWith('• '))).toHaveLength(8);
+  expect(numberedLines(decision.text)).toHaveLength(8);
   expect(f.complete).not.toHaveBeenCalled();expect(f.reserve).not.toHaveBeenCalled();
  });
  it.each(names.map((name,i)=>[name,i] as const))('joins %s to its own address/map and the BTC-specific FAQ phone',async(name,i)=>{
@@ -52,13 +53,21 @@ describe('BTC FAQ is the branch eligibility authority',()=>{
  });
  it.each(['التجمع','التجمع الخامس','القاهرة الجديدة','New Cairo','Fifth Settlement'])('resolves the New Cairo area alias %s to only eligible BTC branches',async text=>{
   const decision=await fixture().strategy.reply({...base,text});
-  expect(decision.text.split('\n').filter(line=>line.startsWith('• '))).toEqual([`• ${names[2]} — ${cities[2]}`,`• ${names[3]} — ${cities[3]}`]);
+  expect(numberedLines(decision.text)).toEqual([`1. ${names[2]} — ${cities[2]}`,`2. ${names[3]} — ${cities[3]}`]);
   expect(decision.text).not.toMatch(/Korba|City stars|Maadi|Arkan|Alex|Mansoura/);
  });
  it.each(['fiftsh settlement','fith settlement','fifth setlement'])('fuzzily resolves a misspelled area without a typo dictionary: %s',async text=>{
   const f=fixture();const decision=await f.strategy.reply({...base,text:`Any branches in ${text}?`});
-  expect(decision.text.split('\n').filter(line=>line.startsWith('• '))).toEqual([`• ${names[2]} — ${cities[2]}`,`• ${names[3]} — ${cities[3]}`]);
+  expect(numberedLines(decision.text)).toEqual([`1. ${names[2]} — ${cities[2]}`,`2. ${names[3]} — ${cities[3]}`]);
   expect(decision.text).not.toMatch(/Korba|City stars|Maadi|Arkan|Alex|Mansoura/);expect(f.complete).not.toHaveBeenCalled();
+ });
+ it('resolves a displayed BTC branch number to that branch details',async()=>{
+  const f=fixture();
+  const directory=await f.strategy.reply({...base,text:'BTC branches in New Cairo'});
+  expect(numberedLines(directory.text)).toEqual([`1. ${names[2]} — ${cities[2]}`,`2. ${names[3]} — ${cities[3]}`]);
+  const selected=await f.strategy.reply({...base,text:'2',requestKey:'btc-number-selection',history:[{role:'user',content:'BTC branches in New Cairo'},{role:'assistant',content:directory.text}]});
+  expect(selected.text).toContain('4 Fictional Street');expect(selected.text).toContain('fixture3');expect(selected.text).toContain(phones[3]);
+  expect(selected.text).not.toMatch(/3 Fictional Street|fixture2/);expect(f.complete).not.toHaveBeenCalled();
  });
  it.each(['Both','Send both locations','ممكن اللوكيشن بتاعهم هما الاتنين'])('returns every previously offered branch location for a plural follow-up: %s',async text=>{
   const f=fixture();const directory=`Branches offering BTC / bullion services:\n\n• ${names[2]} — ${cities[2]}\n• ${names[3]} — ${cities[3]}`;
@@ -74,7 +83,7 @@ describe('BTC FAQ is the branch eligibility authority',()=>{
     mapsUrl:`https://maps.app.goo.gl/fixture${index}`,phone:'09999999999',hours:'Jewelry hours: 9 AM–10 PM',
   }})}:source);
   const decision=await fixture([makeFaq(),...localized]).strategy.reply({...base,text:'فيه فرع في التجمع؟'});
-  expect(decision.text.split('\n').filter(line=>line.startsWith('• '))).toEqual(['• IRAM Nox — القاهرة','• TJH Mivida — القاهرة']);
+  expect(numberedLines(decision.text)).toEqual(['1. IRAM Nox — القاهرة','2. TJH Mivida — القاهرة']);
   expect(decision.text).not.toMatch(/Korba|City stars|Maadi|Arkan|Alex|Mansoura/);
  });
  it('keeps a repeated Tagamo3 follow-up scoped to every eligible New Cairo branch',async()=>{
@@ -84,7 +93,7 @@ describe('BTC FAQ is the branch eligibility authority',()=>{
   const complete=vi.fn(),usage={reserve:vi.fn(async()=>({status:'new' as const,id:'reservation'})),finish:vi.fn()};
   const decision=await new GroundedStrategy(async()=>[makeFaq(),...records],usage,{complete,classifyIntent}).reply({...base,text:'ايه منهم في التجمع؟',
     history:[{role:'user',content:'عندكم جنيهات دهب؟'},{role:'assistant',content:'الفروع المتاحة لخدمة BTC والسبائك: IRAM Nox, TJH Mivida'}]});
-  expect(decision.text.split('\n').filter(line=>line.startsWith('• '))).toEqual([`• ${names[2]} — ${cities[2]}`,`• ${names[3]} — ${cities[3]}`]);
+  expect(numberedLines(decision.text)).toEqual([`1. ${names[2]} — ${cities[2]}`,`2. ${names[3]} — ${cities[3]}`]);
   expect(decision.text).not.toMatch(/Korba|City stars|Maadi|Arkan|Alex|Mansoura/);expect(complete).not.toHaveBeenCalled();
  });
  it('does not let a stale classifier branch override the latest explicit BTC city',async()=>{
@@ -107,7 +116,7 @@ describe('BTC FAQ is the branch eligibility authority',()=>{
  });
  it('does not silently treat a jewelry-only branch as eligible for BTC',async()=>{
   const decision=await fixture().strategy.reply({...base,text:'IRAM ZIA address and BTC phone'});
-  expect(decision.text).toContain('not listed for BTC');expect(decision.text).not.toMatch(/9 Fictional|fixture8|09999999999/);expect(decision.text.split('\n').filter(l=>l.startsWith('• '))).toHaveLength(8);
+  expect(decision.text).toContain('not listed for BTC');expect(decision.text).not.toMatch(/9 Fictional|fixture8|09999999999/);expect(numberedLines(decision.text)).toHaveLength(8);
  });
  it('does not join NOX to ZIA even when they share a city',async()=>{
   const missingNox=records.filter(s=>s.id!=='branch-2');const decision=await fixture([makeFaq(),...missingNox]).strategy.reply({...base,text:'IRAM Nox'});
@@ -126,7 +135,7 @@ describe('BTC FAQ is the branch eligibility authority',()=>{
  it('uses current FAQ entries after an edit instead of a previously cached model list',async()=>{
   const f=fixture([makeFaq(`IRAM Korba: ${phones[0]}\n${hours}`),...records]);
   f.reserve.mockResolvedValue({status:'completed',decision:{action:'answer',text:'IRAM ZIA and El Kawthar offer BTC.',reason:'approved_knowledge',sources:[]} as AgentDecision});
-  const decision=await f.strategy.reply(base);expect(decision.text.split('\n').filter(l=>l.startsWith('• '))).toHaveLength(1);expect(decision.text).not.toMatch(/ZIA|Kawthar/);expect(f.reserve).not.toHaveBeenCalled();
+  const decision=await f.strategy.reply(base);expect(numberedLines(decision.text)).toHaveLength(1);expect(decision.text).not.toMatch(/ZIA|Kawthar/);expect(f.reserve).not.toHaveBeenCalled();
  });
  it('keeps ineligible branch records and generic directory FAQs out of other BTC model requests',()=>{
   const generic={...makeFaq(),id:'generic',label:'G1',content:JSON.stringify({question:'Where are your branches?',answer:'IRAM ZIA and IRAM El Kawthar.'})};

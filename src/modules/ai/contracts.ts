@@ -7,6 +7,8 @@ export interface KnowledgeSource extends SourceReference {
   content: string;
   locale?: string;
   identityKey?: string;
+  /** Zero-based order from the branch menu for the source locale. */
+  branchOrder?: number;
 }
 export interface AgentDecision {
   text: string;
@@ -15,6 +17,10 @@ export interface AgentDecision {
   sources: SourceReference[];
   attentionSummary?: string;
   followUp?: import('./follow-up').FollowUpDetails;
+  /** AI-validated customer name copied from the current message. */
+  contactName?: string;
+  /** The customer reports that an earlier promised personal follow-up did not happen. */
+  repeatFollowup?: boolean;
   usage?: { model: string; inputTokens: number; outputTokens: number; costNano: number };
 }
 export interface KnowledgeRetriever {

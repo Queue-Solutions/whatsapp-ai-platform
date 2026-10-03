@@ -49,7 +49,7 @@ function followUpReasonReply(context:MessageContext,current:FollowUpContext):Age
       :ar?'لأنك طلبت التحدث مع شخص من فريق IRAM، بدأنا طلب المتابعة الشخصية.':'Because you asked to speak with a person from the IRAM team, a personal follow-up was started.';
   return {...pending,text:`${explanation}\n\n${question}`};
 }
-function reply(context:MessageContext,reason:string,summary:string,details:FollowUpDetails):AgentDecision {
+function reply(context:MessageContext,reason:string,summary:string,details:FollowUpDetails,repeatFollowup=false):AgentDecision {
   const ar=followUpArabic(context);
   let text:string;
   if(details.purpose==='career'&&!details.role&&details.state==='collecting')text=ar
@@ -59,13 +59,16 @@ function reply(context:MessageContext,reason:string,summary:string,details:Follo
     ? 'شكرًا لك. تم تسجيل الوظيفة التي تهتم بها، إلى جانب اسمك ورقم التواصل.\n\nسيتواصل معك فريق IRAM إذا توفرت فرصة مناسبة لهذا الدور.'
     : 'Thank you. Your preferred role, name and contact number have been saved.\n\nThe IRAM team will contact you if a suitable opportunity becomes available.';
   else if(details.state==='ready')text=ar
-    ? 'شكرًا لك. تم تسجيل اسمك ورقم التواصل 🤍\n\nتم إيقاف المساعد الذكي لهذه المحادثة، وسيتواصل معك أحد ممثلي IRAM خلال 24 ساعة.\n\nلإلغاء طلب المتابعة والعودة إلى المساعد الذكي، اكتب Cancel.'
-    : 'Thank you. Your name and phone number have been saved 🤍\n\nThe AI assistant is now turned off for this chat. An IRAM representative will contact you within the next 24 hours.\n\nTo cancel this follow-up and return to the AI assistant, type Cancel.';
+    ? `${repeatFollowup?'نعتذر لك لأن المتابعة السابقة لم تتم. تم تسجيل طلبك من جديد، وسنتأكد من متابعته هذه المرة.\n\n':''}شكرًا لك. تم تسجيل اسمك ورقم التواصل 🤍\n\nتم إيقاف المساعد الذكي لهذه المحادثة، وسيتواصل معك أحد ممثلي IRAM خلال 24 ساعة.\n\nلإلغاء طلب المتابعة والعودة إلى المساعد الذكي، اكتب الغاء.`
+    : `${repeatFollowup?'We’re sorry the previous follow-up did not happen. Your request has been registered again, and we’ll make sure it is followed up this time.\n\n':''}Thank you. Your name and phone number have been saved 🤍\n\nThe AI assistant is now turned off for this chat. An IRAM representative will contact you within the next 24 hours.\n\nTo cancel this follow-up and return to the AI assistant, type Cancel.`;
   else if(details.state==='declined')text=ar
-    ? 'مشاركة بيانات التواصل اختيارية.\n\nتم إيقاف المساعد الذكي لهذه المحادثة حتى يتمكن فريق IRAM من مراجعة طلبك والرد هنا. لإلغاء المتابعة والعودة إلى المساعد الذكي، اكتب Cancel.'
+    ? 'مشاركة بيانات التواصل اختيارية.\n\nتم إيقاف المساعد الذكي لهذه المحادثة حتى يتمكن فريق IRAM من مراجعة طلبك والرد هنا. لإلغاء المتابعة والعودة إلى المساعد الذكي، اكتب الغاء.'
     : 'Sharing your contact details is optional.\n\nThe AI assistant is paused for this chat while the IRAM team reviews your request and responds here. To cancel the follow-up and return to the AI assistant, type Cancel.';
   else {
-    const intro=details.purpose==='career'?(ar?'يسعدنا اهتمامك بالانضمام إلى فريق IRAM.':'Thank you for your interest in joining IRAM.'):ar?'سيتابع أحد ممثلي IRAM طلبك بصورة شخصية.':'An IRAM representative will assist you personally.';
+    const intro=details.purpose==='career'?(ar?'يسعدنا اهتمامك بالانضمام إلى فريق IRAM.':'Thank you for your interest in joining IRAM.')
+      :repeatFollowup
+        ?ar?'نعتذر لك لأن المتابعة السابقة لم تتم. تم تسجيل طلبك للمتابعة من جديد، وسيتواصل معك أحد ممثلي IRAM هذه المرة بعد استكمال بيانات التواصل.':'We’re sorry the previous follow-up did not happen. Your request has been registered again, and an IRAM representative will contact you this time once the contact details are complete.'
+        :ar?'سيتابع أحد ممثلي IRAM طلبك بصورة شخصية.':'An IRAM representative will assist you personally.';
     const question=!details.name&&!details.phone
       ? ar?'يرجى إرسال اسمك ورقم الهاتف الأنسب للتواصل.':'Please share your name and preferred phone number.'
       : !details.name?ar?'يرجى إرسال اسمك لاستكمال طلب المتابعة.':'Please share your name to complete the follow-up request.'
@@ -84,13 +87,14 @@ function contactTimingReply(context:MessageContext,current:FollowUpContext):Agen
 }
 export function beginFollowUp(context:MessageContext,decision:AgentDecision):AgentDecision {
   const existing=context.followUp?.state==='collecting'?context.followUp:undefined;
-  // Only take explicitly labelled names from the original issue, never infer from profile metadata.
-  const name=existing?.name??contactName(context.text??'',false);
+  // Names reach this point only after the semantic classifier copied and
+  // validated the customer's actual name from the current message.
+  const name=existing?.name??decision.contactName??null;
   const phone=existing?.phone??((name||labelledPhone.test(context.text??''))?contactPhone(context.text??''):null);
   return {...reply(context,decision.reason,decision.attentionSummary??'The customer needs personal help with this request.',
-    {state:name&&phone?'ready':'collecting',name,phone}),usage:decision.usage};
+    {state:name&&phone?'ready':'collecting',name,phone},decision.repeatFollowup),usage:decision.usage};
 }
-export function continueFollowUp(context:MessageContext):AgentDecision|null {
+export function continueFollowUp(context:MessageContext,options?:{validatedName:string|null}):AgentDecision|null {
   const current=context.followUp;if(current?.state!=='collecting')return null;
   const text=context.text?.trim()??'';
   if(/^(?:no thanks|skip)[.! ]*$|(?:don't|do not|won't|rather not).{0,20}(?:share|give).{0,20}(?:number|name|details)|(?:مش|لا).{0,15}(?:هدي|هقول|اشارك)|بدون رقم|مش حابب.{0,20}(?:رقم|بيانات|اسم)/i.test(text))
@@ -110,7 +114,7 @@ export function continueFollowUp(context:MessageContext):AgentDecision|null {
   // for the fields that are still missing instead of storing words like
   // “ofcourse” or “sure” as the customer's name.
   if(wasAskedForContact&&isAcknowledgement(text))return reply(context,current.reason,current.summary,current);
-  const name=contactName(text,wasAskedForContact&&!current.name);
+  const name=options?options.validatedName:contactName(text,wasAskedForContact&&!current.name);
   const plainPhone=/^[+\d٠-٩۰-۹ ()-]+$/.test(text);
   const phone=plainPhone||name||labelledPhone.test(text)?contactPhone(text):null;
   const contactLike=!!name||!!phone||plainPhone||!text;

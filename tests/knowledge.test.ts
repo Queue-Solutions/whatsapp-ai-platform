@@ -56,8 +56,8 @@ it('gives each tenant/message a stable FAQ identity and preserves an existing ap
 
 it('excludes empty published answers and incomplete branches even if stored outside the editor', async () => {
   const makeQuery = (data: unknown[]) => {
-    const query = { select: vi.fn(), eq: vi.fn(), then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data, error: null }).then(resolve) };
-    query.select.mockReturnValue(query); query.eq.mockReturnValue(query); return query;
+    const query = { select: vi.fn(), eq: vi.fn(), order: vi.fn(), then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data, error: null }).then(resolve) };
+    query.select.mockReturnValue(query); query.eq.mockReturnValue(query);query.order.mockReturnValue(query); return query;
   };
   const facts = makeQuery([
     { category: 'branch', value: emptyBranch() },
@@ -73,6 +73,7 @@ it('excludes empty published answers and incomplete branches even if stored outs
     expect(query.eq).toHaveBeenCalledWith('locale','ar');
     expect(query.eq).toHaveBeenCalledWith('is_published',true);
   }
+  expect(facts.order).toHaveBeenNthCalledWith(1,'created_at');expect(facts.order).toHaveBeenNthCalledWith(2,'id');
 });
 
 it('does not report success when RLS or the network rejects a save', async () => {
