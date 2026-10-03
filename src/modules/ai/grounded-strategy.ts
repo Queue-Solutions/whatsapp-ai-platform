@@ -3,7 +3,7 @@ import {GeoLocations,type LocationResolver} from './branch-location';
 import {btcBranchReply} from './btc-branches';
 import {technicalFailure,recoverableFailure,RECOVERY_FALLBACK_REASON} from './recovery';
 import {hasUnsupportedLink,offeredLinks} from './approved-links';
-import {needsProductQuestion,productQuestion,renderBranchAnswer,directBranchDetail,directJewelryDirectory,productIntent,bullionPattern} from './branch-dialogue';
+import {needsProductQuestion,productQuestion,renderBranchAnswer,directBranchDetail,directJewelryDirectory,productIntent,bullionPattern,displayedBranchSelection} from './branch-dialogue';
 import {resolveContinuation,isProductChoiceContinuation,isShortAcceptance} from './conversation-context';
 import {unsolicitedBranches,scopeClarification,branchScope,normalizeIntent,matchingBranches} from './branch-scope';
 import { detectAttention, summarizeAttention } from './attention-detection';
@@ -154,10 +154,17 @@ export class GroundedStrategy implements ReplyStrategy {
       const contextualNearest=await nearestBranchReply(context,sources,this.locations);
       if(contextualNearest)return contextualNearest;
     }
+    // A displayed number is structured conversation state, not a fresh intent
+    // for the classifier to reinterpret. Resolve every numeric follow-up against
+    // the latest retained directory, including the second, third, or later pick.
+    if(!knowledgeUnavailable&&displayedBranchSelection(context,sources)){
+      const selected=productIntent(context)==='btc'?btcBranchReply(context,sources):directBranchDetail(context,sources);
+      if(selected)return selected;
+    }
     // A product choice answering our own branch-routing question is deterministic context, not a new support intent.
     if(!knowledgeUnavailable&&isProductChoiceContinuation(context)){
-      const branchDetail=directBranchDetail(context,sources);if(branchDetail)return branchDetail;
       const branchDirectory=directJewelryDirectory(context,sources);if(branchDirectory)return branchDirectory;
+      const branchDetail=directBranchDetail(context,sources);if(branchDetail)return branchDetail;
     }
     const classified=await this.classifyIntent(context,sources);
     const useClassification=classified&&classified.confidence>=0.6?classified:null;
@@ -212,8 +219,8 @@ export class GroundedStrategy implements ReplyStrategy {
     // inherited from history, while a classifier rewrite must not broaden a
     // Tagamo3/New Cairo request back into the complete BTC directory.
     const btcReply=btcBranchReply(routed,available);if(btcReply)return btcReply;
-    const branchDetail=directBranchDetail(routed,available);if(branchDetail)return branchDetail;
     const branchDirectory=directJewelryDirectory(routed,available);if(branchDirectory)return branchDirectory;
+    const branchDetail=directBranchDetail(routed,available);if(branchDetail)return branchDetail;
     // A straightforward return/exchange/refund request is a policy workflow, not
     // a complaint. Restrict its evidence to the approved returns FAQ so an
     // unrelated record cannot outrank the policy or reopen personal follow-up.

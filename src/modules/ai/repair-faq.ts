@@ -112,7 +112,7 @@ export function repairFaqReply(context:MessageContext,sources:KnowledgeSource[],
   const text=replyLanguage(context.text??'')==='ar'?arabicRepairAnswer(value.answer,branchNames):numberedRepairAnswer(value.answer,branchNames);
   if(!text)return null;
   const ar=replyLanguage(context.text??'')==='ar';
-  const acknowledgement=ar?'أكيد، يمكننا مساعدتك بخصوص الصيانة والعناية الفنية.':'Of course. We can help with maintenance and technical care.';
+  const acknowledgement=ar?'نقدر نساعدك في الصيانة والعناية الفنية.':'IRAM can help with maintenance and technical care.';
   const refs=[source,...entries.flatMap(item=>item.records)];
   return {action:'answer',reason:'approved_knowledge',text:`${acknowledgement}\n\n${text}`,sources:[...new Map(refs.map(item=>[item.id,item])).values()].map(sourceRef)};
 }

@@ -29,7 +29,7 @@ describe('approved repair FAQ routing',()=>{
  });
  it('keeps the approved English FAQ answer for an English repair request',async()=>{
   const complete=vi.fn(),decision=await new GroundedStrategy(async()=>[repair],ledger(),{complete}).reply({...context,text:'I need to repair a necklace I bought from you'});
-  expect(decision.text).toContain('Of course. We can help with maintenance and technical care.');
+  expect(decision.text).toContain('IRAM can help with maintenance and technical care.');
   expect(decision.text).toContain('1. IRAM KORBA (Heliopolis)');expect(decision.text).toContain('6. Hurghada');expect(decision.text).not.toContain('1️⃣');
   expect(complete).not.toHaveBeenCalled();
  });

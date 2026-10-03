@@ -53,8 +53,9 @@ describe('grounded reply strategy', () => {
     const prompt=JSON.parse(buildRequest(context,[source])).instructions;
     expect(prompt).toContain('ask one short clarification first');expect(prompt).toContain('avoid repeating a clarification');
     expect(prompt).toContain('refined, composed and concise');expect(prompt).toContain('Use no emoji by default');
-    expect(prompt).toContain('Begin every ordinary business answer with one short, natural acknowledgment');
-    expect(prompt).toContain('only when the approved sources establish it');
+    expect(prompt).toContain('A brief acknowledgment is optional, not a ritual');
+    expect(prompt).toContain('Never default to “Of course”');
+    expect(prompt).toContain('when the approved sources establish it');
   });
   it('does not flag retrieval, budget, provider or validation failures as missing business information', async () => {
     const cases=[

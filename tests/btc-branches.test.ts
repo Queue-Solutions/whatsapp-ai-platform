@@ -22,7 +22,7 @@ describe('BTC FAQ is the branch eligibility authority',()=>{
   expect(decision.action).toBe('answer');expect(numberedLines(decision.text)).toEqual(names.map((n,i)=>`${i+1}. ${n} — ${cities[i]}`));
   expect(decision.text).not.toMatch(/ZIA|Kawthar|Fictional|https:|09999999999|0120000000/);
   expect(decision.text).toContain('12:00 PM to 8:30 PM');expect(decision.text).toContain('Friday from 2:00 PM to 8:30 PM');
-  expect(decision.text.match(/Type the branch/g)).toHaveLength(1);expect(decision.text.match(/Branches offering BTC/g)).toHaveLength(1);
+  expect(decision.text.match(/Reply with a branch/g)).toHaveLength(1);expect(decision.text.match(/Branches offering BTC/g)).toHaveLength(1);
  expect(f.complete).not.toHaveBeenCalled();expect(f.reserve).not.toHaveBeenCalled();expect(f.load).toHaveBeenCalledWith('trusted-tenant');
  });
  it('confirms the customer’s gold-coin request before showing only approved BTC branches',async()=>{
@@ -68,6 +68,15 @@ describe('BTC FAQ is the branch eligibility authority',()=>{
   const selected=await f.strategy.reply({...base,text:'2',requestKey:'btc-number-selection',history:[{role:'user',content:'BTC branches in New Cairo'},{role:'assistant',content:directory.text}]});
   expect(selected.text).toContain('4 Fictional Street');expect(selected.text).toContain('fixture3');expect(selected.text).toContain(phones[3]);
   expect(selected.text).not.toMatch(/3 Fictional Street|fixture2/);expect(f.complete).not.toHaveBeenCalled();
+ });
+ it('resolves a second BTC number against the same original directory',async()=>{
+  const f=fixture();const directory=await f.strategy.reply({...base,text:'BTC branches'});
+  const decision=await f.strategy.reply({...base,text:'3',requestKey:'btc-second-number',history:[
+    {role:'user',content:'BTC branches'},{role:'assistant',content:directory.text},{role:'user',content:'2'},
+    {role:'assistant',content:`Here are the details for ${names[1]}:\n\n${names[1]} — ${cities[1]}\n\n2 Fictional Street\n\nhttps://maps.app.goo.gl/fixture1`},
+  ]});
+  expect(decision.text).toContain('3 Fictional Street');expect(decision.text).toContain('fixture2');expect(decision.text).toContain(phones[2]);
+  expect(decision.text).not.toMatch(/2 Fictional Street|fixture1/);expect(f.complete).not.toHaveBeenCalled();
  });
  it.each(['Both','Send both locations','ممكن اللوكيشن بتاعهم هما الاتنين'])('returns every previously offered branch location for a plural follow-up: %s',async text=>{
   const f=fixture();const directory=`Branches offering BTC / bullion services:\n\n• ${names[2]} — ${cities[2]}\n• ${names[3]} — ${cities[3]}`;

@@ -50,7 +50,7 @@ describe('product-aware branch navigation',()=>{
   const complete=vi.fn();const usage=ledger();
   const decision=await new GroundedStrategy(async()=>branches,usage,{complete}).reply({...base,history:history()});
   expect(decision.action).toBe('answer');expect(decision.text).toContain('IRAM Riverside — Alexandria');expect(decision.text).toContain('IRAM Senzo Mall — Hurghada');
-  expect(decision.text).not.toMatch(/123|Street|https:|9am/);expect(decision.text).toMatch(/Type the branch.*location link\.$/);
+  expect(decision.text).not.toMatch(/123|Street|https:|9am/);expect(decision.text).toMatch(/Reply with a branch.*location link\.$/);
   expect(complete).not.toHaveBeenCalled();expect(usage.reserve).not.toHaveBeenCalled();
  });
  it('renders all 12 published branches even when their full records exceed model context selection',async()=>{
@@ -95,12 +95,33 @@ describe('product-aware branch navigation',()=>{
   expect(selected.text).toContain('123 IRAM Second Street');expect(selected.text).toContain('https://maps.app.goo.gl/SECOND');
   expect(selected.text).not.toMatch(/IRAM First|IRAM Third/);
  });
- it.each(['التجمع','التجمع الخامس','القاهرة الجديدة','New Cairo','Fifth Settlement','فرع التجمع'])('returns all three New Cairo branches with full details for %s',async text=>{
+ it('resolves later numeric picks against the original directory instead of stale classifier context',async()=>{
+  const catalog=[branch('IRAM First','Cairo','FIRST'),branch('IRAM Second','Alexandria','SECOND'),branch('IRAM Third','Mansoura','THIRD')];
+  const directory='Sure — here are all our jewelry branches:\n\n1. IRAM First — Cairo\n2. IRAM Second — Alexandria\n3. IRAM Third — Mansoura\n\nReply with a branch number or name for its full address and location link.';
+  const classifyIntent=vi.fn();
+  const decision=await new GroundedStrategy(async()=>catalog,ledger(),{complete:vi.fn(),classifyIntent}).reply({...base,text:'3',requestKey:'later-number',history:[
+    {role:'user',content:'Show all jewelry branches'},{role:'assistant',content:directory},{role:'user',content:'2'},
+    {role:'assistant',content:'Sure — here are the location details for IRAM Second:\n\nIRAM Second — Alexandria\n\n123 IRAM Second Street\n\nhttps://maps.app.goo.gl/SECOND'},
+  ]});
+  expect(decision.text).toContain('123 IRAM Third Street');expect(decision.text).toContain('https://maps.app.goo.gl/THIRD');
+  expect(decision.text).not.toMatch(/IRAM First|IRAM Second/);expect(classifyIntent).not.toHaveBeenCalled();
+ });
+ it('obeys a natural names-only correction and removes addresses and maps from the directory',async()=>{
+  const complete=vi.fn();const full='Jewelry branches:\n\n1. IRAM Riverside — Alexandria\n\n123 IRAM Riverside Street\n\nhttps://maps.app.goo.gl/B1\n\n2. IRAM Senzo Mall — Hurghada\n\n123 IRAM Senzo Mall Street\n\nhttps://maps.app.goo.gl/B2';
+  const decision=await new GroundedStrategy(async()=>branches,ledger(),{complete}).reply({...base,text:'Show without full address, just branch names',history:[
+    {role:'user',content:'Show all jewelry branches'},{role:'assistant',content:full},
+  ]});
+  expect(decision.text).toMatch(/^Sure — here are all our jewelry branches:/);
+  expect(decision.text.split('\n').filter(line=>/^\d+\. /.test(line))).toHaveLength(3);
+  expect(decision.text).not.toMatch(/123|https:|I understand|this area/);expect(complete).not.toHaveBeenCalled();
+ });
+ it.each(['التجمع','التجمع الخامس','القاهرة الجديدة','New Cairo','Fifth Settlement','فرع التجمع'])('returns a concise numbered New Cairo directory for %s',async text=>{
   const newCairo=[branch('IRAM Nox','New Cairo','NOX'),branch('IRAM ZIA','New Cairo','ZIA'),branch('TJH Mivida','New Cairo','MIVIDA')];
   const complete=vi.fn(),usage=ledger();
   expect(matchingBranches(text,newCairo)).toHaveLength(3);
   const decision=await new GroundedStrategy(async()=>newCairo,usage,{complete}).reply({...base,text,history:[{role:'assistant',content:'فروع المجوهرات:\n\n• IRAM Nox — New Cairo'}]});
-  for(const source of newCairo){const name=branchDataName(source);expect(decision.text).toContain(name);expect(decision.text).toContain(`123 ${name} Street`);expect(decision.text).toContain(`https://maps.app.goo.gl/${source.label}`);}
+  for(const source of newCairo){const name=branchDataName(source);expect(decision.text).toContain(name);expect(decision.text).not.toContain(`123 ${name} Street`);expect(decision.text).not.toContain(`https://maps.app.goo.gl/${source.label}`);}
+  expect(decision.text.match(/^\d+\. /gm)).toHaveLength(3);
   expect(decision.sources).toHaveLength(3);expect(complete).not.toHaveBeenCalled();expect(usage.reserve).not.toHaveBeenCalled();
  });
  it('uses alternate-language structured cities when preferred localized branch records omit the city',async()=>{
@@ -126,12 +147,12 @@ describe('product-aware branch navigation',()=>{
     branchMode:'directory' as const,branchDetail:'general' as const,branchLabels:['NOX','MIVIDA','ZIA'],originEvidence:'التجمع',originQuery:'التجمع',
     normalizedQuery:'فروع المجوهرات في التجمع: IRAM Nox, TJH Mivida, IRAM ZIA',analyticsTopic:'فروع التجمع',summary:'',risk:'none' as const},input:120,output:30}));
   const complete=vi.fn();const decision=await new GroundedStrategy(async()=>areaBranches,ledger(),{complete,classifyIntent}).reply({...base,text:'فيه فروع في التجمع؟',history:[{role:'user',content:'مجوهرات'}]});
-  for(const source of areaBranches){expect(decision.text).toContain(branchDataName(source));expect(decision.text).toContain(branchData(source)!.address);}
+  for(const source of areaBranches){expect(decision.text).toContain(branchDataName(source));expect(decision.text).not.toContain(branchData(source)!.address);}
   expect(decision.sources).toHaveLength(3);expect(classifyIntent).toHaveBeenCalledOnce();expect(complete).not.toHaveBeenCalled();
  });
  it('returns every jewelry branch in an arbitrary requested city without a city-specific allowlist',async()=>{
   const complete=vi.fn();const decision=await new GroundedStrategy(async()=>branches,ledger(),{complete}).reply({...base,text:'طب فيه فروع في الغردقة؟',history:history()});
-  expect(decision.text).toContain('IRAM Senzo Mall');expect(decision.text).toContain('IRAM El Kawthar');expect(decision.text).toContain('123 IRAM Senzo Mall Street');expect(decision.text).toContain('123 IRAM El Kawthar Street');
+  expect(decision.text).toContain('IRAM Senzo Mall');expect(decision.text).toContain('IRAM El Kawthar');expect(decision.text).not.toMatch(/123 IRAM (?:Senzo Mall|El Kawthar) Street/);
   expect(decision.text).not.toContain('IRAM Riverside');expect(decision.sources).toHaveLength(2);expect(complete).not.toHaveBeenCalled();
  });
  it.each(['Show me jewelry branches at Hurghada','عندكم فروع مجوهرات في الغردقة ؟'])('returns every structured city member even when branch addresses have unequal match scores: %s',async text=>{
@@ -139,7 +160,7 @@ describe('product-aware branch navigation',()=>{
   const hurghada=[source('TJH Kempinski Hotel','Kempinski Hotel – Soma Bay','KEMPINSKI'),source('TJH Senzo Mall','Senzo Mall, Shop No. 5A','SENZO','https://maps.app.goo.gl/senzo'),source('TJH El Kawthar','531 El Bnook Street – Mubarak 2 – El Kawthar Area','KAWTHAR','https://maps.app.goo.gl/kawthar')];
   expect(matchingBranches(text,hurghada).map(item=>item.label)).toEqual(['KEMPINSKI','SENZO','KAWTHAR']);
   const complete=vi.fn();const decision=await new GroundedStrategy(async()=>hurghada,ledger(),{complete}).reply({...base,text,history:[{role:'user',content:/[\u0600-\u06ff]/.test(text)?'مجوهرات':'Jewelry'}]});
-  for(const source of hurghada){expect(decision.text).toContain(branchDataName(source));expect(decision.text).toContain(branchData(source)!.address);}
+  for(const source of hurghada){expect(decision.text).toContain(branchDataName(source));expect(decision.text).not.toContain(branchData(source)!.address);}
   expect(decision.sources).toHaveLength(3);expect(complete).not.toHaveBeenCalled();
  });
  it('returns all previously offered jewelry locations when the customer refers to them collectively',async()=>{
@@ -224,7 +245,7 @@ describe('product-aware branch navigation',()=>{
  });
  it('answers BTC lists with FAQ-specific hours and no addresses',async()=>{
   const decision=await new GroundedStrategy(async()=>[...branches,btc],ledger(),{complete:async()=>({decision:{action:'answer',text:'BTC service: Saturday–Thursday 11am–4pm, Friday closed. Type the branch for its full address.',branchLines:['IRAM Riverside — Alexandria'],sourceLabels:['F1']},input:100,output:30})}).reply({...base,text:'BTC branches?'});
-  expect(decision.action).toBe('answer');expect(decision.text).toContain('11am–4pm');expect(decision.text).not.toMatch(/9am|123|https:|Senzo/);expect(decision.text).toMatch(/Type the branch.*BTC phone number\.$/);
+  expect(decision.action).toBe('answer');expect(decision.text).toContain('11am–4pm');expect(decision.text).not.toMatch(/9am|123|https:|Senzo/);expect(decision.text).toMatch(/Reply with a branch.*BTC phone number\.$/);
  });
 });
 

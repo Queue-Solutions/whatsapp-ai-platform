@@ -99,16 +99,16 @@ function directory(context:MessageContext,catalog:BtcCatalog,sources:KnowledgeSo
     if(city)refs.push(records[0]);
     return `${entry.name}${city?` — ${city}`:''}`;
   }));
-  const acknowledgement=unlisted?(ar?'فهمت أنك تسأل عن هذا الفرع. هذا الفرع غير مدرج ضمن فروع BTC المؤكدة في المعلومات المتاحة.':'I understand you’re asking about that branch. It is not listed for BTC in the approved information.')
+  const acknowledgement=unlisted?(ar?'الفرع ده مش مدرج ضمن فروع BTC المؤكدة في المعلومات المتاحة.':'That branch is not listed for BTC in the approved information.')
     :goldCoins
       ?ar?'أيوه، جنيهات الذهب متاحة لدى IRAM من خلال خدمة BTC والسبائك.':'Yes, IRAM offers gold coins through its BTC / bullion service.'
       :entries.length<catalog.entries.length
-        ?ar?'أكيد، دي فروع خدمة BTC والسبائك المتاحة في المنطقة اللي سألت عنها.':'Of course. These are the BTC / bullion service branches in the area you asked about.'
-        :ar?'أكيد، خدمة BTC والسبائك متاحة في الفروع التالية.':'Of course. BTC / bullion service is available at the following branches.';
+        ?ar?'دي فروع خدمة BTC والسبائك المطابقة للمكان اللي سألت عنه.':'Here are the BTC / bullion service branches matching the location you requested.'
+        :ar?'خدمة BTC والسبائك متاحة في الفروع دي.':'BTC / bullion service is available at these branches.';
   const intro=`${acknowledgement}\n\n${ar?'الفروع المتاحة لخدمة BTC والسبائك:':'Branches offering BTC / bullion services:'}`;
   const hours=hoursText(catalog.hours,ar);
   return {action:'answer',reason:'approved_knowledge',sources:[...new Map(refs.map(s=>[s.id,s])).values()].map(sourceRef),
-    text:[intro,lines.join('\n'),hours,ar?'اكتب رقم الفرع أو اسمه لعرض العنوان الكامل ورابط الموقع ورقم خدمة BTC.':'Type the branch number or name to receive its full address, location link and BTC phone number.'].filter(Boolean).join('\n\n')};
+    text:[intro,lines.join('\n'),hours,ar?'اكتب رقم الفرع أو اسمه لعرض العنوان الكامل ورابط الموقع ورقم خدمة BTC.':'Reply with a branch number or name for its full address, location link and BTC phone number.'].filter(Boolean).join('\n\n')};
 }
 function details(context:MessageContext,catalog:BtcCatalog,entry:BtcEntry,sources:KnowledgeSource[]):AgentDecision {
   return detailsForEntries(context,catalog,[entry],sources);
@@ -124,8 +124,8 @@ function detailsForEntries(context:MessageContext,catalog:BtcCatalog,entries:Btc
       `${ar?'رقم خدمة BTC':'BTC phone'}: ${entry.phone}`].join('\n\n');
   });
   return {action:'answer',reason:'approved_knowledge',sources:[...new Map(refs.map(source=>[source.id,source])).values()].map(sourceRef),text:[
-    entries.length>1?(ar?'أكيد، هذه تفاصيل فروع خدمة BTC والسبائك التي طلبتها:':'Of course. Here are the requested BTC / bullion branch details:')
-      :(ar?'أكيد، هذه تفاصيل فرع خدمة BTC والسبائك الذي طلبته:':'Of course. Here are the requested BTC / bullion branch details:'),
+    entries.length>1?(ar?'دي تفاصيل فروع BTC والسبائك اللي طلبتها:':'Here are the requested BTC / bullion branch details:')
+      :(ar?`دي تفاصيل ${entries[0].name}:`:`Here are the details for ${entries[0].name}:`),
     (blocks.length>1?numberedBranchLines(blocks):blocks).join('\n\n——\n\n'),hoursText(catalog.hours,ar),
   ].filter(Boolean).join('\n\n')};
 }

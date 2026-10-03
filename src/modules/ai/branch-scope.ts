@@ -8,6 +8,12 @@ export function isBranchSource(source:KnowledgeSource):boolean {
 }
 function directScope(text:string):'none'|'detail'|'directory'{
   const t=normalizeIntent(text);
+  // Presentation corrections such as "just branch names" still describe a
+  // branch directory even when the customer does not repeat the plural word
+  // "branches". Resolve the requested shape here so a natural follow-up is
+  // not mistaken for a single-branch detail request or left to canned output.
+  if(/\b(?:just|only)\s+(?:the\s+)?(?:branch\s+)?names?\b|(?:الاسامي|الاسماء|اسماء)(?:\s+(?:الفروع|فروع))?\s*(?:بس|فقط)?/.test(t))return 'directory';
+  if(/\b(?:without|omit|skip|no)\s+(?:the\s+)?(?:full\s+)?(?:addresses?|details?|maps?|links?)\b/.test(t)&&/\b(?:branch(?:es)?|names?)\b/.test(t))return 'directory';
   if(/\b(?:don't|do not) (?:show|send|list|want|need).{0,20}(?:branches|locations|addresses)|\bno branch(?:es)?\b|(?:مش عايز|مش عاوز|بلاش|من غير|بدون|متبعتش|لا ترسل).{0,20}(?:فروع|عناوين)/.test(t))return 'none';
   if(/\b(?:branches|locations|stores|shops)\b|(?:فروع|افرع|عناوين|اماكنكم|فينكم)|\bwhere (?:are you|can i find you)\b/.test(t))return focusedDetail.test(t)&&!/(?:\b(?:list|addresses|locations)\b|عناوين|اماكن)/.test(t)?'detail':'directory';
   if(/\b(?:branch|location|address|store|hours|opening|closing|open|close|phone|telephone)\b|(?:الفرع|فرع|عنوان|مواعيد|ساعات العمل|فاتحين|بتفتحوا|بتقفلوا)/.test(t))return 'detail';
@@ -139,6 +145,6 @@ export function unsolicitedBranches(context:MessageContext,decision:Pick<AgentDe
 export function scopeClarification(context:MessageContext):AgentDecision {
   const ar=replyLanguage(context.text??'')==='ar',branchRelated=branchScope(context)==='detail';
   return {action:'clarify',reason:'reply_scope_clarification',sources:[],text:branchRelated
-    ? ar?'فهمت أنك تسأل عن أحد الفروع. تقصد أي فرع؟ اكتب اسم الفرع أو المنطقة وسأساعدك مباشرة.':'I understand you’re asking about a branch. Which one do you mean? Share its name or area and I’ll help directly.'
+    ? ar?'تقصد أي فرع؟ اكتب اسم الفرع أو المنطقة وسأساعدك مباشرة.':'Which branch do you mean? Share its name or area and I’ll help directly.'
     : ar?'يسعدني مساعدتك. هل استفسارك عن المجوهرات، أو منتجات BTC والسبائك، أو الفروع، أو خدمة أخرى من IRAM؟':'I’ll be happy to help. Is your enquiry about jewelry, BTC / bullion, branches, or another IRAM service?'};
 }
