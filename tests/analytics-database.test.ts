@@ -40,25 +40,27 @@ describe('chat analytics database boundary',()=>{
     expect(data.customers).toHaveLength(2);expect(data.customers.find(row=>row.id===customer1)).toMatchObject({complaints:2,spamOrFraud:1,knowledgeGaps:1});
     expect(data.series).toHaveLength(2);
   });
-  it('captures one bounded insight per message and creates a repeated missing-FAQ recommendation',async()=>{
+  it('creates FAQ opportunities only from turns that actually became knowledge gaps',async()=>{
     await asUser(owner);expect(await rows('select message_id,topic,risk,is_knowledge_gap from public.message_insights order by message_id')).toEqual([
       {message_id:message1,topic:'Do you offer gift wrapping?',risk:'spam_or_fraud',is_knowledge_gap:true},
       {message_id:message2,topic:'Do you offer gift wrapping?',risk:'none',is_knowledge_gap:false},
     ]);
-    const data=await report();expect(data.recommendations).toEqual([expect.objectContaining({kind:'faq_gap',topic:'Do you offer gift wrapping?',mentions:2,customers:2})]);
+    await asUser(owner);expect(await recommendations()).toEqual([expect.objectContaining({kind:'faq_gap',topic:'Do you offer gift wrapping?',mentions:1,customers:1,reason:expect.stringContaining('personal follow-up')})]);
   });
   it('removes a topic from recommendations when a matching published FAQ exists',async()=>{
     await db.query("insert into public.faqs(tenant_id,question,answer,is_published) values($1,'Do you offer gift wrapping?','Yes.',true)",[tenant]);await asUser(owner);
-    expect((await report()).recommendations).toEqual([]);
+    expect(await recommendations()).toEqual([]);expect((await report()).recommendations).toEqual([]);
   });
-  it('resets current recommendations without deleting insights and allows new activity to create them again',async()=>{
-    await asUser(owner);expect(await recommendations()).toEqual([expect.objectContaining({topic:'Do you offer gift wrapping?',mentions:2})]);
+  it('resets current recommendations, ignores repeated answered topics and allows a new gap to create one',async()=>{
+    await asUser(owner);expect(await recommendations()).toEqual([expect.objectContaining({topic:'Do you offer gift wrapping?',mentions:1})]);
     await rows('select public.reset_ai_recommendations($1)',[tenant]);
     expect(await recommendations()).toEqual([]);expect(await rows('select count(*)::int count from public.message_insights where tenant_id=$1',[tenant])).toEqual([{count:2}]);
     await db.exec('reset role');
     await db.query("insert into public.messages(id,tenant_id,conversation_id,channel_id,direction,provider_message_id,message_type,body,delivery_status,occurred_at,moderation_state) values('30000000-0000-4000-8000-000000000005',$1,$2,'40000000-0000-4000-8000-000000000001','inbound','new-1','text','new private one','received',clock_timestamp()+interval '1 second','clear'),('30000000-0000-4000-8000-000000000006',$1,$3,'40000000-0000-4000-8000-000000000001','inbound','new-2','text','new private two','received',clock_timestamp()+interval '1 second','clear')",[tenant,conversation1,conversation2]);
     await db.query("insert into public.message_insights(tenant_id,message_id,conversation_id,intent,topic,language) values($1,'30000000-0000-4000-8000-000000000005',$2,'business_question','Do you provide engraving?','en'),($1,'30000000-0000-4000-8000-000000000006',$3,'business_question','Do you provide engraving?','en')",[tenant,conversation1,conversation2]);
-    await asUser(owner);expect(await recommendations()).toEqual([expect.objectContaining({topic:'Do you provide engraving?',mentions:2})]);
+    await asUser(owner);expect(await recommendations()).toEqual([]);
+    await db.exec('reset role');await db.query("update public.message_insights set is_knowledge_gap=true,summary='Engraving is not confirmed.' where tenant_id=$1 and message_id='30000000-0000-4000-8000-000000000006'",[tenant]);
+    await asUser(owner);expect(await recommendations()).toEqual([expect.objectContaining({topic:'Do you provide engraving?',mentions:1,customers:1})]);
   });
   it('enforces tenant membership in the RPC and RLS-protected insight rows',async()=>{
     await asUser(owner);expect(await rows('select tenant_id from public.message_insights')).toHaveLength(2);await expect(report(other)).rejects.toThrow('access denied');
