@@ -73,7 +73,8 @@ it('excludes empty published answers and incomplete branches even if stored outs
     expect(query.eq).toHaveBeenCalledWith('locale','ar');
     expect(query.eq).toHaveBeenCalledWith('is_published',true);
   }
-  expect(facts.order).toHaveBeenNthCalledWith(1,'created_at');expect(facts.order).toHaveBeenNthCalledWith(2,'id');
+  expect(facts.order).toHaveBeenNthCalledWith(1,'display_order',{ascending:true,nullsFirst:false});
+  expect(facts.order).toHaveBeenNthCalledWith(2,'created_at');expect(facts.order).toHaveBeenNthCalledWith(3,'id');
 });
 
 it('does not report success when RLS or the network rejects a save', async () => {
@@ -88,8 +89,8 @@ it('does not report success when RLS or the network rejects a save', async () =>
 it('keeps deleted starter FAQs out of the editor after reloading', async () => {
   const [starter] = await starterFaqs('tenant-a', 'en');
   const query = (data: unknown[]) => {
-    const q = { select: vi.fn(), eq: vi.fn(), order: vi.fn().mockResolvedValue({ data, error: null }) };
-    q.select.mockReturnValue(q); q.eq.mockReturnValue(q); return q;
+    const q = { select: vi.fn(), eq: vi.fn(), order: vi.fn(), then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data, error: null }).then(resolve) };
+    q.select.mockReturnValue(q); q.eq.mockReturnValue(q); q.order.mockReturnValue(q); return q;
   };
   const faqs = query([{ ...starter, deleted_at: '2026-09-15T12:00:00Z' }]);
   const facts = query([]);

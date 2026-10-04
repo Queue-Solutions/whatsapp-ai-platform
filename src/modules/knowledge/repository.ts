@@ -9,14 +9,15 @@ export class KnowledgeRepository {
     const rows = locales.flatMap(data => [
       ...data.faqs.map(f => ({ id: f.id, kind: 'faq' as const, updatedAt: f.updated_at, locale:data.locale, content: JSON.stringify({ question: f.question, answer: f.answer }) })),
       ...data.facts.map((f,index) => ({ id: f.id, kind: 'fact' as const, updatedAt: f.updated_at, locale:data.locale, identityKey:f.fact_key,
-        ...(f.category==='branch'?{branchOrder:index}:{}),
+        ...(f.category==='branch'?{branchOrder:f.display_order??index}:{}),
         content: JSON.stringify({ category: f.category, value: f.value }) })),
     ]).sort((a,b) => `${a.kind}:${a.id}`.localeCompare(`${b.kind}:${b.id}`));
     return rows.map((row,i) => ({ ...row, label: `K${i+1}` }));
   }
   async published(tenantId:string,locale:string){
     const [facts,faqs]=await Promise.all([
-      this.db.from('business_facts').select('id,category,fact_key,value,updated_at,created_at').eq('tenant_id',tenantId).eq('locale',locale).eq('is_published',true).order('created_at').order('id'),
+      this.db.from('business_facts').select('id,category,fact_key,value,updated_at,created_at,display_order').eq('tenant_id',tenantId).eq('locale',locale).eq('is_published',true)
+        .order('display_order',{ascending:true,nullsFirst:false}).order('created_at').order('id'),
       this.db.from('faqs').select('id,question,answer,updated_at').eq('tenant_id',tenantId).eq('locale',locale).eq('is_published',true),
     ]);
     if(facts.error || faqs.error)throw new Error('Knowledge unavailable');

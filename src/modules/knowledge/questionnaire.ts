@@ -47,7 +47,7 @@ export const branchSchema = z.object({
 });
 export type BranchValue = z.infer<typeof branchSchema>;
 export type Faq = { id: string; question: string; answer: string; is_published: boolean; updated_at?: string };
-export type Branch = { id: string; fact_key: string; value: BranchValue; is_published: boolean; updated_at?: string };
+export type Branch = { id: string; fact_key: string; value: BranchValue; is_published: boolean; display_order?: number | null; updated_at?: string };
 export const emptyBranch = (): BranchValue => ({ name: '', city: '', address: '', hours: '', exceptions: '', phone: '', mapsUrl: '' });
 
 export function validateFaq(faq: Faq, publish: boolean) {

@@ -67,6 +67,7 @@ export function Editor({ db }: { db: SupabaseClient }) {
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [feedbackId, setFeedbackId] = useState('');
   const [busy, setBusy] = useState(''); const [deleting, setDeleting] = useState(false); const [dirty, setDirty] = useState<Set<string>>(new Set());
+  const [draggingBranch, setDraggingBranch] = useState('');
   const [reload, setReload] = useState(0); const scope = useRef(0);
   const canEdit = ['owner','admin'].includes(memberships.find(m => m.tenant_id === tenant)?.role ?? '');
   useEffect(() => {
@@ -116,6 +117,30 @@ export function Editor({ db }: { db: SupabaseClient }) {
     } catch (e) { if (scope.current === generation) setError(e instanceof Error ? e.message : 'Could not delete. Please try again.'); }
     finally { setBusy(''); setDeleting(false); }
   }
+  const canReorderBranches=canEdit&&!busy&&branches.length>1&&branches.every(branch=>!!branch.updated_at);
+  async function reorderBranches(next:Branch[]) {
+    if(!canReorderBranches)return;
+    const previous=branches,generation=scope.current;
+    const ordered=next.map((branch,index)=>({...branch,display_order:index}));
+    setBranches(ordered);setFeedbackId('');setBusy('branch-order');setError('');setNotice('');
+    try {
+      await editor.reorderBranches(tenant,locale,ordered.map(branch=>branch.id));
+      if(scope.current===generation)setNotice('Branch order saved. New assistant replies will use this order.');
+    } catch(e) {
+      if(scope.current===generation){setBranches(previous);setError(e instanceof Error?e.message:'Could not save the branch order. Please try again.');}
+    } finally {if(scope.current===generation)setBusy('');}
+  }
+  function moveBranch(id:string,direction:-1|1){
+    const index=branches.findIndex(branch=>branch.id===id),target=index+direction;
+    if(index<0||target<0||target>=branches.length)return;
+    const next=[...branches],[branch]=next.splice(index,1);next.splice(target,0,branch);void reorderBranches(next);
+  }
+  function dropBranch(targetId:string,event:React.DragEvent<HTMLElement>){
+    event.preventDefault();const sourceId=draggingBranch||event.dataTransfer.getData('text/plain');setDraggingBranch('');
+    const from=branches.findIndex(branch=>branch.id===sourceId),to=branches.findIndex(branch=>branch.id===targetId);
+    if(from<0||to<0||from===to)return;
+    const next=[...branches],[branch]=next.splice(from,1);next.splice(to,0,branch);void reorderBranches(next);
+  }
   const approved = [...faqs, ...branches].filter(x => x.is_published).length;
   return <main className="content"><div className="page-title"><div><div className="eyebrow">TEACH YOUR ASSISTANT</div><h1>Business knowledge</h1><p className="intro">You know your business. Give your assistant the details.</p></div><div className="account-actions"><button className="text-button" disabled={!!busy} onClick={() => setPasswordOpen(v => !v)}>Password</button><button className="text-button" disabled={!!busy} onClick={async () => { if (discard()) { await db.auth.signOut({ scope: 'local' }); } }}>Sign out</button></div></div>{passwordOpen && <PasswordForm db={db} onDone={() => setPasswordOpen(false)} />}
     <div className="toolbar"><label>Business<select value={tenant} disabled={!!busy || loading} onChange={e => { if (discard()) { resetView(); setTenant(e.target.value); } }}>{memberships.map(m => <option key={m.tenant_id} value={m.tenant_id}>{m.name}</option>)}</select></label>
@@ -125,9 +150,10 @@ export function Editor({ db }: { db: SupabaseClient }) {
     <div aria-live="polite">{notice && !feedbackId && <p className="success">{notice}</p>}</div>{error && !feedbackId && <div className="error" role="alert">{error} <button className="text-button" disabled={!!busy} onClick={() => { if (discard()) { resetView(); setReload(n => n + 1); } }}>Reload</button></div>}
     {loading ? <p role="status">Loading your knowledge…</p> : !memberships.length ? <div className="empty-state"><h2>Your account needs business access</h2><p>Ask your administrator to assign you to a business. Signing in alone does not grant access.</p></div> : <>
       {!canEdit && <p className="notice">You have read-only access. An owner or admin can save changes.</p>}
-      <div className="section-heading"><div><h2>{tab === 'branches' ? 'Make every location easy to find.' : 'Answer once. Help every customer.'}</h2><p>{tab === 'branches' ? 'Add one entry for each branch, including its own hours and Google Maps link.' : 'We have prepared the questions. Fill in the answers in your own words.'}</p></div>
+      <div className="section-heading"><div><h2>{tab === 'branches' ? 'Make every location easy to find.' : 'Answer once. Help every customer.'}</h2><p>{tab === 'branches' ? 'Add one entry for each branch, including its own hours and Google Maps link. Drag saved branches or use the arrows to change their live assistant order.' : 'We have prepared the questions. Fill in the answers in your own words.'}</p></div>
         <button className="secondary" disabled={!canEdit || !!busy || (!!error && !feedbackId)} onClick={() => { if (tab === 'branches') { const row = newBranch(); setBranches(all => [...all, row]); mark(row.id); } else { const row = { id: crypto.randomUUID(), question: '', answer: '', is_published: false }; setFaqs(all => [...all, row]); mark(row.id); } }}>{tab === 'branches' ? '+ Add branch' : '+ Add question'}</button></div>
-      <div className="entry-list">{tab === 'branches' ? branches.map((branch, i) => <article className="entry-card" key={branch.id}><div className="card-heading"><div className="card-number">{String(i + 1).padStart(2,'0')}</div><div><h3>{branch.value.name || `Branch ${i + 1}`}</h3><p>Location & opening hours</p></div><Badge published={branch.is_published} dirty={dirty.has(branch.id)} /></div>
+      {tab==='branches'&&branches.some(branch=>!branch.updated_at)&&branches.length>1&&<p className="order-note">Save newly added branches before changing the order.</p>}
+      <div className="entry-list">{tab === 'branches' ? branches.map((branch, i) => <article className={`entry-card branch-card${draggingBranch===branch.id?' is-dragging':''}`} key={branch.id} onDragOver={event=>{if(canReorderBranches)event.preventDefault();}} onDrop={event=>dropBranch(branch.id,event)}><div className="card-heading"><div className="card-number">{String(i + 1).padStart(2,'0')}</div><div className="card-title"><h3>{branch.value.name || `Branch ${i + 1}`}</h3><p>Location & opening hours</p></div><div className="branch-order-controls" aria-label={`Change order for ${branch.value.name||`Branch ${i+1}`}`}><button type="button" className="drag-handle" aria-label={`Drag ${branch.value.name||`Branch ${i+1}`} to reorder`} title={canReorderBranches?'Drag to reorder':'Save all new branches before reordering'} disabled={!canReorderBranches} draggable={canReorderBranches} onDragStart={event=>{event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',branch.id);setDraggingBranch(branch.id);}} onDragEnd={()=>setDraggingBranch('')}>⋮⋮</button><button type="button" aria-label="Move branch up" title="Move up" disabled={!canReorderBranches||i===0} onClick={()=>moveBranch(branch.id,-1)}>↑</button><button type="button" aria-label="Move branch down" title="Move down" disabled={!canReorderBranches||i===branches.length-1} onClick={()=>moveBranch(branch.id,1)}>↓</button></div><Badge published={branch.is_published} dirty={dirty.has(branch.id)} /></div>
         <fieldset disabled={!canEdit || !!busy} className="branch-grid">{branchFields.map(([field, label]) => <label key={field} className={['address','hours','exceptions','mapsUrl'].includes(field) ? 'wide' : ''}>{label}{field === 'mapsUrl' && <span className="field-note">Optional · paste the Google Maps share link</span>}{['address','hours','exceptions'].includes(field) ? <textarea dir="auto" rows={field === 'hours' ? 3 : 2} maxLength={10000} value={branch.value[field]??''} onChange={e => { setBranches(all => all.map(b => b.id === branch.id ? { ...b, value: { ...b.value, [field]: e.target.value } } : b)); mark(branch.id); }} /> : <input dir="auto" type={field === 'mapsUrl' ? 'url' : 'text'} maxLength={field === 'mapsUrl' ? 2048 : field === 'name' ? 200 : 100} value={branch.value[field]??''} onChange={e => { setBranches(all => all.map(b => b.id === branch.id ? { ...b, value: { ...b.value, [field]: e.target.value } } : b)); mark(branch.id); }} />}</label>)}</fieldset>
         <SaveActions disabled={!canEdit || !!busy} saving={busy === branch.id && !deleting} deleting={busy === branch.id && deleting} onSave={() => void save('branch', branch.id)} onDelete={() => void remove('branch', branch.id)} />{feedbackId === branch.id && (error || notice) && <p className={error ? 'error' : 'success'} role={error ? 'alert' : 'status'}>{error || notice}</p>}
       </article>) : faqs.map((faq, i) => <article className="entry-card" key={faq.id}><div className="card-heading"><div className="card-number">{String(i+1).padStart(2,'0')}</div><h3>Customer question</h3><Badge published={faq.is_published} dirty={dirty.has(faq.id)} /></div><fieldset disabled={!canEdit || !!busy}><label>Question<textarea dir="auto" rows={2} maxLength={1000} value={faq.question} onChange={e => { setFaqs(all => all.map(f => f.id === faq.id ? { ...f, question: e.target.value } : f)); mark(faq.id); }} /></label><label>Your answer<textarea dir="auto" rows={4} maxLength={10000} value={faq.answer} onChange={e => { setFaqs(all => all.map(f => f.id === faq.id ? { ...f, answer: e.target.value } : f)); mark(faq.id); }} /></label></fieldset><SaveActions disabled={!canEdit || !!busy} saving={busy === faq.id && !deleting} deleting={busy === faq.id && deleting} onSave={() => void save('faq', faq.id)} onDelete={() => void remove('faq', faq.id)} />{feedbackId === faq.id && (error || notice) && <p className={error ? 'error' : 'success'} role={error ? 'alert' : 'status'}>{error || notice}</p>}</article>)}</div>

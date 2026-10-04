@@ -23,7 +23,8 @@ export class KnowledgeEditor {
   async load(tenant: string, locale: string) {
     const [faqs, facts, templates] = await Promise.all([
       this.db.from('faqs').select('id,question,answer,is_published,updated_at,deleted_at').eq('tenant_id', tenant).eq('locale', locale).order('created_at'),
-      this.db.from('business_facts').select('id,fact_key,value,is_published,updated_at').eq('tenant_id', tenant).eq('locale', locale).eq('category', 'branch').order('created_at'),
+      this.db.from('business_facts').select('id,fact_key,value,is_published,display_order,updated_at').eq('tenant_id', tenant).eq('locale', locale).eq('category', 'branch')
+        .order('display_order',{ascending:true,nullsFirst:false}).order('created_at').order('id'),
       starterFaqs(tenant, locale),
     ]);
     if (faqs.error || facts.error) throw new Error('Could not load your answers. Please try again.');
@@ -60,7 +61,7 @@ export class KnowledgeEditor {
     validateBranch(branch.value, publish);
     const { data, error } = await this.db.from('business_facts').upsert({ id: branch.id, tenant_id: tenant, locale,
       category: 'branch', fact_key: branch.fact_key, value: branch.value, is_published: publish }, { onConflict: 'id' })
-      .select('id,fact_key,value,is_published,updated_at').single();
+      .select('id,fact_key,value,is_published,display_order,updated_at').single();
     if (error || !data) throw new Error('Could not save. Check your connection and owner/admin access, then try again.');
     return data as Branch;
   }
@@ -75,5 +76,9 @@ export class KnowledgeEditor {
     const { data, error } = await this.db.from('business_facts').delete().eq('tenant_id', tenant).eq('locale', locale)
       .eq('category', 'branch').eq('id', id).select('id').single();
     if (error || !data) throw new Error('Could not delete. Check your connection and owner/admin access, then try again.');
+  }
+  async reorderBranches(tenant:string,locale:string,ids:string[]) {
+    const {error}=await this.db.rpc('reorder_branches',{p_tenant:tenant,p_locale:locale,p_branch_ids:ids});
+    if(error)throw new Error('Could not save the branch order. Check your connection and owner/admin access, then try again.');
   }
 }

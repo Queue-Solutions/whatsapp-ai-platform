@@ -69,6 +69,10 @@
 
 .customer-number{display:block;font-size:11px;line-height:1.5;color:var(--muted);margin:4px 0 8px;overflow-wrap:anywhere}.customer-number a{text-decoration:none}.customer-number a:hover{text-decoration:underline}
 
+/* Branch order is saved immediately and reused by the assistant. */
+.branch-card{transition:transform .16s ease,box-shadow .16s ease,opacity .16s ease}.branch-card.is-dragging{opacity:.55;box-shadow:0 12px 30px #2036311c}.card-title{min-width:0}.branch-order-controls{display:flex;align-items:center;gap:5px;margin-left:auto}.branch-order-controls button{display:grid;place-items:center;width:31px;height:31px;padding:0;border:1px solid #d9e2d7;border-radius:7px;background:#f8faf6;color:#52675d;font-size:14px}.branch-order-controls button:hover:not(:disabled){background:#eaf1e7;color:var(--green)}.branch-order-controls .drag-handle{cursor:grab;font-size:16px;letter-spacing:-3px;padding-right:3px}.branch-order-controls .drag-handle:active{cursor:grabbing}.branch-card .badge{margin-left:8px}.order-note{margin:-9px 0 16px;padding:10px 13px;border-radius:7px;background:#f4f0df;color:#6f633c;font-size:11px}
+@media(max-width:720px){.branch-order-controls{gap:3px}.branch-order-controls .drag-handle{display:none}.branch-order-controls button{width:29px;height:29px}.branch-card .badge{margin-left:3px}.card-heading{gap:9px}}
+
 /* Blacklist review */
 .blacklist-content {max-width:1180px;width:100%;}
 .blacklist-list {display:grid;gap:20px;margin-top:24px;}
