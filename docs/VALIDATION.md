@@ -1,5 +1,11 @@
 # Foundation validation
 
+## Active-branch continuity and concise BTC replies — 2026-10-08
+
+Branch-specific BTC availability questions now answer for the active branch with that branch's saved BTC details and offer the complete directory only on request. BTC directories use one conversational introduction and display identical service hours once instead of repeating them under every branch. The active branch advances from an explicit branch mention, a numbered directory selection, or the latest unique branch-detail reply; multi-branch directories do not become branch state. Live open-now answers resolve this conversation evidence before any semantic rewrite, preventing an older branch label from overriding the customer's newer selection.
+
+Lint, TypeScript, all 468 automated tests and the production build passed. Regression coverage reproduces the Arkan-to-Korba numbered-selection sequence while deliberately returning a stale Arkan classifier label, verifies branch-specific BTC availability without directory expansion, and checks concise directory wording and shared hours. No paid model call, WhatsApp send, Supabase mutation, client-number change or production deployment was performed.
+
 ## Per-branch service hours and live status — 2026-10-07
 
 The branch editor now shows only name, city, address, Working hours and Google Maps link as its general fields. BTC and Maintenance switches are off by default and reveal their required service fields when enabled. BTC and maintenance routing prefers the completed per-branch settings, while legacy FAQ catalogs remain available only during the transition before every current branch has saved switches. Live “open now” answers use the applicable approved branch schedule and `Africa/Cairo` time, with deterministic closing or next-opening language.

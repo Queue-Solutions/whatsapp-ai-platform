@@ -10,8 +10,13 @@ const arkan:KnowledgeSource={id:'arkan',label:'ARKAN',kind:'fact',updatedAt:'202
   btcEnabled:true,btcHours:'Daily: 12:00 PM to 8:30 PM',btcPhone:'01234567890',
   maintenanceEnabled:true,maintenanceHours:'Daily: 1:00 PM to 9:00 PM',
 }})};
+const korba:KnowledgeSource={id:'korba',label:'KORBA',kind:'fact',updatedAt:'2026-10-07',content:JSON.stringify({category:'branch',value:{
+  name:'IRAM Korba',city:'Heliopolis',address:'Korba address',mapsUrl:'https://maps.app.goo.gl/korba',
+  hours:'Daily: 10:00 AM to 11:00 PM',btcEnabled:true,btcHours:'Daily: 12:00 PM to 9:15 PM',btcPhone:'01200000001',
+  maintenanceEnabled:false,maintenanceHours:'',
+}})};
 const base:MessageContext={tenantId:'tenant',conversationId:'chat',requestKey:'message',type:'text',text:'Is IRAM Arkan open now?'};
-const strategy=(now:string)=>new GroundedStrategy(async()=>[arkan],{reserve:vi.fn(),finish:vi.fn()},{complete:vi.fn()},'whatsapp',undefined,async()=>{},()=>new Date(now));
+const strategy=(now:string,sources=[arkan])=>new GroundedStrategy(async()=>sources,{reserve:vi.fn(),finish:vi.fn()},{complete:vi.fn()},'whatsapp',undefined,async()=>{},()=>new Date(now));
 
 describe('live Egypt branch hours',()=>{
   it('parses the dashboard schedule in English and Arabic',()=>{
@@ -43,5 +48,18 @@ describe('live Egypt branch hours',()=>{
     const result=await new GroundedStrategy(async()=>[arkan],usage,{complete:vi.fn(),classifyIntent},'whatsapp',undefined,async()=>{},()=>new Date('2026-01-05T19:15:00Z'))
       .reply({...base,text:'Is this branch opened now?',history:[{role:'user',content:'IRAM Arkan'}]});
     expect(result.text).toContain('IRAM Arkan is open now');expect(result.text).toContain('10:00 PM');
+  });
+  it('makes the latest selected branch active even when semantic routing repeats an older branch',async()=>{
+    const classifyIntent=vi.fn(async()=>({decision:{intent:'branch' as const,confidence:.99,language:'en' as const,product:'btc' as const,
+      branchMode:'detail' as const,branchDetail:'hours' as const,branchLabels:['ARKAN'],originEvidence:'',originQuery:'',normalizedQuery:'Is IRAM Arkan open now?',
+      analyticsTopic:'branch opening status',summary:'',risk:'none' as const,contactName:'',repeatFollowup:false},input:100,output:20}));
+    const usage={reserve:vi.fn(async()=>({status:'new' as const,id:'intent'})),finish:vi.fn()};
+    const result=await new GroundedStrategy(async()=>[arkan,korba],usage,{complete:vi.fn(),classifyIntent},'whatsapp',undefined,async()=>{},()=>new Date('2026-01-05T17:00:00Z'))
+      .reply({...base,text:'Is it opened now?',history:[
+        {role:'user',content:'What are the working hours for IRAM Arkan?'},{role:'assistant',content:'Opening hours for IRAM Arkan: 11:00 AM to 10:00 PM.'},
+        {role:'user',content:'Does this branch have BTC?'},{role:'assistant',content:'1. IRAM Nox — New Cairo\n2. TJH Mivida — New Cairo\n3. IRAM Korba — Heliopolis'},
+        {role:'user',content:'3'},{role:'assistant',content:'Here are the BTC details for IRAM Korba — Heliopolis.'},
+      ]});
+    expect(result.text).toContain('IRAM Korba is open now');expect(result.text).toContain('9:15 PM');expect(result.text).not.toContain('IRAM Arkan');
   });
 });

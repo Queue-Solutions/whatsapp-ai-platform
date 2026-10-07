@@ -15,7 +15,7 @@ export function productIntent(context:MessageContext):'btc'|'jewelry'|null {
   for(const message of [...(context.history??[])].reverse().filter(m=>m.role==='assistant')){
     const assistant=normalizeIntent(message.content);
     if(/فروع المجوهرات|\bjewelry branches\b/.test(assistant))return 'jewelry';
-    if(/(?:الفروع المتاحه لخدمه btc|فروع خدمه btc|\bbtc \/ bullion (?:service )?branches\b|\bbranches offering btc \/ bullion\b)/.test(assistant))return 'btc';
+    if(/(?:الفروع المتاحه لخدمه btc|فروع خدمه btc|خدمه btc والسبائك متاحه في الفروع|\bbtc \/ bullion (?:service )?branches\b|\bbranches offering btc \/ bullion\b|\bbranches\b.{0,40}\bbtc \/ bullion service\b|\bbtc \/ bullion service\b.{0,40}\bbranches\b)/.test(assistant))return 'btc';
   }
   return null;
 }
@@ -67,6 +67,22 @@ export function displayedBranchSelection(context:MessageContext,sources:Knowledg
   }
   return null;
 }
+/**
+ * Resolve the branch that currently owns the conversation. A directory names
+ * several branches and is deliberately ignored; a customer's explicit branch,
+ * a numeric directory selection, or the latest single-branch detail reply can
+ * move the active branch forward.
+ */
+export function activeBranchRecord(context:MessageContext,sources:KnowledgeSource[]){
+  const displayed=displayedBranchSelection(context,sources);
+  if(displayed?.records.length===1)return displayed.records[0];
+  const turns=[context.text??'',...(context.history??[]).slice(-10).reverse().map(message=>message.content)];
+  for(const text of turns){
+    const matches=orderedBranchSources(matchingBranches(text,sources));
+    if(matches.length===1)return matches[0];
+  }
+  return null;
+}
 /** Resolve plural branch references from the most recent assistant directory. */
 export function contextualBranchRecords(context:MessageContext,sources:KnowledgeSource[]){
   const displayed=displayedBranchSelection(context,sources);
@@ -81,7 +97,8 @@ export function contextualBranchRecords(context:MessageContext,sources:Knowledge
     });
     if(records.length>1)return orderedBranchSources(records);
   }
-  return [];
+  const active=activeBranchRecord(context,sources);
+  return active?[active]:[];
 }
 export function productQuestion(context:MessageContext):AgentDecision {
   return {action:'clarify',reason:'branch_product_clarification',sources:[],text:replyLanguage(context.text??'')==='ar'

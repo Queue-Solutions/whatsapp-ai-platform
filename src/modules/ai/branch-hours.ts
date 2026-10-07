@@ -1,7 +1,7 @@
 import type {AgentDecision,KnowledgeSource} from './contracts';
 import type {MessageContext} from '../messaging/types';
-import {branchData,orderedBranchSources,productIntent,sourceRef} from './branch-dialogue';
-import {matchingBranches,normalizeIntent} from './branch-scope';
+import {activeBranchRecord,branchData,orderedBranchSources,productIntent,sourceRef} from './branch-dialogue';
+import {normalizeIntent} from './branch-scope';
 import {replyLanguage} from './language';
 import {isRepairEnquiry,repairBranchCatalog,repairBranchRecords} from './repair-faq';
 import {btcBranchRecords,btcCatalog} from './btc-branches';
@@ -104,20 +104,17 @@ function statusText(name:string,schedule:Schedule,now:Date,ar:boolean){
 function recentRepairContext(context:MessageContext){
   return isRepairEnquiry(context.text??'')||(context.history??[]).slice(-4).some(message=>/maintenance branches and working hours|فروع الصيانه ومواعيد العمل/.test(normalizeIntent(message.content)));
 }
-function selectedBranch(context:MessageContext,sources:KnowledgeSource[]){
-  for(const text of [context.text??'',...(context.history??[]).filter(message=>message.role==='user').slice(-4).reverse().map(message=>message.content)]){
-    const matches=matchingBranches(text,sources);if(matches.length===1)return matches[0];
-  }
-  return null;
-}
-
 /** Answer live open/closed questions using Africa/Cairo time and an approved per-branch schedule. */
 export function branchOpenNowReply(context:MessageContext,sources:KnowledgeSource[],now=new Date(),originalText=context.text??''):AgentDecision|null {
   if(!asksIfBranchOpenNow(originalText))return null;
-  const branch=selectedBranch(context,sources);if(!branch)return null;
+  // Resolve against the actual conversation before any semantic rewrite. A
+  // rewrite can carry a stale branch label, while the latest detail reply may
+  // have moved the customer to a different numbered selection.
+  const originalContext={...context,text:originalText};
+  const branch=activeBranchRecord(originalContext,sources)??activeBranchRecord(context,sources);if(!branch)return null;
   const value=branchData(branch) as unknown as {name?:string;hours?:string;btcEnabled?:boolean;btcHours?:string;maintenanceEnabled?:boolean;maintenanceHours?:string}|null;
   if(!value?.name)return null;
-  const originalContext={...context,text:originalText},repair=recentRepairContext(context)||recentRepairContext(originalContext),
+  const repair=recentRepairContext(context)||recentRepairContext(originalContext),
     btc=!repair&&(productIntent(context)==='btc'||productIntent(originalContext)==='btc');let hours='',refs=[branch];
   if(repair){
     const catalog=repairBranchCatalog(sources),entry=catalog?.entries.find(item=>repairBranchRecords(item,sources).some(source=>source.id===branch.id));hours=entry?.hours??'';if(catalog)refs=[...refs,...catalog.sources];

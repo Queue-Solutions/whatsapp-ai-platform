@@ -22,14 +22,26 @@ describe('BTC FAQ is the branch eligibility authority',()=>{
   expect(decision.action).toBe('answer');expect(numberedLines(decision.text)).toEqual(names.map((n,i)=>`${i+1}. ${n} — ${cities[i]}`));
   expect(decision.text).not.toMatch(/ZIA|Kawthar|Fictional|https:|09999999999|0120000000/);
   expect(decision.text).toContain('12:00 PM to 8:30 PM');expect(decision.text).toContain('Friday from 2:00 PM to 8:30 PM');
-  expect(decision.text.match(/Reply with a branch/g)).toHaveLength(1);expect(decision.text.match(/Branches offering BTC/g)).toHaveLength(1);
+  expect(decision.text.match(/Reply with a branch/g)).toHaveLength(1);expect(decision.text.match(/BTC service hours:/g)).toHaveLength(1);
+  expect(decision.text).toMatch(/^Sure — here are our branches with BTC \/ bullion service:/);
  expect(f.complete).not.toHaveBeenCalled();expect(f.reserve).not.toHaveBeenCalled();expect(f.load).toHaveBeenCalledWith('trusted-tenant');
  });
  it('confirms the customer’s gold-coin request before showing only approved BTC branches',async()=>{
   const f=fixture();const decision=await f.strategy.reply({...base,text:'What branches sell gold coins?',history:[]});
-  expect(decision.text).toMatch(/^Yes, IRAM offers gold coins through its BTC \/ bullion service\./);
-  expect(decision.text).toContain('Branches offering BTC / bullion services:');expect(numberedLines(decision.text)).toHaveLength(8);
+  expect(decision.text).toMatch(/^Yes, IRAM offers gold coins through its BTC \/ bullion service at these branches:/);
+  expect(numberedLines(decision.text)).toHaveLength(8);
   expect(f.complete).not.toHaveBeenCalled();expect(f.reserve).not.toHaveBeenCalled();
+ });
+ it('answers for the active branch instead of expanding a branch-specific BTC question into the full directory',async()=>{
+  const f=fixture();const decision=await f.strategy.reply({...base,text:'Does this branch have BTC?',history:[
+    {role:'user',content:'What are the working hours for IRAM Arkan?'},
+    {role:'assistant',content:'Opening hours for IRAM Arkan: Saturday to Thursday 11:00 AM to 10:00 PM.'},
+  ]});
+  expect(decision.text).toMatch(/^Yes — BTC \/ bullion service is available at IRAM Arkan\./);
+  expect(decision.text).toContain('6 Fictional Street');expect(decision.text).toContain(phones[5]);
+  expect(decision.text).toContain('ask me for the full list');expect(numberedLines(decision.text)).toHaveLength(0);
+  for(const phone of phones.filter(phone=>phone!==phones[5]))expect(decision.text).not.toContain(phone);
+  expect(f.complete).not.toHaveBeenCalled();
  });
  it('understands Egyptian دهب and gives a product-specific confirmation',async()=>{
   const f=fixture();const decision=await f.strategy.reply({...base,text:'ايه الفروع اللي عندها جنيهات دهب؟',history:[]});
@@ -125,7 +137,8 @@ describe('BTC FAQ is the branch eligibility authority',()=>{
  });
  it('does not silently treat a jewelry-only branch as eligible for BTC',async()=>{
   const decision=await fixture().strategy.reply({...base,text:'IRAM ZIA address and BTC phone'});
-  expect(decision.text).toContain('not listed for BTC');expect(decision.text).not.toMatch(/9 Fictional|fixture8|09999999999/);expect(numberedLines(decision.text)).toHaveLength(8);
+  expect(decision.text).toContain('not currently listed as available at IRAM ZIA');expect(decision.text).not.toMatch(/9 Fictional|fixture8|09999999999/);expect(numberedLines(decision.text)).toHaveLength(0);
+  expect(decision.text).toContain('show you the branches that do offer it');
  });
  it('does not join NOX to ZIA even when they share a city',async()=>{
   const missingNox=records.filter(s=>s.id!=='branch-2');const decision=await fixture([makeFaq(),...missingNox]).strategy.reply({...base,text:'IRAM Nox'});
