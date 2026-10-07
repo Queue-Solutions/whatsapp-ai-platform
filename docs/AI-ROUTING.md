@@ -22,7 +22,7 @@ Safety boundaries intentionally remain deterministic:
 - webhook authentication and deduplication
 - send allowlists and uncertain-send handling
 - approved URL validation
-- exact branch addresses, maps and BTC eligibility
+- exact branch addresses, maps, per-branch service eligibility/hours and live Egypt-time open status
 - raw location parsing and distance calculation
 - contact detail collection and persistence
 - source revision checks immediately before send

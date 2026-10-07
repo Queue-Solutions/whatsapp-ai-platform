@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emptyBranch, starterFaqs, validateBranch, validateFaq } from '../src/modules/knowledge/questionnaire';
+import { branchFields, emptyBranch, starterFaqs, validateBranch, validateFaq } from '../src/modules/knowledge/questionnaire';
 
 describe('business knowledge approval', () => {
   it('starts with blank answers and stable tenant/locale-scoped starter identities', async () => {
@@ -17,11 +17,17 @@ describe('business knowledge approval', () => {
     expect(() => validateFaq({ ...faq, answer: 'نرحب بكم' }, true)).not.toThrow();
   });
   it('keeps branch and map answers blank and requires essential facts for approval', () => {
+    expect(branchFields).toEqual([
+      ['name','What is this branch called?'],['city','Which city is this branch in?'],['address','What is the full street address?'],
+      ['hours','Working hours'],['mapsUrl','What is the Google Maps link for this location?'],
+    ]);
     const branch = emptyBranch();
-    expect(Object.values(branch).every(v => v === '')).toBe(true);
+    expect(branch).toMatchObject({name:'',city:'',address:'',hours:'',btcEnabled:false,maintenanceEnabled:false,mapsUrl:''});
     expect(() => validateBranch(branch, false)).not.toThrow();
     expect(() => validateBranch(branch, true)).toThrow('branch name');
     expect(() => validateBranch({ ...branch, name: 'فرع اختبار', address: 'عنوان اختباري', hours: 'مواعيد اختبارية' }, true)).not.toThrow();
+    expect(() => validateBranch({ ...branch, name: 'Test', address: 'Address', hours: 'Hours', btcEnabled:true }, true)).toThrow('BTC working hours');
+    expect(() => validateBranch({ ...branch, name: 'Test', address: 'Address', hours: 'Hours', maintenanceEnabled:true }, true)).toThrow('maintenance working hours');
   });
   it('accepts Google Maps share links but rejects executable and misleading URLs', () => {
     for (const mapsUrl of ['https://maps.app.goo.gl/example','https://www.google.com/maps/place/example','https://goo.gl/maps/example'])

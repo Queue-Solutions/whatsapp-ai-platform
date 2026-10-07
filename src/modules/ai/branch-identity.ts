@@ -69,6 +69,12 @@ export function deduplicateBranches(sources:KnowledgeSource[],preferredLocale?:s
       // complete city in its paired record.
       const searchAliases=group.map(source=>branchRecord(source)).filter((value):value is Record<string,string>=>!!value)
         .map(value=>({name:value.name??'',city:value.city??'',address:value.address??''}));
+      const serviceFields=['btcEnabled','btcHours','btcPhone','maintenanceEnabled','maintenanceHours'] as const;
+      const records=group.map(source=>branchRecord(source) as unknown as Record<string,unknown>|null).filter((value):value is Record<string,unknown>=>!!value);
+      for(const field of serviceFields)if(!Object.prototype.hasOwnProperty.call(data.value,field)){
+        const inherited=records.find(value=>Object.prototype.hasOwnProperty.call(value,field));
+        if(inherited)data.value[field]=inherited[field];
+      }
       return {...selected,content:JSON.stringify({...data,searchAliases})};
     }catch{return selected;}
   });

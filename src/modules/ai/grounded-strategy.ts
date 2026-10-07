@@ -23,6 +23,7 @@ import { formatReply, formatBusinessReply, formatBranchReply } from './reply-for
 import { buildRequest, ModelFailure, type ModelProvider } from './openai';
 import {buildIntentRequest,catalogFingerprint,contextForIntent,isStoredIntentDecision,validatedContactName,type IntentDecision,type StoredIntentDecision} from './intent-classification';
 import {deduplicateBranchKnowledge} from './branch-identity';
+import {branchOpenNowReply} from './branch-hours';
 export type SourceLoader = (tenant: string) => Promise<KnowledgeSource[]>;
 export function fallback(context: MessageContext, reason: string, action: AgentDecision['action'] = 'unavailable'): AgentDecision {
   const ar = replyLanguage(context.text ?? '') === 'ar';
@@ -57,7 +58,7 @@ function safeRecoveryFallback(context:MessageContext):AgentDecision {
 export class GroundedStrategy implements ReplyStrategy {
   constructor(private loadSources: SourceLoader, private ledger: UsageLedger, private provider: ModelProvider,
     private purpose: 'whatsapp'|'acceptance' = 'whatsapp', private locations:LocationResolver=defaultLocations,
-    private retryDelay:(milliseconds:number)=>Promise<void>=defaultRetryDelay) {}
+    private retryDelay:(milliseconds:number)=>Promise<void>=defaultRetryDelay,private clock:()=>Date=()=>new Date()) {}
   async reply(context: MessageContext): Promise<AgentDecision> {
     const resolved=resolveContinuation(context);
     let decision=await this.generate(resolved);
@@ -206,6 +207,7 @@ export class GroundedStrategy implements ReplyStrategy {
       : 'No approved business information is published for the assistant. Review the customer’s question and add the required information.');
     const available = sources;
     const career=careerFaqReply(context,available);if(career)return career;
+    const openNow=branchOpenNowReply(routed,available,this.clock(),context.text);if(openNow)return openNow;
     const repair=repairFaqReply(context,available,useClassification?.intent==='repair');if(repair)return repair;
     const links=offeredLinks(context,available,useClassification?.intent==='online_links');if(links)return links;
     if(needsProductQuestion(routed,available))return productQuestion(context);

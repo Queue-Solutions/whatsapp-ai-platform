@@ -157,15 +157,12 @@ describe('semantic intent classification',()=>{
   });
 
   it('preserves the requested branch detail instead of turning every branch intent into an address request',async()=>{
-    const complete=vi.fn(async(request:string)=>{
-      const input=JSON.parse(JSON.parse(request).input);expect(input.approvedSources[0].label).toBe('B1');
-      return {decision:{action:'answer' as const,text:'IRAM Nox opens from 11am to 10pm.',summary:'',branchLines:[],sourceLabels:['B1']},input:350,output:45};
-    });
+    const complete=vi.fn();
     const strategy=new GroundedStrategy(async()=>[branch],ledger(),{complete,classifyIntent:vi.fn(async()=>({
       decision:decision({intent:'branch',product:'jewelry',branchMode:'detail',branchDetail:'hours',branchLabels:['B1'],normalizedQuery:'What are the opening hours for IRAM Nox?'}),input:220,output:40,
     }))});
     const result=await strategy.reply({...context,text:'nox opning ours'});
-    expect(result.text).toBe('IRAM Nox opens from 11am to 10pm.');expect(result.text).not.toContain('Nox Mall');expect(complete).toHaveBeenCalledOnce();
+    expect(result.text).toBe('Opening hours for IRAM Nox:\n\n11am–10pm');expect(result.text).not.toContain('Nox Mall');expect(complete).not.toHaveBeenCalled();
   });
 
   it('uses the corrected semantic query for retrieval while preserving the original message for generation',async()=>{

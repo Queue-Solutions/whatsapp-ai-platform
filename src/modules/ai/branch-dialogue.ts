@@ -150,6 +150,16 @@ function branchDetailText(value:Record<string,string>,ar:boolean,acknowledge=tru
   return `${acknowledge?(ar?`أكيد، دي تفاصيل موقع ${name}:\n\n`:`Sure — here are the location details for ${name}:\n\n`):''}${name}${city?` — ${city}`:''}\n\n${address}\n\n${mapsUrl|| (ar?'رابط الموقع غير متاح لهذا الفرع حاليًا.':'A location link is not currently available for this branch.')}`;
 }
 
+function requestsBranchHours(text:string){
+  return /\b(?:hours|opening|closing|open|close|times?)\b|(?:مواعيد|ساعات العمل|فاتحين|بيفتح|بتفتح|يقفل|بتقفل)/.test(normalizeIntent(text));
+}
+
+/** Render the approved hours field verbatim so a selected branch never depends on model retrieval. */
+function branchHoursText(value:Record<string,string>,ar:boolean){
+  const name=value.name.trim(),hours=value.hours?.trim(),exceptions=value.exceptions?.trim();
+  return `${ar?`مواعيد عمل ${name}:`:`Opening hours for ${name}:`}\n\n${hours}${exceptions?`\n\n${ar?'مواعيد الإغلاق الأسبوعية أو العطلات:':'Weekly closures or holiday hours:'} ${exceptions}`:''}`;
+}
+
 /** Complete jewelry directories never depend on the model's knowledge-size selection. */
 export function directJewelryDirectory(context:MessageContext,sources:KnowledgeSource[]):AgentDecision|null {
   if(branchScope(context,sources)!=='directory'||productIntent(context)!=='jewelry'||wantsBranchDetails(context.text??''))return null;
@@ -163,6 +173,7 @@ export function directJewelryDirectory(context:MessageContext,sources:KnowledgeS
 export function directBranchDetail(context:MessageContext,sources:KnowledgeSource[]):AgentDecision|null {
   const scope=branchScope(context,sources);
   if(productIntent(context)!=='jewelry')return null;
+  const hoursRequested=requestsBranchHours(context.text??'');
   const displayed=displayedBranchSelection(context,sources);
   if(displayed&&!displayed.records.length){
     const ar=branchReplyArabic(context);
@@ -171,16 +182,22 @@ export function directBranchDetail(context:MessageContext,sources:KnowledgeSourc
       :`That list has ${displayed.total} branches. Please choose a number from 1 to ${displayed.total}.`};
   }
   const contextual=displayed?.records??contextualBranchRecords(context,sources);
-  if(!contextual.length&&(!['detail','directory'].includes(scope)||!isLocationRequest(context,sources)))return null;
+  if(!contextual.length&&(!['detail','directory'].includes(scope)||(!hoursRequested&&!isLocationRequest(context,sources))))return null;
   let matches=orderedBranchSources(contextual.length?contextual:matchingBranches(context.text??'',sources));
   if(!matches.length&&/^(?:btc|bullion|jewel(?:ry|lery)|سبائك|السبائك|مجوهرات|المجوهرات)[.!؟? ]*$/i.test(normalizeIntent(context.text??''))) {
     const previous=[...(context.history??[])].reverse().find(m=>m.role==='user');
     if(previous)matches=matchingBranches(previous.content,sources);
   }
-  if(!matches.length||matches.some(source=>!branchData(source)?.address?.trim()))return null;
+  if(!matches.length)return null;
   if(matches.length>1&&!wantsBranchDetails(context.text??''))return null;
   const values=matches.map(source=>branchData(source)!);
   const decision={action:'answer' as const,reason:'approved_knowledge',text:'',sources:matches.map(sourceRef)};
+  if(hoursRequested){
+    if(values.some(value=>!value.hours?.trim()))return null;
+    const ar=branchReplyArabic(context),blocks=values.map(value=>branchHoursText(value,ar));
+    return {...decision,text:blocks.length===1?blocks[0]:numberedBranchLines(blocks).join('\n\n')};
+  }
+  if(values.some(value=>!value.address?.trim()))return null;
   if(matches.length===1)return {...decision,text:branchDetailText(values[0],branchReplyArabic(context))};
   const ar=branchReplyArabic(context),blocks=numberedBranchLines(values.map(value=>branchDetailText(value,ar,false)));
   return {...decision,text:`${ar?'أكيد، دي تفاصيل مواقع الفروع اللي طلبتها:':'Sure — here are the requested branch locations:'}\n\n${blocks.join('\n\n')}`};

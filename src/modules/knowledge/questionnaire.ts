@@ -19,18 +19,17 @@ export const branchFields = [
   ['name', 'What is this branch called?'],
   ['city', 'Which city is this branch in?'],
   ['address', 'What is the full street address?'],
-  ['hours', 'What are the opening and closing times for each day?'],
-  ['exceptions', 'Are there weekly closing days or special holiday hours?'],
-  ['phone', 'What is the branch contact number?'],
-  ['latitude', 'Latitude (optional, for nearest-branch lookup)'],
-  ['longitude', 'Longitude (optional, for nearest-branch lookup)'],
+  ['hours', 'Working hours'],
   ['mapsUrl', 'What is the Google Maps link for this location?'],
 ] as const;
 
 const text = z.string().max(10000);
 export const branchSchema = z.object({
   name: z.string().max(200), city: z.string().max(100).optional(), address: text, hours: text,
-  exceptions: text, phone: z.string().max(100),
+  btcEnabled: z.boolean().default(false), btcHours: text.optional(), btcPhone: z.string().max(100).optional(),
+  maintenanceEnabled: z.boolean().default(false), maintenanceHours: text.optional(),
+  // Preserve older hidden values when an existing branch is edited.
+  exceptions: text.optional(), phone: z.string().max(100).optional(),
   latitude: z.string().max(24).refine(v=>!v.trim()||(Number.isFinite(Number(v))&&Math.abs(Number(v))<=90), 'Latitude must be between -90 and 90.').optional(),
   longitude: z.string().max(24).refine(v=>!v.trim()||(Number.isFinite(Number(v))&&Math.abs(Number(v))<=180), 'Longitude must be between -180 and 180.').optional(),
   mapsUrl: z.string().max(2048).refine(value => {
@@ -48,7 +47,7 @@ export const branchSchema = z.object({
 export type BranchValue = z.infer<typeof branchSchema>;
 export type Faq = { id: string; question: string; answer: string; is_published: boolean; updated_at?: string };
 export type Branch = { id: string; fact_key: string; value: BranchValue; is_published: boolean; display_order?: number | null; updated_at?: string };
-export const emptyBranch = (): BranchValue => ({ name: '', city: '', address: '', hours: '', exceptions: '', phone: '', mapsUrl: '' });
+export const emptyBranch = (): BranchValue => ({ name: '', city: '', address: '', hours: '', btcEnabled: false, btcHours: '', btcPhone: '', maintenanceEnabled: false, maintenanceHours: '', mapsUrl: '' });
 
 export function validateFaq(faq: Faq, publish: boolean) {
   if (!faq.question.trim() || faq.question.length > 1000 || faq.answer.length > 10000)
@@ -60,7 +59,11 @@ export function validateBranch(value: BranchValue, publish: boolean) {
   if (!!value.latitude?.trim() !== !!value.longitude?.trim()) throw new Error('Provide both latitude and longitude, or leave both blank.');
   if (!parsed.success) throw new Error(parsed.error.issues[0].message);
   if (publish && (!value.name.trim() || !value.address.trim() || !value.hours.trim()))
-    throw new Error('Add the branch name, address and opening hours before approving it.');
+    throw new Error('Add the branch name, address and working hours before approving it.');
+  if (publish && value.btcEnabled && (!value.btcHours?.trim() || !value.btcPhone?.trim()))
+    throw new Error('Add the BTC working hours and BTC phone number before enabling BTC for this branch.');
+  if (publish && value.maintenanceEnabled && !value.maintenanceHours?.trim())
+    throw new Error('Add the maintenance working hours before enabling maintenance for this branch.');
 }
 
 // A stable tenant/locale-scoped ID keeps repeated starter saves from creating duplicates.

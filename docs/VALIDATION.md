@@ -1,5 +1,11 @@
 # Foundation validation
 
+## Per-branch service hours and live status — 2026-10-07
+
+The branch editor now shows only name, city, address, Working hours and Google Maps link as its general fields. BTC and Maintenance switches are off by default and reveal their required service fields when enabled. BTC and maintenance routing prefers the completed per-branch settings, while legacy FAQ catalogs remain available only during the transition before every current branch has saved switches. Live “open now” answers use the applicable approved branch schedule and `Africa/Cairo` time, with deterministic closing or next-opening language.
+
+Lint, TypeScript, all 466 automated tests and the production build passed. New coverage verifies the exact editor field list, service validation, structured BTC authority, maintenance directories, English/Arabic schedule parsing, Cairo-time open/closed results, close-soon messaging, service-specific schedules and semantic “this branch” continuations. No paid model call, WhatsApp send, database migration, Supabase mutation, client-number change or production deployment was performed.
+
 ## Semantic intent routing — 2026-09-23
 
 The customer-language layer now uses a strict semantic classification call before business routing. The classifier receives no FAQ answers, returns only intent metadata and approved branch labels, and is cached against the current knowledge-catalog fingerprint. Workflow execution and all factual branch/link output remain deterministic and source-version guarded. Local resilience rules remain available only if classification cannot run.

@@ -208,6 +208,16 @@ describe('product-aware branch navigation',()=>{
   const complete=vi.fn();const decision=await new GroundedStrategy(async()=>branches,ledger(),{complete}).reply({...base,text,history:history()});
   expect(decision.action).toBe('answer');expect(decision.text).toContain('123 IRAM Riverside Street');expect(decision.text).not.toMatch(/ارم|إيرام/);expect(decision.text).toContain('https://maps.app.goo.gl/B1');expect(complete).not.toHaveBeenCalled();
  });
+ it('returns the selected branch hours and exceptions directly from Branch Details',async()=>{
+  const arkan:KnowledgeSource={id:'arkan',label:'ARKAN',kind:'fact',updatedAt:'2026-10-07',content:JSON.stringify({category:'branch',value:{
+    name:'IRAM Arkan',city:'6th of October City',address:'Arkan Plaza Mall, next to Crowne Plaza Hotel, 6th of October City',
+    hours:'Saturday to Thursday: 11:00 AM to 10:00 PM | Friday: 2:00 PM to 10:00 PM',exceptions:'Official holidays may differ.',mapsUrl:'https://maps.app.goo.gl/arkan',
+  }})};
+  const complete=vi.fn();const decision=await new GroundedStrategy(async()=>[arkan],ledger(),{complete}).reply({...base,text:'What are the Arkan opening hours?',history:history()});
+  expect(decision).toMatchObject({action:'answer',reason:'approved_knowledge'});
+  expect(decision.text).toBe('Opening hours for IRAM Arkan:\n\nSaturday to Thursday: 11:00 AM to 10:00 PM | Friday: 2:00 PM to 10:00 PM\n\nWeekly closures or holiday hours: Official holidays may differ.');
+  expect(decision.text).not.toMatch(/Arkan Plaza|maps\.app/);expect(complete).not.toHaveBeenCalled();
+ });
  it('keeps multiple branches in a city as a directory and resolves a specific branch in that city',()=>{
   expect(branchScope({...base,text:'Hurghada address'},branches)).toBe('directory');
   expect(branchScope({...base,text:'الغردقة'},branches)).toBe('directory');
@@ -231,12 +241,12 @@ describe('product-aware branch navigation',()=>{
   const decision=await new GroundedStrategy(async()=>[source],ledger(),{complete:vi.fn()}).reply({...base,text:'Riverside',history:history()});
   expect(decision.text).toContain('123 Street');expect(decision.text).toContain('not currently available');expect(decision.text).not.toContain('https:');
  });
- it('prioritizes BTC FAQs and excludes general branch hours from both BTC lists and address requests',()=>{
+ it('prioritizes BTC service sources and excludes general branch hours from both BTC lists and address requests',()=>{
   for(const text of ['BTC branches?','BTC Riverside address','BTC hours?']){
    const c={...base,text};const selection=selectKnowledge(c,[...branches,btc]);expect(selection.sources[0]).toEqual(btc);
    const request=JSON.parse(buildRequest(c,selection.sources));const input=JSON.parse(request.input);
    expect(input.productIntent).toBe('btc');expect(input.approvedSources.filter((s:{label:string})=>s.label.startsWith('B')).every((s:{content:string})=>!s.content.includes('9am'))).toBe(true);
-   expect(request.instructions).toContain('BTC availability and BTC service hours MUST come from FAQs');
+   expect(request.instructions).toContain('BTC availability, service hours and phone numbers come from the BTC settings in each approved branch record');
   }
  });
  it('does not accept general branch citations as proof of BTC availability',async()=>{

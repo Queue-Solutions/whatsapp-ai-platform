@@ -116,9 +116,9 @@ export async function nearestBranchReply(context:MessageContext,sources:Knowledg
     :`Which city or area are you in? Or share your WhatsApp location or a Google Maps pin so I can find a nearby ${product==='btc'?'BTC':'jewelry'} branch.`);
   query=query.replace(/^(?:i(?:'m| am)|انا)\s+(?:in|from|في|من)\s+/i,'').trim();
   const btc=product==='btc'?btcCatalog(sources):null;
-  if(product==='btc'&&!btc)return knowledgeGap(context,'The approved BTC FAQ does not confirm an unambiguous eligible branch list.');
+  if(product==='btc'&&(!btc||!btc.entries.length))return knowledgeGap(context,'No complete per-branch BTC settings confirm an eligible branch list.');
   const repair=product==='jewelry'&&repairContext?repairBranchCatalog(sources):null;
-  if(product==='jewelry'&&repairContext&&!repair)return knowledgeGap(context,'The approved maintenance FAQ does not confirm one unambiguous eligible branch list.');
+  if(product==='jewelry'&&repairContext&&(!repair||!repair.entries.length))return knowledgeGap(context,'No complete per-branch maintenance settings confirm an eligible branch list.');
   const repairMatches=repair?.entries.map(entry=>({entry,matches:repairBranchRecords(entry,sources)}))??[];
   if(repairMatches.some(match=>match.matches.length!==1))return knowledgeGap(context,'Every approved maintenance branch must match exactly one saved branch record before comparing distances.');
   const expected=btc?btc.entries.length:repair?repair.entries.length:sources.filter(s=>branchData(s)).length;
