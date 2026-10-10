@@ -26,4 +26,19 @@ describe('per-branch service settings',()=>{
     expect(decision?.text).toContain('IRAM One');expect(decision?.text).toContain('IRAM Two');expect(decision?.text.match(/1:00 PM to 9:00 PM/g)).toHaveLength(2);
     expect(decision?.sources.map(source=>source.id)).toEqual(['one','two']);
   });
+  it('answers a named branch service comparison from that branch record instead of asking the product again',async()=>{
+    const korba=branch('korba','IRAM Korba',{btc:true,maintenance:false}),complete=vi.fn(),classifyIntent=vi.fn();
+    const decision=await new GroundedStrategy(async()=>[korba],{reserve:vi.fn(),finish:vi.fn()},{complete,classifyIntent}).reply({...base,text:'فرع الكربة فيه مجوهرات ولا BTC بس؟'});
+    expect(decision).toMatchObject({action:'answer',reason:'approved_knowledge'});
+    expect(decision.text).toContain('المجوهرات');expect(decision.text).toContain('BTC');expect(decision.text).not.toContain('هل تبحث');
+    expect(decision.sources).toEqual([{id:'korba',kind:'fact',updatedAt:'2026-10-07'}]);
+    expect(classifyIntent).not.toHaveBeenCalled();expect(complete).not.toHaveBeenCalled();
+  });
+  it('uses the same branch service answer when “both” follows the product question',async()=>{
+    const korba=branch('korba','IRAM Korba',{btc:true}),complete=vi.fn();
+    const decision=await new GroundedStrategy(async()=>[korba],{reserve:vi.fn(),finish:vi.fn()},{complete}).reply({...base,text:'Both',history:[
+      {role:'user',content:'Does Korba have BTC only?'},{role:'assistant',content:'Are you looking for jewelry or BTC / bullion products?'},
+    ]});
+    expect(decision.text).toMatch(/jewelry.*BTC \/ bullion service/);expect(decision.text).not.toContain('are you looking');expect(complete).not.toHaveBeenCalled();
+  });
 });

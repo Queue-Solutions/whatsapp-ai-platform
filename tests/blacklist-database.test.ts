@@ -21,6 +21,12 @@ describe('blacklist and careers PostgreSQL boundaries',()=>{
   const job=await claim();expect(await prepare(job)).toBeNull();
   await ingest('safe');const safe=await claim();expect(await moderate(safe)).toBe(true);expect(await prepare(safe)).toBeTruthy();
  });
+ it('drops an in-flight reply when a newer customer turn has already arrived',async()=>{
+  await ingest('older-turn');const older=await claim();await moderate(older);
+  await ingest('newer-turn');expect(await prepare(older)).toBeNull();
+  expect((await rows('select state,error_code from public.message_jobs where id=$1',[older.id]))[0]).toEqual({state:'skipped',error_code:'superseded_by_newer_inbound'});
+  const newer=await claim();await moderate(newer);expect(await prepare(newer)).toBeTruthy();
+ });
  it('blocks automatic and manual sends and preserves messages while waiting for review',async()=>{
   const b=await block();expect(b.state).toBe('pending_review');
   await ingest('blocked-next');const next=await claim();expect(await moderate(next)).toBe(false);expect(await rows('select id from public.messages')).toHaveLength(2);

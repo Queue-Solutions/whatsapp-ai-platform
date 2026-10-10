@@ -1,6 +1,7 @@
 import type {KnowledgeSource,AgentDecision} from './contracts';
 import type {MessageContext} from '../messaging/types';
 import {replyLanguage} from './language';
+import {isProductDifferenceFollowUp,isProductExplanationRequest} from './product-explanation';
 export const normalizeIntent=(text:string)=>text.normalize('NFKC').toLowerCase().replace(/[\u064b-\u065f\u0670\u0640]/g,'').replace(/[إأآ]/g,'ا').replace(/ى/g,'ي').replace(/ة/g,'ه').replace(/سبايك/g,'سبائك');
 const focusedDetail=/\b(?:hours|opening|closing|payment|cards?|delivery|prices?|refund|warranty|parking)\b|(?:مواعيد|ساعات|دفع|فيزا|اسعار|سعر|استرجاع|استبدال|ضمان|ركنه)/;
 export function isBranchSource(source:KnowledgeSource):boolean {
@@ -115,6 +116,7 @@ export function nearestIntent(context:MessageContext):boolean {
 const namedBranch=(text:string,sources:KnowledgeSource[])=>matchingBranches(text,sources).length>0;
 export function branchScope(context:MessageContext,sources:KnowledgeSource[]=[]):'none'|'detail'|'directory'{
   const text=context.text??'',direct=directScope(text);
+  if(isProductExplanationRequest(text)||isProductDifferenceFollowUp(context))return 'none';
   if(nearestIntent(context)||context.type==='location')return 'detail';
   if(direct!=='none')return direct==='detail'&&!focusedDetail.test(normalizeIntent(text))&&matchingBranches(text,sources).length>1?'directory':direct;
   if(namedBranch(text,sources)){

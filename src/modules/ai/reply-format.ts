@@ -6,6 +6,11 @@ export function formatReply(text:string) {
   value=value.replace(/\biram\b/gi,'IRAM');
   value=value.replace(/[;؛]+[ \t]*/g,'\n').replace(/[ \t]+/g,' ').replace(/ *\n */g,'\n')
     .replace(/[ \t]+(?=(?:[•●]|\d+[.)])\s)/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
+  // A line beginning with a Latin product or brand name otherwise makes
+  // WhatsApp choose left-to-right paragraph order for the whole Arabic line.
+  // An invisible right-to-left mark fixes the paragraph direction without
+  // inserting control characters inside searchable names such as “IRAM Korba”.
+  value=value.split('\n').map(line=>/[\u0600-\u06ff]/.test(line)&&/^\s*(?:BTC|IRAM|TJH)\b/.test(line)?`\u200f${line}`:line).join('\n');
   return value.replace(/\u0000(\d+)\u0000/g,(_,i)=>urls[Number(i)]);
 }
 function restrainBrandEmojis(text:string){

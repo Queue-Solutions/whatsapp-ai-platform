@@ -11,7 +11,7 @@ describe('personal follow-up collection',()=>{
   const start=beginFollowUp(context,issue);
   expect(start).toMatchObject({action:'clarify',reason:'complaint',followUp:{state:'collecting',name:null,phone:null}});
   const name=continueFollowUp({...context,text:'Maya Hassan',followUp:pending,history:[{role:'assistant',content:start.text}]})!;
-  expect(name.followUp).toMatchObject({name:'Maya Hassan',phone:null,state:'collecting'});expect(name.text).toContain('phone number');expect(name.text).not.toContain('shortly');
+  expect(name.followUp).toMatchObject({name:'Maya Hassan',phone:null,state:'collecting'});expect(name.text).toContain('phone number');expect(name.text).not.toContain('shortly');expect(name.text).not.toContain('assist you personally');
   const ready=continueFollowUp({...context,text:'01012345678',followUp:{...pending,...name.followUp},history:[{role:'assistant',content:name.text}]})!;
   expect(ready).toMatchObject({action:'handoff',followUp:{state:'ready',name:'Maya Hassan',phone:'201012345678'}});
   expect(ready.text).toContain('within the next 24 hours');expect(ready.text).toContain('type Cancel');expect(ready.text).not.toContain('type AI or');expect(ready.text).toContain('AI assistant is now turned off');
@@ -83,7 +83,9 @@ describe('personal follow-up collection',()=>{
   const phone=continueFollowUp({...context,text:'+201012345678',followUp:pending,history:[{role:'assistant',content:start.text}]})!;
   expect(phone.text).toContain('your name');
   const invalid=continueFollowUp({...context,text:'123',followUp:{...pending,name:'Maya'}})!;
-  expect(invalid.followUp?.state).toBe('collecting');expect(invalid.followUp?.phone).toBeNull();
+  expect(invalid.followUp?.state).toBe('collecting');expect(invalid.followUp?.phone).toBeNull();expect(invalid.text).toContain('not valid');expect(invalid.text).not.toContain('assist you personally');
+  const tooLong=continueFollowUp({...context,text:'0106794599352846',followUp:{...pending,name:'Zika'},history:[{role:'assistant',content:'Please share a valid phone number.'}]})!;
+  expect(tooLong.followUp).toMatchObject({state:'collecting',name:'Zika',phone:null});expect(tooLong.text).toContain('not valid');
   const declined=continueFollowUp({...context,text:'I do not want to share my number',followUp:pending})!;
   expect(declined).toMatchObject({action:'handoff',followUp:{state:'declined'}});expect(declined.text).not.toContain('24 hours');expect(declined.text).toContain('type Cancel');expect(declined.text).not.toContain('type AI or');
  });
@@ -114,6 +116,7 @@ describe('personal follow-up collection',()=>{
 describe('WhatsApp reply presentation',()=>{
  it('normalizes all brand spellings to uppercase English while retaining useful paragraph spacing',()=>{
  expect(formatReply('أهلًا في إيرام؛  مع iram و ارم;\n\n\nتفضل')).toBe('أهلًا في IRAM\nمع IRAM و IRAM\n\nتفضل');
+  expect(formatReply('BTC هو اختصار لمنتجات السبائك.')).toBe('\u200fBTC هو اختصار لمنتجات السبائك.');
   expect(formatReply('See https://example.test/a;b')).toBe('See https://example.test/a%3Bb');
   expect(formatBusinessReply('شكرًا لتواصلك مع IRAM Jewelry!\n\nمن فضلك ابعت السيرة الذاتية.\n\nمع أطيب التحيات،\nIRAM Jewelry')).toBe('من فضلك ابعت السيرة الذاتية.');
   expect(formatBusinessReply('Hello!\n\nYour branch closes at 10 PM.')).toBe('Your branch closes at 10 PM.');

@@ -39,7 +39,7 @@ function asksFollowUpReason(text:string){
   return /^(?:why|why is that|how come|ليه|ليه كده|ليه كدا|لماذا)[.!،,؟? ]*$/i.test(normalizeIntent(text).trim());
 }
 function followUpReasonReply(context:MessageContext,current:FollowUpContext):AgentDecision {
-  const pending=reply(context,current.reason,current.summary,current);
+  const pending=reply(context,current.reason,current.summary,current,false,false);
   const question=pending.text.split('\n\n').at(-1)??pending.text;
   const ar=followUpArabic(context);
   const explanation=current.reason==='missing_business_information'
@@ -49,7 +49,7 @@ function followUpReasonReply(context:MessageContext,current:FollowUpContext):Age
       :ar?'لأنك طلبت التحدث مع شخص من فريق IRAM، بدأنا طلب المتابعة الشخصية.':'Because you asked to speak with a person from the IRAM team, a personal follow-up was started.';
   return {...pending,text:`${explanation}\n\n${question}`};
 }
-function reply(context:MessageContext,reason:string,summary:string,details:FollowUpDetails,repeatFollowup=false):AgentDecision {
+function reply(context:MessageContext,reason:string,summary:string,details:FollowUpDetails,repeatFollowup=false,includeIntro=true):AgentDecision {
   const ar=followUpArabic(context);
   let text:string;
   if(details.purpose==='career'&&!details.role&&details.state==='collecting')text=ar
@@ -73,12 +73,12 @@ function reply(context:MessageContext,reason:string,summary:string,details:Follo
       ? ar?'يرجى إرسال اسمك ورقم الهاتف الأنسب للتواصل.':'Please share your name and preferred phone number.'
       : !details.name?ar?'يرجى إرسال اسمك لاستكمال طلب المتابعة.':'Please share your name to complete the follow-up request.'
       : ar?'شكرًا لك. يرجى إرسال رقم هاتف صحيح للتواصل، مع إضافة كود الدولة إذا كان الرقم خارج مصر.':'Thank you. Please share a valid phone number, including the country code if it is outside Egypt.';
-    text=`${intro}\n\n${question}`;
+    text=includeIntro?`${intro}\n\n${question}`:question;
   }
   return {text,action:details.state==='collecting'?'clarify':'handoff',reason,sources:[],attentionSummary:summary,followUp:{state:details.state,name:details.name,phone:details.phone,...(details.purpose?{purpose:details.purpose,role:details.role??null}:{})}};
 }
 function contactTimingReply(context:MessageContext,current:FollowUpContext):AgentDecision {
-  const pending=reply(context,current.reason,current.summary,current);
+  const pending=reply(context,current.reason,current.summary,current,false,false);
   const question=pending.text.split('\n\n').at(-1)??pending.text;
   const timing=followUpArabic(context)
     ? 'بعد استكمال الاسم ورقم الهاتف الصحيح، سيتواصل معك أحد ممثلي IRAM خلال 24 ساعة.'
@@ -92,43 +92,50 @@ export function beginFollowUp(context:MessageContext,decision:AgentDecision):Age
   const name=existing?.name??decision.contactName??null;
   const phone=existing?.phone??((name||labelledPhone.test(context.text??''))?contactPhone(context.text??''):null);
   return {...reply(context,decision.reason,decision.attentionSummary??'The customer needs personal help with this request.',
-    {state:name&&phone?'ready':'collecting',name,phone},decision.repeatFollowup),usage:decision.usage};
+    {state:name&&phone?'ready':'collecting',name,phone},decision.repeatFollowup,!existing||!!decision.repeatFollowup),usage:decision.usage};
 }
 export function continueFollowUp(context:MessageContext,options?:{validatedName:string|null}):AgentDecision|null {
   const current=context.followUp;if(current?.state!=='collecting')return null;
   const text=context.text?.trim()??'';
   if(/^(?:no thanks|skip)[.! ]*$|(?:don't|do not|won't|rather not).{0,20}(?:share|give).{0,20}(?:number|name|details)|(?:مش|لا).{0,15}(?:هدي|هقول|اشارك)|بدون رقم|مش حابب.{0,20}(?:رقم|بيانات|اسم)/i.test(text))
-    return reply(context,current.reason,current.summary,{...current,state:'declined'});
+    return reply(context,current.reason,current.summary,{...current,state:'declined'},false,false);
   if(current.purpose!=='career'&&asksFollowUpReason(text))return followUpReasonReply(context,current);
   if(current.purpose!=='career'&&asksContactTiming(text))return contactTimingReply(context,current);
   if(current.purpose==='career'&&!current.role){
     // A role is user-provided text, not an inferred vacancy. New questions can leave this flow.
     if(!text||text.length>120||/[?؟]/.test(text)||/\b(?:where|when|branches|hours|price)\b|(?:فروع|مواعيد|سعر|فين الفرع)/i.test(text))return null;
-    if(isCareerEnquiry(text)||contactPhone(text)||/^(?:hi|hello|thanks|yes|yeah|sure|اه|آه|ايوه|أيوه|اهلا|شكرا|تمام)[.!؟? ]*$/i.test(text))return reply(context,current.reason,current.summary,current);
+    if(isCareerEnquiry(text)||contactPhone(text)||/^(?:hi|hello|thanks|yes|yeah|sure|اه|آه|ايوه|أيوه|اهلا|شكرا|تمام)[.!؟? ]*$/i.test(text))return reply(context,current.reason,current.summary,current,false,false);
     const role=text.replace(/[;؛]/g,'،');
-    return reply(context,'career_application',`Job enquiry: desired role “${role}”. Contact only if this role is needed.`,{...current,role});
+    return reply(context,'career_application',`Job enquiry: desired role “${role}”. Contact only if this role is needed.`,{...current,role},false,false);
   }
   const lastAssistant=[...(context.history??[])].reverse().find(m=>m.role==='assistant')?.content??'';
   const wasAskedForContact=/your name|phone number|ممكن اسمك|اسمك|رقم (?:التليفون|تليفون|الهاتف|الموبايل|التواصل)/.test(lastAssistant);
   // Agreement is not contact data. Keep the form conversational and ask only
   // for the fields that are still missing instead of storing words like
   // “ofcourse” or “sure” as the customer's name.
-  if(wasAskedForContact&&isAcknowledgement(text))return reply(context,current.reason,current.summary,current);
+  if(wasAskedForContact&&isAcknowledgement(text))return reply(context,current.reason,current.summary,current,false,false);
   const name=options?options.validatedName:contactName(text,wasAskedForContact&&!current.name);
   const plainPhone=/^[+\d٠-٩۰-۹ ()-]+$/.test(text);
   const phone=plainPhone||name||labelledPhone.test(text)?contactPhone(text):null;
   const contactLike=!!name||!!phone||plainPhone||!text;
   // Let a new business question use normal knowledge handling instead of trapping the user in a form.
   if(!contactLike)return null;
+  if(plainPhone&&!phone){
+    const pending=reply(context,current.reason,current.summary,current,false,false);
+    const invalid=followUpArabic(context)
+      ?'رقم الهاتف ده غير صحيح. من فضلك أرسل رقمًا صحيحًا للتواصل، مع إضافة كود الدولة إذا كان الرقم خارج مصر.'
+      :'That phone number is not valid. Please enter a valid number, including the country code if it is outside Egypt.';
+    return {...pending,text:invalid};
+  }
   const details={...current,name:name??current.name,phone:phone??current.phone,state:'collecting' as FollowUpDetails['state']};
   if(details.name&&details.phone)details.state='ready';
-  return reply(context,current.reason,current.summary,details);
+  return reply(context,current.reason,current.summary,details,false,false);
 }
 
 /** Repeat the active collection question without mutating any saved details. */
 export function repeatFollowUp(context:MessageContext):AgentDecision|null {
   const current=context.followUp;
-  return current?.state==='collecting'?reply(context,current.reason,current.summary,current):null;
+  return current?.state==='collecting'?reply(context,current.reason,current.summary,current,false,false):null;
 }
 
 export function isCareerEnquiry(text:string):boolean {

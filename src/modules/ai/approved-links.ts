@@ -3,12 +3,14 @@ import type {MessageContext} from '../messaging/types';
 import {normalizeIntent} from './branch-scope';
 import {sourceRef} from './branch-dialogue';
 import {replyLanguage} from './language';
+import {isProductExplanationRequest} from './product-explanation';
 
 const canonicalLinkRequest=/^(?:Send the online shopping and official website links\.|ابعت روابط الشراء أونلاين والموقع الرسمي\.)$/;
 
 /** Direct requests should receive the approved destinations immediately, without an offer/confirmation turn. */
 export function requestsApprovedLinks(text:string):boolean {
   if(canonicalLinkRequest.test(text))return true;
+  if(isProductExplanationRequest(text))return false;
   const normalized=normalizeIntent(text);
   const social=/(?:\b(?:website|web site|instagram|facebook|social (?:media|network|accounts?|pages?)|official (?:site|accounts?|pages?)|links?)\b|موقع|الموقع|انستجرام|انستغرام|فيسبوك|فيس بوك|سوشيال ميديا|مواقع التواصل|حسابات التواصل|صفحاتكم|روابطكم)/.test(normalized);
   if(social)return true;

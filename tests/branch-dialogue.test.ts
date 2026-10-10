@@ -305,6 +305,20 @@ describe('approved links and source labels',()=>{
  it('does not turn a jewelry branch request into a collection-links reply',async()=>{
   expect(requestsApprovedLinks('Where is your jewelry branch?')).toBe(false);
  });
+ it.each(['بين مجوهرات و BTC، ايه BTC ده؟','يعني ايه BTC؟'])('routes product explanations to approved knowledge, never links or the BTC directory: %s',async text=>{
+  const definition:KnowledgeSource={id:'definition',label:'D1',kind:'faq',updatedAt:'2026-10-11',content:JSON.stringify({question:'ما الفرق بين المجوهرات ومنتجات BTC والسبائك؟',answer:'منتجات BTC هي السبائك والعملات الذهبية، بينما المجوهرات هي قطع الزينة والحلي.'})};
+  const website:KnowledgeSource={id:'web2',label:'W2',kind:'faq',updatedAt:'2026-10-11',content:JSON.stringify({question:'روابطنا',answer:'https://example.test'})};
+  const complete=vi.fn(async()=>({decision:{action:'answer' as const,text:'منتجات BTC هي السبائك والعملات الذهبية، بينما المجوهرات هي قطع الزينة والحلي.',sourceLabels:['D1']},input:80,output:30}));
+  const classifyIntent=vi.fn();
+  expect(requestsApprovedLinks(text)).toBe(false);expect(branchScope({...base,text},branches)).toBe('none');
+  const decision=await new GroundedStrategy(async()=>[...branches,website,definition],ledger(),{complete,classifyIntent}).reply({...base,text});
+  expect(decision.action).toBe('answer');expect(decision.text).toContain('BTC');expect(decision.text).toContain('المجوهرات');expect(decision.text).not.toContain('https://');
+  expect(decision.sources).toEqual([{id:'definition',kind:'faq',updatedAt:'2026-10-11'}]);expect(classifyIntent).not.toHaveBeenCalled();expect(complete).toHaveBeenCalledOnce();
+ });
+ it('expands a short “what is the difference?” follow-up into the two products for grounded retrieval',()=>{
+  const resolved=resolveContinuation({...base,text:'ايه الفرق؟',history:[{role:'assistant',content:'هل تبحث عن المجوهرات أم منتجات BTC والسبائك؟'}]});
+  expect(resolved.text).toContain('المجوهرات');expect(resolved.text).toContain('BTC');expect(branchScope(resolved,branches)).toBe('none');
+ });
  it('does not mistake punctuation or Markdown around approved URLs for an invented link',async()=>{
   const decision=await new GroundedStrategy(async()=>[website],ledger(),{complete:async()=>({decision:{action:'answer',text:'Visit [our website](https://shop.example.test/collection).',sourceLabels:['W1']},input:100,output:30})}).reply({...base,text:'Could you explain the purchasing page?'});
   expect(decision.action).toBe('answer');

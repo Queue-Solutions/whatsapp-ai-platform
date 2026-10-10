@@ -1,6 +1,7 @@
 import type {MessageContext} from '../messaging/types';
 import {normalizeIntent} from './branch-scope';
 import {replyLanguage} from './language';
+import {isProductDifferenceFollowUp} from './product-explanation';
 
 export function isShortAcceptance(text:string){
   return /^(?:yes|yeah|yep|sure|please|send(?: it| them)?|go ahead|where|اه|ايوه|نعم|تمام|طبعا|ياريت|يا ريت|ماشي|ابعت|ابعث|فين)[.!؟? ]*$/.test(normalizeIntent(text).trim());
@@ -23,6 +24,10 @@ export function isProductChoiceContinuation(context:MessageContext){
 /** Resolve the last offer before retrieval; keep original history as untrusted context. */
 export function resolveContinuation(context:MessageContext):MessageContext {
   const previous=[...(context.history??[])].reverse().find(m=>m.role==='assistant')?.content??'';
+  if(productPrompt(previous)&&isProductDifferenceFollowUp(context)){
+    const ar=replyLanguage(context.text??'')==='ar';
+    return {...context,text:ar?'ما الفرق بين المجوهرات ومنتجات BTC والسبائك؟':'What is the difference between jewelry and BTC / bullion products?'};
+  }
   const product=productPrompt(previous)?selectedProduct(context.text??''):null;
   if(product){
     const ar=replyLanguage(context.text??'')==='ar';

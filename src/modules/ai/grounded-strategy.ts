@@ -24,6 +24,8 @@ import { buildRequest, ModelFailure, type ModelProvider } from './openai';
 import {buildIntentRequest,catalogFingerprint,contextForIntent,isStoredIntentDecision,validatedContactName,type IntentDecision,type StoredIntentDecision} from './intent-classification';
 import {deduplicateBranchKnowledge} from './branch-identity';
 import {branchOpenNowReply} from './branch-hours';
+import {branchServicesReply} from './branch-services';
+import {isProductDifferenceFollowUp} from './product-explanation';
 export type SourceLoader = (tenant: string) => Promise<KnowledgeSource[]>;
 export function fallback(context: MessageContext, reason: string, action: AgentDecision['action'] = 'unavailable'): AgentDecision {
   const ar = replyLanguage(context.text ?? '') === 'ar';
@@ -162,12 +164,18 @@ export class GroundedStrategy implements ReplyStrategy {
       const selected=productIntent(context)==='btc'?btcBranchReply(context,sources):directBranchDetail(context,sources);
       if(selected)return selected;
     }
+    if(!knowledgeUnavailable){
+      const services=branchServicesReply(context,sources);if(services)return services;
+    }
     // A product choice answering our own branch-routing question is deterministic context, not a new support intent.
     if(!knowledgeUnavailable&&isProductChoiceContinuation(context)){
       const branchDirectory=directJewelryDirectory(context,sources);if(branchDirectory)return branchDirectory;
       const branchDetail=directBranchDetail(context,sources);if(branchDetail)return branchDetail;
     }
-    const classified=await this.classifyIntent(context,sources);
+    // Product definitions and comparisons are explicit informational requests.
+    // Do not let an advisory classifier reinterpret “what is BTC?” as online
+    // shopping or a branch-directory request.
+    const classified=isProductDifferenceFollowUp(context)?null:await this.classifyIntent(context,sources);
     const useClassification=classified&&classified.confidence>=0.6?classified:null;
     const routed=useClassification?contextForIntent(context,useClassification,sources):context;
     if(contactReply&&proposedName){
