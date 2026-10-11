@@ -15,7 +15,7 @@ import type { UsageLedger } from './ledger';
 import { AI_MODEL,modelCostNano } from './config';
 import { selectKnowledge, selectReturnsKnowledge } from './knowledge-selection';
 import { knowledgeGap } from './knowledge-gap';
-import { assistantResumedReply, beginFollowUp, continueFollowUp, isCareerEnquiry, repeatFollowUp } from './follow-up';
+import { activeFollowUpReply, beginFollowUp, continueFollowUp, isCareerEnquiry, repeatFollowUp } from './follow-up';
 import {careerFaqReply} from './career-faq';
 import {repairFaqReply} from './repair-faq';
 import {pricingReply} from './pricing';
@@ -109,7 +109,6 @@ export class GroundedStrategy implements ReplyStrategy {
   }
   private async generate(context: MessageContext, recoveryReason?:string, recoveryAttempt=0): Promise<AgentDecision> {
     if (context.eligible === false) return fallback(context, 'ineligible', 'suppress');
-    if(context.resumeRequested)return assistantResumedReply(context);
     const careerIntent=isCareerEnquiry(context.text??'');
     if (!['text','location'].includes(context.type) || !context.text?.trim()) return fallback(context, 'unsupported_message');
     if (!context.requestKey) return fallback(context, 'missing_request_identity');
@@ -122,6 +121,10 @@ export class GroundedStrategy implements ReplyStrategy {
     // knowledge. This also explains an immediate "why?" from older conversations
     // that entered contact collection before the price policy existed.
     const pricing=pricingReply(context);if(pricing)return pricing;
+    // A completed ticket stays singular while normal questions continue through
+    // the regular business routes. Only another handoff request or a delayed-
+    // contact complaint is intercepted here.
+    const activeTicket=activeFollowUpReply(context);if(activeTicket)return activeTicket;
     // Career collection was retired: ignore any legacy in-progress career form and answer from the approved FAQ instead.
     // A new hiring/HR question also exits any unrelated contact-collection flow.
     const contactReply=context.followUp?.purpose==='career'||careerIntent?null:continueFollowUp(context);
@@ -192,6 +195,8 @@ export class GroundedStrategy implements ReplyStrategy {
       return careerFaqReply(context,sources,true)??fallback(context,'career_information_unavailable');
     }
     if(useClassification?.intent==='human_followup'||useClassification?.intent==='complaint'){
+      const existingTicket=activeFollowUpReply(context,useClassification.repeatFollowup?'delayed':'request');
+      if(existingTicket)return existingTicket;
       const reason=useClassification.intent==='complaint'?'complaint':'human_requested';
       return {...fallback(context,reason,'handoff'),attentionSummary:useClassification.summary||summarizeAttention(context.text,reason),
         contactName:validatedContactName(useClassification,context.text??'')??undefined,repeatFollowup:!!useClassification.repeatFollowup};

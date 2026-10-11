@@ -32,7 +32,6 @@ export interface MessageJob {
   inbound_message_id: string;
   lease_token: string;
   automation_epoch?: number;
-  customer_resume?: boolean;
 }
 export interface PreparedReply {
   outbound_id: string;
@@ -46,7 +45,6 @@ export interface MessageContext {
   moderationState?:string;
   blocked?:boolean;
   followUp?: import('../ai/follow-up').FollowUpContext;
-  resumeRequested?:boolean;
   requestKey?: string;
   eligible?: boolean;
   history?: Array<{ role: "user" | "assistant"; content: string }>;

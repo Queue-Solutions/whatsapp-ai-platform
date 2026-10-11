@@ -18,7 +18,7 @@ describe('inbox PostgreSQL boundaries',()=>{
   async function claim(){return(await rows<{id:string;lease_token:string;automation_epoch:number}>("select * from public.claim_message_job('9001')"))[0];}
   async function availability(scope:string,selected:string[]=[]){return db.query('select public.set_assistant_availability($1,$2,$3::uuid[])',[channel,scope,selected]);}
   beforeAll(async()=>{db=new PGlite();await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;`);
-    for(const file of ['202609120001_foundation.sql','202609120002_bounded_ai.sql','202609130001_inbox.sql','202609150001_faq_deletion.sql','202609160001_inbox_attention.sql','202609170001_knowledge_gap_attention.sql','202609170002_contact_followup.sql','202609170003_bsuid.sql','202609170004_careers_blacklist.sql','202609220001_assistant_availability.sql','202609230001_conversation_controls.sql','202609240001_customer_resume.sql','202609240002_cancel_command.sql','202609280002_agent_context_reset.sql','202609300002_cancel_clears_attention.sql','202610040001_localized_cancel_command.sql'])await db.exec(await readFile(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));
+    for(const file of ['202609120001_foundation.sql','202609120002_bounded_ai.sql','202609130001_inbox.sql','202609150001_faq_deletion.sql','202609160001_inbox_attention.sql','202609170001_knowledge_gap_attention.sql','202609170002_contact_followup.sql','202609170003_bsuid.sql','202609170004_careers_blacklist.sql','202609220001_assistant_availability.sql','202609230001_conversation_controls.sql','202609240001_customer_resume.sql','202609240002_cancel_command.sql','202609280002_agent_context_reset.sql','202609300002_cancel_clears_attention.sql','202610040001_localized_cancel_command.sql','202610110001_skip_superseded_replies.sql','202610110002_continuous_ticket_assistant.sql'])await db.exec(await readFile(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));
   });
   afterAll(async()=>{await db?.close();});
   beforeEach(async()=>{await db.exec('reset role;truncate public.tenants,auth.users cascade;');
@@ -138,38 +138,16 @@ describe('inbox PostgreSQL boundaries',()=>{
     expect((await rows('select is_complaint,attention_state,automation_mode from public.conversations'))[0]).toMatchObject({is_complaint:false,attention_state:'resolved',automation_mode:'auto'});
     expect(await rows('select id from public.conversation_events')).toHaveLength(4);
   });
-  it('lets an exact customer command cancel an active escalation and resume only that chat',async()=>{
-    await db.query("update public.conversations set automation_mode='human',attention_state='waiting',attention_reason='complaint',attention_summary='Active complaint',is_complaint=true,followup_state='ready',followup_name='Emad',followup_phone='201116657662' where id=$1",[conversation]);
-    await db.query("select public.ingest_moderated_message('9001','customer-resume','201000000001',null,now(),'text','cAnCeL',null,null,null)");
-    expect((await rows('select automation_mode,attention_state,attention_reason,attention_summary,attention_since,resolved_at,is_complaint,followup_state,followup_name,followup_phone from public.conversations where id=$1',[conversation]))[0]).toMatchObject({
-      automation_mode:'auto',attention_state:'none',attention_reason:null,attention_summary:'',attention_since:null,resolved_at:null,is_complaint:false,followup_state:'none',followup_name:null,followup_phone:null,
-    });
-    const jobs=await rows<{provider_message_id:string;state:string;customer_resume:boolean;automation_epoch:number;conversation_epoch:number}>("select m.provider_message_id,j.state,j.customer_resume,j.automation_epoch,c.automation_epoch as conversation_epoch from public.message_jobs j join public.messages m on m.id=j.inbound_message_id join public.conversations c on c.id=m.conversation_id where m.conversation_id=$1 order by j.created_at",[conversation]);
-    expect(jobs.find(job=>job.provider_message_id==='fixture')).toMatchObject({state:'skipped',customer_resume:false});
-    expect(jobs.find(job=>job.provider_message_id==='customer-resume')).toMatchObject({state:'pending',customer_resume:true});
-    expect(jobs.find(job=>job.provider_message_id==='customer-resume')?.automation_epoch).toBe(jobs.find(job=>job.provider_message_id==='customer-resume')?.conversation_epoch);
-    expect(await rows("select id from public.conversation_events where event_type='customer_resumed' and conversation_id=$1",[conversation])).toHaveLength(1);
-  });
-  it('does not treat cancel inside an ordinary sentence as the resume command',async()=>{
-    await db.query("update public.conversations set automation_mode='human',attention_state='waiting',attention_reason='human_requested',attention_summary='Active follow-up',followup_state='collecting' where id=$1",[conversation]);
-    await db.query("select public.ingest_moderated_message('9001','not-a-command','201000000001',null,now(),'text','Cancel my appointment',null,null,null)");
-    expect((await rows('select automation_mode,attention_state,followup_state from public.conversations where id=$1',[conversation]))[0]).toMatchObject({automation_mode:'human',attention_state:'waiting',followup_state:'collecting'});
-    expect((await rows<{customer_resume:boolean}>("select j.customer_resume from public.message_jobs j join public.messages m on m.id=j.inbound_message_id where m.provider_message_id='not-a-command'"))[0].customer_resume).toBe(false);
-  });
-  it('accepts the exact Arabic cancellation command but not an Arabic sentence containing it',async()=>{
-    await db.query("update public.conversations set automation_mode='human',attention_state='waiting',attention_reason='human_requested',attention_summary='Active follow-up',followup_state='collecting' where id=$1",[conversation]);
-    await db.query("select public.ingest_moderated_message('9001','arabic-not-command','201000000001',null,now(),'text','الغاء موعدي',null,null,null)");
-    expect((await rows('select automation_mode,attention_state,followup_state from public.conversations where id=$1',[conversation]))[0]).toMatchObject({automation_mode:'human',attention_state:'waiting',followup_state:'collecting'});
+  it('treats former cancellation words as ordinary messages and keeps the active ticket intact',async()=>{
+    await db.query("update public.conversations set automation_mode='auto',attention_state='waiting',attention_reason='complaint',attention_summary='Active complaint',is_complaint=true,followup_state='ready',followup_name='Emad',followup_phone='201116657662' where id=$1",[conversation]);
+    await db.query("select public.ingest_moderated_message('9001','english-cancel','201000000001',null,now(),'text','Cancel',null,null,null)");
     await db.query("select public.ingest_moderated_message('9001','arabic-cancel','201000000001',null,now(),'text','الغاء',null,null,null)");
-    expect((await rows('select automation_mode,attention_state,followup_state from public.conversations where id=$1',[conversation]))[0]).toMatchObject({automation_mode:'auto',attention_state:'none',followup_state:'none'});
-    expect((await rows<{customer_resume:boolean}>("select j.customer_resume from public.message_jobs j join public.messages m on m.id=j.inbound_message_id where m.provider_message_id='arabic-not-command'"))[0].customer_resume).toBe(false);
-    expect((await rows<{customer_resume:boolean}>("select j.customer_resume from public.message_jobs j join public.messages m on m.id=j.inbound_message_id where m.provider_message_id='arabic-cancel'"))[0].customer_resume).toBe(true);
-  });
-  it('does not use AI as a customer resume command',async()=>{
-    await db.query("update public.conversations set automation_mode='human',attention_state='waiting',attention_reason='human_requested',attention_summary='Active follow-up',followup_state='collecting' where id=$1",[conversation]);
-    await db.query("select public.ingest_moderated_message('9001','ai-is-not-command','201000000001',null,now(),'text','AI',null,null,null)");
-    expect((await rows('select automation_mode,attention_state,followup_state from public.conversations where id=$1',[conversation]))[0]).toMatchObject({automation_mode:'human',attention_state:'waiting',followup_state:'collecting'});
-    expect((await rows<{customer_resume:boolean}>("select j.customer_resume from public.message_jobs j join public.messages m on m.id=j.inbound_message_id where m.provider_message_id='ai-is-not-command'"))[0].customer_resume).toBe(false);
+    expect((await rows('select automation_mode,attention_state,attention_reason,is_complaint,followup_state,followup_name,followup_phone from public.conversations where id=$1',[conversation]))[0]).toMatchObject({
+      automation_mode:'auto',attention_state:'waiting',attention_reason:'complaint',is_complaint:true,followup_state:'ready',followup_name:'Emad',followup_phone:'201116657662',
+    });
+    expect(await rows("select j.id from public.message_jobs j join public.messages m on m.id=j.inbound_message_id where m.provider_message_id in ('english-cancel','arabic-cancel') and j.state='pending'")).toHaveLength(2);
+    expect(await rows("select column_name from information_schema.columns where table_schema='public' and table_name='message_jobs' and column_name='customer_resume'")).toHaveLength(0);
+    expect(await rows("select id from public.conversation_events where event_type='customer_resumed' and conversation_id=$1",[conversation])).toHaveLength(0);
   });
   it('denies attention edits by viewers, anonymous callers and other tenants, including stale requests',async()=>{
     await db.exec('reset role');const id=(await rows<{id:string}>('select id from public.conversations where tenant_id=$1',[other]))[0].id;
@@ -220,7 +198,7 @@ describe('inbox PostgreSQL boundaries',()=>{
     return (await rows<{v:{recipient:string}|null}>("select public.prepare_followup_reply($1,$2,'Synthetic contact reply',$3,'[]',$4,'The customer needs help with a damaged item.',$5) as v",
       [job.id,job.lease_token,details.state==='collecting'?'clarify':'handoff',reason,JSON.stringify(details)]))[0].v;
   }
-  it('collects contact details atomically, keeps the original issue and destination, then pauses for personal follow-up',async()=>{
+  it('collects contact details atomically, keeps the original issue and destination, and leaves the assistant active',async()=>{
     const job=await claim();
     expect(await contact(job,{state:'collecting',name:null,phone:null})).toMatchObject({recipient:'201000000001'});
     const [original]=await rows('select * from public.conversations where id=$1',[conversation]);
@@ -229,7 +207,7 @@ describe('inbox PostgreSQL boundaries',()=>{
     const last=await newMessage('phone');
     expect(await contact(last,{state:'ready',name:'Maya Hassan',phone:'201012345678'})).toMatchObject({recipient:'201000000001'});
     expect((await rows('select * from public.conversations where id=$1',[conversation]))[0]).toMatchObject({
-      followup_state:'ready',followup_name:'Maya Hassan',followup_phone:'201012345678',automation_mode:'human',automation_epoch:1,
+      followup_state:'ready',followup_name:'Maya Hassan',followup_phone:'201012345678',automation_mode:'auto',automation_epoch:1,
       attention_state:'waiting',attention_message_id:original.attention_message_id,attention_since:original.attention_since});
     await db.query("select public.fail_message_job($1,$2,'needs_review','network_outcome_unknown')",[last.id,last.lease_token]);
     await expect(contact(last,{state:'ready',name:'Maya Hassan',phone:'201012345678'})).rejects.toThrow('lease');
@@ -259,9 +237,9 @@ describe('inbox PostgreSQL boundaries',()=>{
     await attention('resume');
     expect((await rows('select followup_state,followup_name,followup_phone from public.conversations where id=$1',[conversation]))[0]).toMatchObject({followup_state:'none',followup_name:null,followup_phone:null});
   });
-  it('keeps declined contact requests visible and pauses without requiring personal details',async()=>{
+  it('keeps declined contact requests visible without disabling the assistant',async()=>{
     await contact(await claim(),{state:'declined',name:null,phone:null},'human_requested');
-    expect((await rows('select followup_state,attention_state,automation_mode from public.conversations where id=$1',[conversation]))[0]).toMatchObject({followup_state:'declined',attention_state:'waiting',automation_mode:'human'});
+    expect((await rows('select followup_state,attention_state,automation_mode from public.conversations where id=$1',[conversation]))[0]).toMatchObject({followup_state:'declined',attention_state:'waiting',automation_mode:'auto'});
   });
   it('flags a missing answer without pausing, retains the original message, and allows a later known reply',async()=>{
     const job=await claim();expect(await gap(job)).not.toBeNull();

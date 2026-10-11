@@ -59,15 +59,15 @@ function reply(context:MessageContext,reason:string,summary:string,details:Follo
     ? 'شكرًا لك. تم تسجيل الوظيفة التي تهتم بها، إلى جانب اسمك ورقم التواصل.\n\nسيتواصل معك فريق IRAM إذا توفرت فرصة مناسبة لهذا الدور.'
     : 'Thank you. Your preferred role, name and contact number have been saved.\n\nThe IRAM team will contact you if a suitable opportunity becomes available.';
   else if(details.state==='ready')text=ar
-    ? `${repeatFollowup?'نعتذر لك لأن المتابعة السابقة لم تتم. تم تسجيل طلبك من جديد، وسنتأكد من متابعته هذه المرة.\n\n':''}شكرًا لك. تم تسجيل اسمك ورقم التواصل 🤍\n\nتم إيقاف المساعد الذكي لهذه المحادثة، وسيتواصل معك أحد ممثلي IRAM خلال 24 ساعة.\n\nلإلغاء طلب المتابعة والعودة إلى المساعد الذكي، اكتب الغاء.`
-    : `${repeatFollowup?'We’re sorry the previous follow-up did not happen. Your request has been registered again, and we’ll make sure it is followed up this time.\n\n':''}Thank you. Your name and phone number have been saved 🤍\n\nThe AI assistant is now turned off for this chat. An IRAM representative will contact you within the next 24 hours.\n\nTo cancel this follow-up and return to the AI assistant, type Cancel.`;
+    ? 'سيتواصل معك أحد ممثلي IRAM خلال 24 ساعة.'
+    : 'One of our representatives will contact you within the next 24 hours.';
   else if(details.state==='declined')text=ar
-    ? 'مشاركة بيانات التواصل اختيارية.\n\nتم إيقاف المساعد الذكي لهذه المحادثة حتى يتمكن فريق IRAM من مراجعة طلبك والرد هنا. لإلغاء المتابعة والعودة إلى المساعد الذكي، اكتب الغاء.'
-    : 'Sharing your contact details is optional.\n\nThe AI assistant is paused for this chat while the IRAM team reviews your request and responds here. To cancel the follow-up and return to the AI assistant, type Cancel.';
+    ? 'مشاركة بيانات التواصل اختيارية. طلبك موجود بالفعل لدى فريق IRAM، وسيتواصل معك أحد ممثلينا هنا.'
+    : 'Sharing your contact details is optional. Your request is already with the IRAM team, and one of our representatives will follow up with you here.';
   else {
     const intro=details.purpose==='career'?(ar?'يسعدنا اهتمامك بالانضمام إلى فريق IRAM.':'Thank you for your interest in joining IRAM.')
       :repeatFollowup
-        ?ar?'نعتذر لك لأن المتابعة السابقة لم تتم. تم تسجيل طلبك للمتابعة من جديد، وسيتواصل معك أحد ممثلي IRAM هذه المرة بعد استكمال بيانات التواصل.':'We’re sorry the previous follow-up did not happen. Your request has been registered again, and an IRAM representative will contact you this time once the contact details are complete.'
+        ?ar?'نعتذر لأنك ما زلت في انتظار التواصل. طلبك قيد المتابعة، ونحتاج فقط إلى استكمال بيانات التواصل.':'I’m sorry you are still waiting. Your request is active, and we only need to complete your contact details.'
         :ar?'سيتابع أحد ممثلي IRAM طلبك بصورة شخصية.':'An IRAM representative will assist you personally.';
     const question=!details.name&&!details.phone
       ? ar?'يرجى إرسال اسمك ورقم الهاتف الأنسب للتواصل.':'Please share your name and preferred phone number.'
@@ -138,6 +138,35 @@ export function repeatFollowUp(context:MessageContext):AgentDecision|null {
   return current?.state==='collecting'?reply(context,current.reason,current.summary,current,false,false):null;
 }
 
+function activeFollowUpFrustration(text:string):boolean {
+  const normalized=normalizeIntent(text);
+  return /\b(?:no one|nobody).{0,45}(?:called|contacted|replied|got back)|\b(?:still|never).{0,35}(?:waiting|called|contacted)|\b(?:have not|haven't|did not|didn't).{0,35}(?:called|contacted|heard back)/i.test(normalized)
+    || /(?:محدش|ماحدش|ولا حد|لسه محدش|مفيش حد).{0,35}(?:كلمني|اتصل|تواصل|رد)|(?:مستني|منتظر).{0,25}(?:من زمان|لسه|حد|اتصال|تواصل)/i.test(normalized);
+}
+
+function requestsAnotherFollowUp(text:string):boolean {
+  const normalized=normalizeIntent(text);
+  return /\b(?:representative|human|real person|agent|team member|ticket|follow[ -]?up|call me|contact me|speak to someone|talk to someone)\b/i.test(normalized)
+    || /(?:اكلم|أتكلم|اتكلم).{0,18}(?:حد|شخص|ممثل|مندوب)|(?:حد|ممثل|مندوب).{0,18}(?:يكلمني|يتصل|يتواصل)|(?:تذكرة|طلب متابعة|متابعة شخصية|شكوى جديدة)/i.test(normalized);
+}
+
+/** Keep an existing ticket singular while the assistant continues normal business support. */
+export function activeFollowUpReply(context:MessageContext,semantic?:'request'|'delayed'):AgentDecision|null {
+  const current=context.followUp;
+  if(!current||!['ready','declined'].includes(current.state))return null;
+  const text=context.text?.trim()??'';
+  const frustrated=semantic==='delayed'||activeFollowUpFrustration(text);
+  if(!frustrated&&semantic!=='request'&&!requestsAnotherFollowUp(text))return null;
+  const ar=replyLanguage(text)==='ar';
+  return {action:'clarify',reason:frustrated?'active_followup_delayed':'active_followup_exists',sources:[],text:frustrated
+    ?ar
+      ?'أنا آسف إنك ما زلت في انتظار التواصل. طلبك ما زال قائمًا لدى فريق IRAM، وسيتواصل معك أحد ممثلينا في أقرب وقت ممكن. وأنا موجود لمساعدتك في أي استفسار آخر في الوقت الحالي.'
+      :'I’m sorry you have been left waiting. Your request is still active with the IRAM team, and one of our representatives will contact you as soon as possible. I’m here to help with anything else in the meantime.'
+    :ar
+      ?'طلبك موجود بالفعل لدى فريق IRAM، لذلك لا تحتاج إلى إنشاء طلب آخر. سيتواصل معك أحد ممثلينا قريبًا، ويمكنني مساعدتك هنا في أي استفسار آخر في الوقت الحالي.'
+      :'Your request is already with the IRAM team, so there is no need to open another one. One of our representatives will be in touch soon, and I can continue helping with anything else in the meantime.'};
+}
+
 export function isCareerEnquiry(text:string):boolean {
   const normalized=normalizeIntent(text);
   if(/(?:مش|لا)\s+(?:عايز|عاوز|محتاج)\s+(?:شغل|اشتغل)|\b(?:not looking for|don't want) (?:a )?(?:job|work)\b/i.test(normalized))return false;
@@ -146,14 +175,6 @@ export function isCareerEnquiry(text:string):boolean {
 export function beginCareer(context:MessageContext):AgentDecision {
   return reply({...context,followUp:undefined},'career_application','The customer wants to work at IRAM. Collect the desired role first, then name and phone. Contact only if the role is needed.',
     {purpose:'career',role:null,state:'collecting',name:null,phone:null});
-}
-
-export function assistantResumedReply(context:MessageContext):AgentDecision {
-  const lastAssistant=[...(context.history??[])].reverse().find(message=>message.role==='assistant')?.content??'';
-  const ar=replyLanguage(lastAssistant||(context.text??''))==='ar';
-  return {action:'clarify',reason:'assistant_resumed',sources:[],text:ar
-    ? 'تم إلغاء طلب المتابعة وإعادة تشغيل المساعد الذكي لهذه المحادثة.\n\nكيف يمكنني مساعدتك؟'
-    : 'Your personal follow-up has been cancelled, and the AI assistant is active again for this chat.\n\nHow may I assist you?'};
 }
 
 /** Recover a yes/no hiring clarification issued before a career flow was persisted. */

@@ -107,7 +107,7 @@ describe('blacklist and careers PostgreSQL boundaries',()=>{
  it('persists the role and conditional follow-up purpose and validates career completion',async()=>{
   async function step(id:string,contact:unknown){await ingest(id);const job=await claim();await moderate(job);const r=await rows<{v:{outbound_id:string}}>("select public.prepare_followup_reply($1,$2,'Synthetic career reply',$3,'[]','career_application','Role to review',$4) as v",[job.id,job.lease_token,(contact as {state:string}).state==='ready'?'handoff':'clarify',JSON.stringify(contact)]);await db.query("select public.complete_message_job($1,$2,$3)",[job.id,job.lease_token,'out-'+id]);return r;}
   await step('career',{purpose:'career',role:null,state:'collecting',name:null,phone:null});await step('role',{purpose:'career',role:'Sales assistant',state:'collecting',name:null,phone:null});await step('contact',{purpose:'career',role:'Sales assistant',state:'ready',name:'Maya Hassan',phone:'201000000001'});
-  expect((await rows('select followup_purpose,followup_role,followup_state,attention_reason,automation_mode from public.conversations'))[0]).toEqual({followup_purpose:'career',followup_role:'Sales assistant',followup_state:'ready',attention_reason:'career_application',automation_mode:'human'});
+  expect((await rows('select followup_purpose,followup_role,followup_state,attention_reason,automation_mode from public.conversations'))[0]).toEqual({followup_purpose:'career',followup_role:'Sales assistant',followup_state:'ready',attention_reason:'career_application',automation_mode:'auto'});
   await expect(db.exec("update public.conversations set followup_role=null")).rejects.toThrow('career_ready_role');
  });
 });

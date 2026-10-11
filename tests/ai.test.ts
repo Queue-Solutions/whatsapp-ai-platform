@@ -83,10 +83,10 @@ describe('grounded reply strategy', () => {
     const first=await strategy.reply({...context,text:'Hi',history:[]});
     const returning=await strategy.reply({...context,text:'Hi',requestKey:'returning',history:[{role:'assistant',content:first.text}]});
     const wellbeing=await strategy.reply({...context,text:'How are you?',requestKey:'wellbeing',history:[{role:'assistant',content:first.text}]});
-    expect(first.text).toContain('Welcome to IRAM');expect(first.text).toContain('AI-powered assistant');
-    expect(first.text).toContain('maintenance, exchanges and returns');expect(first.text).toContain('IRAM representative');
+    expect(first.text).toContain('Welcome to IRAM');expect(first.text).not.toMatch(/AI-powered|representative/i);
+    expect(first.text).toContain('maintenance, exchanges and returns');
     expect(first.text.match(/[🤍💎✨]/gu)).toHaveLength(1);
-    expect(returning.text).toContain('Welcome back');expect(returning.text).toContain('AI-powered assistant');
+    expect(returning.text).toContain('Welcome back');expect(returning.text).not.toMatch(/AI-powered|representative/i);
     expect(wellbeing.text).toContain('doing well');expect(wellbeing.text).not.toContain('Welcome');
     expect(load).not.toHaveBeenCalled(); expect(complete).not.toHaveBeenCalled(); expect(ledger.reserve).not.toHaveBeenCalled();
     expect((await strategy.reply({ ...context, text:'Hi', eligible:false })).action).toBe('suppress');
