@@ -60,7 +60,7 @@ function Login({ db }: { db: SupabaseClient | null }) {
 export function Editor({ db }: { db: SupabaseClient }) {
   const editor = useMemo(() => new KnowledgeEditor(db), [db]);
   const [memberships, setMemberships] = useState<Membership[]>([]);
-  const [tenant, setTenant] = useState(''); const [locale, setLocale] = useState('en');
+  const [tenant, setTenant] = useState('');
   const [faqs, setFaqs] = useState<Faq[]>([]); const [branches, setBranches] = useState<Branch[]>([]);
   const [tab, setTab] = useState<'branches' | 'faqs'>('branches');
   const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [notice, setNotice] = useState('');
@@ -78,12 +78,12 @@ export function Editor({ db }: { db: SupabaseClient }) {
   useEffect(() => {
     if (!tenant) return;
     const generation = ++scope.current; let active = true;
-    void editor.load(tenant, locale).then(data => {
+    void editor.load(tenant).then(data => {
       if (!active || generation !== scope.current) return;
       setFaqs(data.faqs); setBranches(data.branches.length ? data.branches : [newBranch()]); setLoading(false);
     }).catch(e => { if (active && generation === scope.current) { setError(e.message); setLoading(false); } });
     return () => { active = false; };
-  }, [editor, tenant, locale, reload]);
+  }, [editor, tenant, reload]);
   useEffect(() => {
     const warn = (e: BeforeUnloadEvent) => { if (dirty.size) { e.preventDefault(); e.returnValue = ''; } };
     window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
@@ -95,8 +95,8 @@ export function Editor({ db }: { db: SupabaseClient }) {
     if (!canEdit || busy) return; setFeedbackId(id); setBusy(id); setError(''); setNotice('');
     const generation = scope.current;
     try {
-      if (kind === 'faq') { const result = await editor.saveFaq(tenant, locale, faqs.find(f => f.id === id)!, true); if (scope.current === generation) setFaqs(all => all.map(f => f.id === id ? result : f)); }
-      else { const result = await editor.saveBranch(tenant, locale, branches.find(b => b.id === id)!, true); if (scope.current === generation) setBranches(all => all.map(b => b.id === id ? result : b)); }
+      if (kind === 'faq') { const result = await editor.saveFaq(tenant, faqs.find(f => f.id === id)!, true); if (scope.current === generation) setFaqs(all => all.map(f => f.id === id ? result : f)); }
+      else { const result = await editor.saveBranch(tenant, branches.find(b => b.id === id)!, true); if (scope.current === generation) setBranches(all => all.map(b => b.id === id ? result : b)); }
       if (scope.current === generation) { setDirty(s => { const next = new Set(s); next.delete(id); return next; }); setNotice('Saved. This entry is now available to your assistant.'); }
     } catch (e) { if (scope.current === generation) setError(e instanceof Error ? e.message : 'Could not save. Please try again.'); }
     finally { setBusy(''); }
@@ -106,8 +106,8 @@ export function Editor({ db }: { db: SupabaseClient }) {
     setFeedbackId(id); setBusy(id); setDeleting(true); setError(''); setNotice('');
     const generation = scope.current;
     try {
-      if (kind === 'faq') await editor.deleteFaq(tenant, locale, id);
-      else if (branches.find(b => b.id === id)?.updated_at) await editor.deleteBranch(tenant, locale, id);
+      if (kind === 'faq') await editor.deleteFaq(tenant, id);
+      else if (branches.find(b => b.id === id)?.updated_at) await editor.deleteBranch(tenant, id);
       if (scope.current === generation) {
         if (kind === 'faq') setFaqs(all => all.filter(f => f.id !== id));
         else setBranches(all => all.filter(b => b.id !== id));
@@ -124,7 +124,7 @@ export function Editor({ db }: { db: SupabaseClient }) {
     const ordered=next.map((branch,index)=>({...branch,display_order:index}));
     setBranches(ordered);setFeedbackId('');setBusy('branch-order');setError('');setNotice('');
     try {
-      await editor.reorderBranches(tenant,locale,ordered.map(branch=>branch.id));
+      await editor.reorderBranches(tenant,ordered.map(branch=>branch.id));
       if(scope.current===generation)setNotice('Branch order saved. New assistant replies will use this order.');
     } catch(e) {
       if(scope.current===generation){setBranches(previous);setError(e instanceof Error?e.message:'Could not save the branch order. Please try again.');}
@@ -144,7 +144,7 @@ export function Editor({ db }: { db: SupabaseClient }) {
   const approved = [...faqs, ...branches].filter(x => x.is_published).length;
   return <main className="content"><div className="page-title"><div><div className="eyebrow">TEACH YOUR ASSISTANT</div><h1>Business knowledge</h1><p className="intro">You know your business. Give your assistant the details.</p></div><div className="account-actions"><button className="text-button" disabled={!!busy} onClick={() => setPasswordOpen(v => !v)}>Password</button><button className="text-button" disabled={!!busy} onClick={async () => { if (discard()) { await db.auth.signOut({ scope: 'local' }); } }}>Sign out</button></div></div>{passwordOpen && <PasswordForm db={db} onDone={() => setPasswordOpen(false)} />}
     <div className="toolbar"><label>Business<select value={tenant} disabled={!!busy || loading} onChange={e => { if (discard()) { resetView(); setTenant(e.target.value); } }}>{memberships.map(m => <option key={m.tenant_id} value={m.tenant_id}>{m.name}</option>)}</select></label>
-      <label>Answer language<select value={locale} disabled={!!busy || loading} onChange={e => { if (discard()) { resetView(); setLocale(e.target.value); } }}><option value="en">English</option><option value="ar">Arabic / العربية</option></select></label><span className="draft-count">{approved} approved entries{dirty.size ? ` · ${dirty.size} unsaved` : ''}</span></div>
+      <span className="draft-count">{approved} approved entries{dirty.size ? ` · ${dirty.size} unsaved` : ''}</span></div>
     <div className="guidance"><span className="guidance-icon" aria-hidden="true">i</span><div><strong>Start with what you know.</strong><p>Answers are blank for you to complete. Save an entry when it is ready for your assistant to share with customers. Complete the required details before saving. Delete entries you no longer need.</p></div></div>
     <div className="tabs" role="tablist" aria-label="Knowledge sections"><button role="tab" aria-selected={tab === 'branches'} onClick={() => { setTab('branches'); if (feedbackId) { setError(''); setNotice(''); } }}>Branches & hours <span>{branches.length}</span></button><button role="tab" aria-selected={tab === 'faqs'} onClick={() => { setTab('faqs'); if (feedbackId) { setError(''); setNotice(''); } }}>Frequently asked questions <span>{faqs.length}</span></button></div>
     <div aria-live="polite">{notice && !feedbackId && <p className="success">{notice}</p>}</div>{error && !feedbackId && <div className="error" role="alert">{error} <button className="text-button" disabled={!!busy} onClick={() => { if (discard()) { resetView(); setReload(n => n + 1); } }}>Reload</button></div>}

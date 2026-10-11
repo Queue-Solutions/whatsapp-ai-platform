@@ -1,5 +1,9 @@
 # Foundation validation
 
+## Single knowledge catalog — 2026-10-12
+
+The dashboard, inbox FAQ editor, retrieval adapter and database now use one English source of truth. Migration `202610120001_single_knowledge_catalog.sql` preserves English records and branch order, deletes retired non-English copies, removes locale columns, and replaces locale-scoped reordering with tenant-scoped reordering. Customer-language detection and Arabic response generation remain in the reply layer rather than duplicated business data.
+
 ## Active-branch continuity and concise BTC replies — 2026-10-08
 
 Branch-specific BTC availability questions now answer for the active branch with that branch's saved BTC details and offer the complete directory only on request. BTC directories use one conversational introduction and display identical service hours once instead of repeating them under every branch. The active branch advances from an explicit branch mention, a numbered directory selection, or the latest unique branch-detail reply; multi-branch directories do not become branch state. Live open-now answers resolve this conversation evidence before any semantic rewrite, preventing an older branch label from overriding the customer's newer selection.
@@ -36,7 +40,7 @@ The initial round trips used a local backend and temporary HTTPS tunnel. Subsequ
 
 ## Business knowledge editor — 2026-09-12
 
-The `/dashboard` implementation passed lint, TypeScript, all 34 isolated tests and the production build. New coverage includes blank drafts versus approval, tenant/locale-scoped starter IDs, Google Maps URL validation, owner/viewer write permissions and cross-tenant knowledge isolation, save failure reporting, and defensive filtering of incomplete published records. Existing webhook authentication, duplicate processing and uncertain-send tests remain passing.
+The `/dashboard` implementation passed lint, TypeScript, all 34 isolated tests and the production build. New coverage includes blank drafts versus approval, tenant-scoped starter IDs, Google Maps URL validation, owner/viewer write permissions and cross-tenant knowledge isolation, save failure reporting, and defensive filtering of incomplete published records. Existing webhook authentication, duplicate processing and uncertain-send tests remain passing.
 
 Browser review with an isolated local fixture confirmed blank branch fields, the Maps URL field, twelve starter FAQs and rejection of an incomplete branch approval. The temporary fixture route was removed before release. Real hosted Supabase password sign-in and owner membership/read access were verified using the publishable key and authenticated RLS. No business answers were seeded. Real browser save/reload acceptance with client-entered answers remains to be completed; database lifecycle tests cover draft persistence and approval.
 

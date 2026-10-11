@@ -20,12 +20,12 @@ export class KnowledgeEditor {
     if (tenantError) throw new Error('Could not load your businesses. Please try again.');
     return (data ?? []).map(m => ({ ...m, name: tenants?.find(t => t.id === m.tenant_id)?.name ?? 'Business' }));
   }
-  async load(tenant: string, locale: string) {
+  async load(tenant: string) {
     const [faqs, facts, templates] = await Promise.all([
-      this.db.from('faqs').select('id,question,answer,is_published,updated_at,deleted_at').eq('tenant_id', tenant).eq('locale', locale).order('created_at'),
-      this.db.from('business_facts').select('id,fact_key,value,is_published,display_order,updated_at').eq('tenant_id', tenant).eq('locale', locale).eq('category', 'branch')
+      this.db.from('faqs').select('id,question,answer,is_published,updated_at,deleted_at').eq('tenant_id', tenant).order('created_at'),
+      this.db.from('business_facts').select('id,fact_key,value,is_published,display_order,updated_at').eq('tenant_id', tenant).eq('category', 'branch')
         .order('display_order',{ascending:true,nullsFirst:false}).order('created_at').order('id'),
-      starterFaqs(tenant, locale),
+      starterFaqs(tenant),
     ]);
     if (faqs.error || facts.error) throw new Error('Could not load your answers. Please try again.');
     // Keep deleted starter identities so the template cannot recreate them on reload.
@@ -40,45 +40,45 @@ export class KnowledgeEditor {
     });
     return { faqs: merged, branches };
   }
-  async saveFaq(tenant: string, locale: string, faq: Faq, publish: boolean) {
+  async saveFaq(tenant: string, faq: Faq, publish: boolean) {
     validateFaq(faq, publish);
-    const { data, error } = await this.db.from('faqs').upsert({ id: faq.id, tenant_id: tenant, locale,
+    const { data, error } = await this.db.from('faqs').upsert({ id: faq.id, tenant_id: tenant,
       question: faq.question.trim(), answer: faq.answer.trim(), is_published: publish, deleted_at: null }, { onConflict: 'id' })
       .select('id,question,answer,is_published,updated_at').single();
     if (error || !data) throw new Error('Could not save. Check your connection and owner/admin access, then try again.');
     return data as Faq;
   }
-  async faqForGap(tenant:string,message:string,question:string):Promise<Faq & {locale:string}>{
+  async faqForGap(tenant:string,message:string,question:string):Promise<Faq>{
     // Stable identity makes retries and reopening this editor update the same FAQ.
     const id=await gapFaqId(tenant,message);
-    const {data,error}=await this.db.from('faqs').select('id,question,answer,is_published,updated_at,locale,deleted_at')
+    const {data,error}=await this.db.from('faqs').select('id,question,answer,is_published,updated_at,deleted_at')
       .eq('tenant_id',tenant).eq('id',id).maybeSingle();
     if(error)throw new Error('Could not open this FAQ. Please try again.');
     if(data?.deleted_at)throw new Error('The FAQ created from this question was deleted. You can add a new one from the FAQs menu.');
-    return data??{id,question:question.slice(0,1000),answer:'',is_published:false,locale:/[\u0600-\u06ff]/.test(question)?'ar':'en'};
+    return data??{id,question:question.slice(0,1000),answer:'',is_published:false};
   }
-  async saveBranch(tenant: string, locale: string, branch: Branch, publish: boolean) {
+  async saveBranch(tenant: string, branch: Branch, publish: boolean) {
     validateBranch(branch.value, publish);
-    const { data, error } = await this.db.from('business_facts').upsert({ id: branch.id, tenant_id: tenant, locale,
+    const { data, error } = await this.db.from('business_facts').upsert({ id: branch.id, tenant_id: tenant,
       category: 'branch', fact_key: branch.fact_key, value: branch.value, is_published: publish }, { onConflict: 'id' })
       .select('id,fact_key,value,is_published,display_order,updated_at').single();
     if (error || !data) throw new Error('Could not save. Check your connection and owner/admin access, then try again.');
     return data as Branch;
   }
-  async deleteFaq(tenant: string, locale: string, id: string) {
+  async deleteFaq(tenant: string, id: string) {
     // A content-free tombstone also handles starter questions that were never saved.
-    const { data, error } = await this.db.from('faqs').upsert({ id, tenant_id: tenant, locale,
+    const { data, error } = await this.db.from('faqs').upsert({ id, tenant_id: tenant,
       question: '', answer: '', is_published: false, deleted_at: new Date().toISOString() }, { onConflict: 'id' })
       .select('id').single();
     if (error || !data) throw new Error('Could not delete. Check your connection and owner/admin access, then try again.');
   }
-  async deleteBranch(tenant: string, locale: string, id: string) {
-    const { data, error } = await this.db.from('business_facts').delete().eq('tenant_id', tenant).eq('locale', locale)
+  async deleteBranch(tenant: string, id: string) {
+    const { data, error } = await this.db.from('business_facts').delete().eq('tenant_id', tenant)
       .eq('category', 'branch').eq('id', id).select('id').single();
     if (error || !data) throw new Error('Could not delete. Check your connection and owner/admin access, then try again.');
   }
-  async reorderBranches(tenant:string,locale:string,ids:string[]) {
-    const {error}=await this.db.rpc('reorder_branches',{p_tenant:tenant,p_locale:locale,p_branch_ids:ids});
+  async reorderBranches(tenant:string,ids:string[]) {
+    const {error}=await this.db.rpc('reorder_branches',{p_tenant:tenant,p_branch_ids:ids});
     if(error)throw new Error('Could not save the branch order. Check your connection and owner/admin access, then try again.');
   }
 }

@@ -67,19 +67,11 @@ describe('product-aware branch navigation',()=>{
   expect((decision.text.match(/^\d+\. /gm)??[])).toHaveLength(12);
   expect(decision.text).not.toMatch(/123|https:/);expect(complete).not.toHaveBeenCalled();expect(usage.reserve).not.toHaveBeenCalled();
  });
- it('renders one localized entry per physical branch when bilingual records are published',async()=>{
-  const localized=(id:string,locale:'en'|'ar',name:string,city:string,map:string):KnowledgeSource=>({id,label:id,kind:'fact',locale,identityKey:`branch:${id}`,updatedAt:'2026-09-28',
-    content:JSON.stringify({category:'branch',value:{name,city,address:`${name} address`,hours:'9–5',mapsUrl:map}})});
-  const records=[
-    localized('korba-en','en','IRAM Korba','Heliopolis','https://maps.app.goo.gl/korba'),
-    localized('korba-ar','ar','IRAM الكربه','مصر الجديدة','https://maps.app.goo.gl/korba?g_st=iw'),
-    localized('nox-en','en','IRAM Nox','New Cairo','https://maps.app.goo.gl/nox'),
-    localized('nox-ar','ar','IRAM نوكس','القاهرة الجديدة','https://maps.app.goo.gl/nox'),
-  ];
+ it('answers Arabic customers from the single English branch catalog',async()=>{
+  const records=[branch('IRAM Korba','Heliopolis','KORBA'),branch('IRAM Nox','New Cairo','NOX')];
   const decision=await new GroundedStrategy(async()=>records,ledger(),{complete:vi.fn()}).reply({...base,text:'المجوهرات',history:[{role:'assistant',content:'هل ترغب في المجوهرات أم منتجات BTC والسبائك؟'}]});
   expect((decision.text.match(/^\d+\. /gm)??[])).toHaveLength(2);expect(decision.sources).toHaveLength(2);
-  expect(decision.text).toContain('IRAM الكربه');expect(decision.text).toContain('IRAM نوكس');
- expect(decision.text).not.toMatch(/IRAM Korba|IRAM Nox/);
+  expect(decision.text).toContain('فروع المجوهرات');expect(decision.text).toContain('IRAM Korba');expect(decision.text).toContain('IRAM Nox');
  });
  it('uses dashboard order, numbers every multi-branch list, and resolves a numeric reply',async()=>{
   const third={...branch('IRAM Third','Cairo','THIRD'),branchOrder:2};
@@ -123,22 +115,6 @@ describe('product-aware branch navigation',()=>{
   for(const source of newCairo){const name=branchDataName(source);expect(decision.text).toContain(name);expect(decision.text).not.toContain(`123 ${name} Street`);expect(decision.text).not.toContain(`https://maps.app.goo.gl/${source.label}`);}
   expect(decision.text.match(/^\d+\. /gm)).toHaveLength(3);
   expect(decision.sources).toHaveLength(3);expect(complete).not.toHaveBeenCalled();expect(usage.reserve).not.toHaveBeenCalled();
- });
- it('uses alternate-language structured cities when preferred localized branch records omit the city',async()=>{
-  const localized=(id:string,locale:'en'|'ar',name:string,city:string,address:string,map:string):KnowledgeSource=>({id,label:id,kind:'fact',locale,identityKey:`branch:${id.replace(/-(?:en|ar)$/,'')}`,updatedAt:'2026-09-30',
-    content:JSON.stringify({category:'branch',value:{name,city,address,hours:'11am–10pm',mapsUrl:map}})});
-  const records=[
-    localized('nox-en','en','IRAM Nox','New Cairo','Nox Mall – Fifth Settlement','https://maps.app.goo.gl/nox'),
-    localized('nox-ar','ar','IRAM نوكس','','نوكس مول – الطابق الأول','https://maps.app.goo.gl/nox'),
-    localized('zia-en','en','IRAM ZIA','New Cairo','South 90th Street','https://maps.app.goo.gl/zia'),
-    localized('zia-ar','ar','IRAM زيا','','شارع التسعين الجنوبي','https://maps.app.goo.gl/zia'),
-    localized('mivida-en','en','TJH Mivida','New Cairo','Mivida Compound','https://maps.app.goo.gl/mivida'),
-    localized('mivida-ar','ar','TJH ميفيدا','','كمبوند ميفيدا','https://maps.app.goo.gl/mivida'),
-  ];
-  const complete=vi.fn();const decision=await new GroundedStrategy(async()=>records,ledger(),{complete}).reply({...base,text:'عندكم فروع مجوهرات في التجمع؟',history:[{role:'user',content:'مجوهرات'}]});
-  expect(decision.sources).toHaveLength(3);
-  for(const name of ['IRAM نوكس','IRAM زيا','TJH ميفيدا'])expect(decision.text).toContain(name);
-  expect(decision.text).not.toMatch(/IRAM Nox|IRAM ZIA|TJH Mivida/);expect(complete).not.toHaveBeenCalled();
  });
  it('combines deterministic area matches with semantic catalog matches instead of dropping a relevant branch',async()=>{
   const localized=(name:string,address:string,label:string)=>({...branch(name,'القاهرة',label),content:JSON.stringify({category:'branch',value:{name,city:'القاهرة',address,hours:'11am–10pm',mapsUrl:`https://maps.app.goo.gl/${label}`}})});

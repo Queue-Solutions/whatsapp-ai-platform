@@ -66,10 +66,11 @@ export function validateBranch(value: BranchValue, publish: boolean) {
     throw new Error('Add the maintenance working hours before enabling maintenance for this branch.');
 }
 
-// A stable tenant/locale-scoped ID keeps repeated starter saves from creating duplicates.
-export async function starterFaqs(tenantId: string, locale: string): Promise<Faq[]> {
+// Keep the legacy English identity seed so the existing single source of truth
+// remains byte-for-byte addressable after localized catalogs are retired.
+export async function starterFaqs(tenantId: string): Promise<Faq[]> {
   return Promise.all(starterQuestions.map(async ([key, question]) => {
-    const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`queue-faq-v1:${tenantId}:${locale}:${key}`)));
+    const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`queue-faq-v1:${tenantId}:en:${key}`)));
     hash[6] = (hash[6] & 15) | 80; hash[8] = (hash[8] & 63) | 128;
     const hex = Array.from(hash.slice(0, 16), n => n.toString(16).padStart(2, '0')).join('');
     const id = `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;

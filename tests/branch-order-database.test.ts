@@ -21,7 +21,12 @@ describe('persisted branch ordering',()=>{
       values($1,$2,'branch',$3,'en',$4,true,$5)`,[id,tenant,`branch:${id}`,JSON.stringify({name:`Branch ${index+1}`,address:'Address',hours:'Hours'}),new Date(Date.UTC(2026,0,index+1)).toISOString()]);
     await db.query(`insert into public.business_facts(tenant_id,category,fact_key,locale,value,is_published)
       values($1,'branch','branch:other','en',$2,true)`,[otherTenant,JSON.stringify({name:'Other',address:'Address',hours:'Hours'})]);
+    await db.query(`insert into public.business_facts(tenant_id,category,fact_key,locale,value,is_published)
+      values($1,'branch','branch:arabic-copy','ar',$2,true)`,[tenant,JSON.stringify({name:'نسخة عربية',address:'عنوان',hours:'مواعيد'})]);
+    await db.query(`insert into public.faqs(tenant_id,locale,question,answer,is_published)
+      values($1,'en','English source','Confirmed answer',true),($1,'ar','نسخة عربية','إجابة',true)`,[tenant]);
     await db.exec(await readFile(new URL('../supabase/migrations/202610040002_branch_order.sql',import.meta.url),'utf8'));
+    await db.exec(await readFile(new URL('../supabase/migrations/202610120001_single_knowledge_catalog.sql',import.meta.url),'utf8'));
     await db.query('insert into auth.users(id) values($1)',[user]);
     await db.query("insert into public.tenant_memberships values($1,$2,'admin')",[tenant,user]);
   });
@@ -31,22 +36,30 @@ describe('persisted branch ordering',()=>{
     expect((await db.query<{id:string;display_order:number}>('select id,display_order from public.business_facts where tenant_id=$1 order by display_order',[tenant])).rows)
       .toEqual(ids.map((id,display_order)=>({id,display_order})));
     await db.query("select set_config('request.jwt.claim.sub',$1,false)",[user]);await db.exec('set role authenticated');
-    await db.query('select public.reorder_branches($1,$2,$3::uuid[])',[tenant,'en',[ids[2],ids[0],ids[1]]]);
+    await db.query('select public.reorder_branches($1,$2::uuid[])',[tenant,[ids[2],ids[0],ids[1]]]);
     expect((await db.query<{id:string}>('select id from public.business_facts where tenant_id=$1 order by display_order',[tenant])).rows.map(row=>row.id))
       .toEqual([ids[2],ids[0],ids[1]]);
-    await expect(db.query('select public.reorder_branches($1,$2,$3::uuid[])',[tenant,'en',[ids[0],ids[1]]])).rejects.toThrow();
-    await expect(db.query('select public.reorder_branches($1,$2,$3::uuid[])',[tenant,'en',[ids[0],ids[0],ids[1]]])).rejects.toThrow();
+    await expect(db.query('select public.reorder_branches($1,$2::uuid[])',[tenant,[ids[0],ids[1]]])).rejects.toThrow();
+    await expect(db.query('select public.reorder_branches($1,$2::uuid[])',[tenant,[ids[0],ids[0],ids[1]]])).rejects.toThrow();
     await db.exec('reset role');
   });
 
   it('appends new branches and prevents cross-tenant or read-only reordering',async()=>{
     await db.query("select set_config('request.jwt.claim.sub',$1,false)",[user]);await db.exec('set role authenticated');
-    const added=(await db.query<{display_order:number}>(`insert into public.business_facts(tenant_id,category,fact_key,locale,value)
-      values($1,'branch','branch:new','en',$2) returning display_order`,[tenant,JSON.stringify({name:'New',address:'Address',hours:'Hours'})])).rows[0];
+    const added=(await db.query<{display_order:number}>(`insert into public.business_facts(tenant_id,category,fact_key,value)
+      values($1,'branch','branch:new',$2) returning display_order`,[tenant,JSON.stringify({name:'New',address:'Address',hours:'Hours'})])).rows[0];
     expect(added.display_order).toBe(3);
-    await expect(db.query('select public.reorder_branches($1,$2,$3::uuid[])',[otherTenant,'en',[]])).rejects.toThrow('Owner or admin access required');
+    await expect(db.query('select public.reorder_branches($1,$2::uuid[])',[otherTenant,[]])).rejects.toThrow('Owner or admin access required');
     await db.exec('reset role');await db.query("update public.tenant_memberships set role='viewer' where user_id=$1",[user]);await db.exec('set role authenticated');
-    await expect(db.query('select public.reorder_branches($1,$2,$3::uuid[])',[tenant,'en',[]])).rejects.toThrow('Owner or admin access required');
+    await expect(db.query('select public.reorder_branches($1,$2::uuid[])',[tenant,[]])).rejects.toThrow('Owner or admin access required');
     await db.exec('reset role');
+  });
+
+  it('keeps the English source of truth and removes the localized schema',async()=>{
+    expect((await db.query<{count:number}>("select count(*)::integer as count from public.business_facts where tenant_id=$1 and fact_key='branch:arabic-copy'",[tenant])).rows[0].count).toBe(0);
+    expect((await db.query<{question:string}>('select question from public.faqs where tenant_id=$1',[tenant])).rows).toEqual([{question:'English source'}]);
+    const columns=(await db.query<{table_name:string;column_name:string}>(`select table_name,column_name from information_schema.columns
+      where table_schema='public' and table_name in ('business_facts','faqs') and column_name='locale'`)).rows;
+    expect(columns).toEqual([]);
   });
 });

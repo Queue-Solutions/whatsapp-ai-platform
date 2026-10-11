@@ -5,9 +5,7 @@ export interface SourceReference { id: string; kind: 'faq' | 'fact'; updatedAt: 
 export interface KnowledgeSource extends SourceReference {
   label: string;
   content: string;
-  locale?: string;
-  identityKey?: string;
-  /** Zero-based order from the branch menu for the source locale. */
+  /** Zero-based order from the branch menu. */
   branchOrder?: number;
 }
 export interface AgentDecision {
@@ -24,7 +22,7 @@ export interface AgentDecision {
   usage?: { model: string; inputTokens: number; outputTokens: number; costNano: number };
 }
 export interface KnowledgeRetriever {
-  search(input: Pick<MessageContext,'tenantId'> & { query: string; locale?: string }): Promise<Array<{
+  search(input: Pick<MessageContext,'tenantId'> & { query: string }): Promise<Array<{
     sourceId: string; content: string; updatedAt: string;
   }>>;
 }

@@ -22,7 +22,6 @@ import {pricingReply} from './pricing';
 import { formatReply, formatBusinessReply, formatBranchReply } from './reply-format';
 import { buildRequest, ModelFailure, type ModelProvider } from './openai';
 import {buildIntentRequest,catalogFingerprint,contextForIntent,isStoredIntentDecision,validatedContactName,type IntentDecision,type StoredIntentDecision} from './intent-classification';
-import {deduplicateBranchKnowledge} from './branch-identity';
 import {branchOpenNowReply} from './branch-hours';
 import {branchServicesReply} from './branch-services';
 import {isProductDifferenceFollowUp} from './product-explanation';
@@ -136,10 +135,7 @@ export class GroundedStrategy implements ReplyStrategy {
     let sources:KnowledgeSource[]=[],knowledgeUnavailable=false;
     try {
       const loaded=await this.loadSources(context.tenantId);
-      const languageText=context.type==='location'||context.text?.startsWith('geo:')
-        ?[...(context.history??[])].reverse().find(message=>message.role==='user'&&!message.content.startsWith('geo:'))?.content??context.text??''
-        :context.text??'';
-      sources=deduplicateBranchKnowledge(loaded,replyLanguage(languageText));
+      sources=loaded;
     }
     catch { knowledgeUnavailable=true; }
     // Employment and HR requests use the approved hiring FAQ. They must win over
