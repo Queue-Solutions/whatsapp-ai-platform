@@ -1,5 +1,6 @@
 import {z} from 'zod';
 import type {Environment} from '../../config/env';
+import {asConnection,type WhatsAppConnection} from '../../config/whatsapp-connections';
 import type {MessageContext} from '../messaging/types';
 export const blockedCategories=['sexual','sexual/minors','harassment','harassment/threatening','hate','hate/threatening'] as const;
 export type ModerationResult={state:'clear'|'flagged'|'unavailable';categories:string[]};
@@ -21,7 +22,8 @@ async function boundedBody(response:Response,max:number):Promise<Buffer>{
 }
 /** Only selected abuse categories trigger a block. No raw provider response or media is logged or stored. */
 export class OpenAiModerator implements ContentModerator {
-  constructor(private key:string|undefined,private env:Environment,private fetcher:typeof fetch=fetch){}
+  private connection:WhatsAppConnection;
+  constructor(private key:string|undefined,env:Environment|WhatsAppConnection,private fetcher:typeof fetch=fetch){this.connection=asConnection(env);}
   async check(context:MessageContext):Promise<ModerationResult>{
     if(context.type!=='text'&&context.type!=='image')return {state:'clear',categories:[]};
     const localCategories=localAbuseCategories(context.text);
@@ -42,8 +44,8 @@ export class OpenAiModerator implements ContentModerator {
   private async imageDataUrl(mediaId:string|undefined){const {bytes,mime}=await this.image(mediaId);return `data:${mime};base64,${bytes.toString('base64')}`;}
   async image(mediaId:string|undefined):Promise<{bytes:Buffer;mime:string}>{
     if(!mediaId||!/^\d{1,100}$/.test(mediaId))throw new Error('Missing image');
-    const headers={Authorization:`Bearer ${this.env.WHATSAPP_ACCESS_TOKEN}`};
-    const endpoint=`https://graph.facebook.com/${this.env.META_GRAPH_API_VERSION}/${mediaId}?phone_number_id=${this.env.WHATSAPP_TEST_PHONE_NUMBER_ID}`;
+    const headers={Authorization:`Bearer ${this.connection.accessToken}`};
+    const endpoint=`https://graph.facebook.com/${this.connection.graphVersion}/${mediaId}?phone_number_id=${this.connection.phoneNumberId}`;
     const response=await this.fetcher(endpoint,{headers,signal:AbortSignal.timeout(8000),redirect:'error'});
     const metadata=metadataSchema.parse(JSON.parse((await boundedBody(response,16384)).toString('utf8')));
     const url=new URL(metadata.url);

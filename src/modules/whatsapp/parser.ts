@@ -3,6 +3,12 @@ import type { DeliveryStatus, IncomingMessage, IdentityChange } from '../messagi
 import { phonePattern, bsuidPattern } from './identity';
 
 const phone=z.string().regex(phonePattern),bsuid=z.string().regex(bsuidPattern);
+function directCustomerTurn(value:unknown) {
+  if(!value||typeof value!=='object')return true; // Invalid ordinary messages still fail validation.
+  const item=value as Record<string,unknown>;
+  const context=item.context;
+  return !('group_id' in item)&&item.is_echo!==true&&!(context&&typeof context==='object'&&'group_id' in context);
+}
 const timestamp=z.string().regex(/^\d{1,12}$/).refine(v=>Number(v)<=253402300799);
 const message=z.object({
   id:z.string().min(1),from:phone.optional(),from_user_id:bsuid.optional(),timestamp,
@@ -11,20 +17,24 @@ const message=z.object({
   location:z.object({latitude:z.number().min(-90).max(90),longitude:z.number().min(-180).max(180)}).optional(),
   system:z.object({type:z.string(),wa_id:phone.optional(),user_id:bsuid.optional(),previous_user_id:bsuid.optional()}).optional(),
 }).refine(v=>(v.type!=='text'||v.text!==undefined)&&(v.type!=='location'||v.location!==undefined));
-const payload=z.object({object:z.literal('whatsapp_business_account'),entry:z.array(z.object({changes:z.array(z.object({
-  field:z.string(),value:z.object({
+const messageValue=z.object({
     metadata:z.object({phone_number_id:z.string()}).optional(),
     contacts:z.array(z.object({wa_id:phone.optional(),user_id:bsuid.optional(),profile:z.object({name:z.string().optional(),username:z.string().max(35).optional()}).optional()})).optional(),
-    messages:z.array(message).optional(),
+    messages:z.array(z.unknown()).transform(items=>items.filter(directCustomerTurn)).pipe(z.array(message)).optional(),
     statuses:z.array(z.object({id:z.string(),status:z.string(),timestamp,errors:z.array(z.object({code:z.number()})).optional()})).optional(),
-  }),
+  });
+const payload=z.object({object:z.literal('whatsapp_business_account'),entry:z.array(z.object({changes:z.array(z.object({
+  field:z.string(),value:z.unknown(),
 }))}))});
 type InboundEvent={kind:'message';value:IncomingMessage}|{kind:'identity';value:IdentityChange};
 export function parseWebhook(input:unknown):{messages:IncomingMessage[];statuses:DeliveryStatus[];identityChanges:IdentityChange[];events:InboundEvent[]} {
   const data=payload.parse(input),messages:IncomingMessage[]=[],statuses:DeliveryStatus[]=[],identityChanges:IdentityChange[]=[],events:InboundEvent[]=[];
   for(const entry of data.entry)for(const change of entry.changes){
     if(change.field!=='messages')continue;
-    const value=change.value,phoneNumberId=value.metadata?.phone_number_id;
+    if(change.value&&typeof change.value==='object'&&'group_id' in change.value)continue;
+    // App-origin echoes, history and group/state events are not customer turns.
+    // Validate only the messages topic so unrelated coexistence data cannot poison a batch.
+    const value=messageValue.parse(change.value),phoneNumberId=value.metadata?.phone_number_id;
     if(!phoneNumberId&&(value.messages?.length||value.statuses?.length))throw new Error('Missing phone number ID');
     if(!phoneNumberId)continue;
     for(const m of value.messages??[]){

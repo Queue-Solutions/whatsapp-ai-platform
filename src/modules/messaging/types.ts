@@ -35,6 +35,7 @@ export interface MessageJob {
 }
 export interface PreparedReply {
   outbound_id: string;
+  tenant_id?: string;
   phone_number_id: string;
   recipient: string;
   recipient_aliases?: string[];

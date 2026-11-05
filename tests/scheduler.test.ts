@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 // Actual cron execution and HTTP delivery still require hosted verification.
 const setup = readFileSync('supabase/operations/configure-worker.sql','utf8')
   .replace(/^create extension.*;$/gm,'');
+const pilotSetup=readFileSync('supabase/operations/configure-pilot-worker.sql','utf8').replace(/^create extension.*;$/gm,'');
 const tenant='11111111-1111-4111-8111-111111111111';
 let db:PGlite;
 beforeEach(async()=>{
@@ -65,5 +66,34 @@ describe('Supabase recovery scheduling',()=>{
     await config();await db.exec(setup);await work('sending',true);await tick();
     expect((await db.query('select * from net.requests')).rows).toHaveLength(1);
     expect((await db.query<{state:string}>('select state from message_jobs')).rows[0].state).toBe('sending');
+  });
+});
+
+describe('separate pilot recovery schedule',()=>{
+  async function pilotConfig(){
+    await db.exec(`alter table public.whatsapp_channels add column enabled boolean default false,add column assistant_scope text default 'off';
+      create table public.whatsapp_pilot_authorizations(channel_id text,tenant_id uuid,approved_at timestamptz,sending_enabled boolean default false);`);
+    await db.query('insert into vault.decrypted_secrets values($1,$2),($3,$4)',[
+      'queue_pilot_worker_url','https://example-pilot.vercel.app/api/internal/process-messages?channel=pilot',
+      'queue_pilot_worker_secret','synthetic-pilot-worker-secret-1234567890']);
+  }
+  it('uses a different named job and validates its pilot URL without altering the dev schedule',async()=>{
+    await config();await db.exec(setup);await pilotConfig();await db.exec(pilotSetup);
+    const jobs=(await db.query<{jobname:string;command:string}>('select jobname,command from cron.job order by jobname')).rows;
+    expect(jobs.map(j=>j.jobname)).toEqual(['queue-dev-message-recovery','queue-pilot-message-recovery']);
+    expect(jobs[1].command).not.toContain('synthetic-pilot-worker-secret');
+    await db.query("update vault.decrypted_secrets set decrypted_secret='https://example-pilot.vercel.app/api/internal/process-messages' where name='queue_pilot_worker_url'");
+    await expect(db.exec(pilotSetup)).rejects.toThrow('pilot worker URL');
+  });
+  it('wakes only for approved pilot work and recovers expired sends even when sending is disabled',async()=>{
+    await pilotConfig();await db.exec(pilotSetup);
+    const tickPilot=async()=>{await db.exec((await db.query<{command:string}>("select command from cron.job where jobname='queue-pilot-message-recovery'")).rows[0].command);};
+    await work('pending');await tickPilot();expect((await db.query('select * from net.requests')).rows).toHaveLength(0);
+    await db.exec("update whatsapp_channels set mode='pilot',enabled=true,assistant_scope='selected'");
+    await tickPilot();expect((await db.query('select * from net.requests')).rows).toHaveLength(0);
+    await db.exec('insert into whatsapp_pilot_authorizations select id,tenant_id,now(),false from whatsapp_channels');
+    await tickPilot();expect((await db.query('select * from net.requests')).rows).toHaveLength(0);
+    await db.exec("update message_jobs set state='sending',leased_until=now()-interval '1 minute';update whatsapp_channels set enabled=false");
+    await tickPilot();expect((await db.query('select * from net.requests')).rows).toHaveLength(1);
   });
 });
