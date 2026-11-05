@@ -34,7 +34,11 @@ export function waitingLabel(since:string|null,now=Date.now()) {
 export type InboxMessage = {id:string;direction:string;body:string|null;message_type:string;delivery_status:string;created_at:string};
 export type InboxEvent = {id:string;event_type:string;created_at:string};
 export type AssistantScope = 'all'|'off'|'selected';
-export type AssistantAvailability = {channelId:string;scope:AssistantScope;selectedConversationIds:string[]};
+export type AssistantAvailability = {channelId:string;scope:AssistantScope;selectedConversationIds:string[];selectedOnly?:boolean};
+export function availabilityChannel<T extends {dashboard_active:boolean}>(channels:T[]):T|null {
+  const primary=channels.filter(channel=>channel.dashboard_active);
+  return primary.length===1?primary[0]:primary.length===0&&channels.length===1?channels[0]:null;
+}
 /** Reads and mode controls run as the signed-in member and remain protected by RLS. */
 export class InboxRepository {
   constructor(private db:SupabaseClient){}
@@ -44,11 +48,12 @@ export class InboxRepository {
     if(rows.some(r=>r.error))throw new Error('Could not load inbox counts.');
     return {all:rows[0].count??0,attention:rows[1].count??0,complaints:rows[2].count??0,resolved:rows[3].count??0};
   }
-  async conversations(tenant:string,filter:InboxFilter='all',limit=50):Promise<Conversation[]>{
+  async conversations(tenant:string,filter:InboxFilter='all',limit=50,channelId?:string):Promise<Conversation[]>{
     let query=this.db.from('conversations').select('id,automation_mode,status,last_inbound_at,updated_at,customer_id,attention_state,attention_reason,attention_summary,attention_since,resolved_at,is_complaint,attention_message_id,followup_state,followup_name,followup_phone,followup_purpose,followup_role').eq('tenant_id',tenant);
     if(filter==='attention')query=query.in('attention_state',['waiting','in_progress']);
     if(filter==='complaints')query=query.eq('is_complaint',true);
     if(filter==='resolved')query=query.eq('attention_state','resolved');
+    if(channelId)query=query.eq('channel_id',channelId);
     const {data,error}=await query.order(filter==='attention'?'attention_since':'last_inbound_at',{ascending:filter==='attention'}).order('id').limit(limit);
     if(error)throw new Error('Could not load conversations.');
     if(!data.length)return [];
@@ -83,11 +88,12 @@ export class InboxRepository {
     if(error)throw new Error('Could not reset the agent context. Refresh the conversation and try again.');
   }
   async assistantAvailability(tenant:string):Promise<AssistantAvailability>{
-    const channel=await this.db.from('whatsapp_channels').select('id,assistant_scope').eq('tenant_id',tenant).eq('enabled',true).order('created_at').limit(1).maybeSingle();
-    if(channel.error||!channel.data)throw new Error('Could not load assistant availability.');
-    const selected=await this.db.from('assistant_selected_conversations').select('conversation_id').eq('tenant_id',tenant).eq('channel_id',channel.data.id);
+    const channels=await this.db.from('whatsapp_channels').select('id,assistant_scope,dashboard_active,mode').eq('tenant_id',tenant).eq('enabled',true);
+    const channel=availabilityChannel(channels.data??[]);
+    if(channels.error||!channel)throw new Error('Could not load assistant availability.');
+    const selected=await this.db.from('assistant_selected_conversations').select('conversation_id').eq('tenant_id',tenant).eq('channel_id',channel.id);
     if(selected.error)throw new Error('Could not load selected chats.');
-    return {channelId:channel.data.id,scope:channel.data.assistant_scope as AssistantScope,selectedConversationIds:(selected.data??[]).map(row=>row.conversation_id)};
+    return {channelId:channel.id,scope:channel.assistant_scope as AssistantScope,selectedConversationIds:(selected.data??[]).map(row=>row.conversation_id),selectedOnly:channel.mode==='pilot'};
   }
   async setAssistantAvailability(channelId:string,scope:AssistantScope,selectedConversationIds:string[]){
     const {error}=await this.db.rpc('set_assistant_availability',{p_channel:channelId,p_scope:scope,p_selected:selectedConversationIds});

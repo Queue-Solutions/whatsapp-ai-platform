@@ -1,8 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/client';
 import { readEnvironment } from '@/config/env';
+import { connectionForChannel, readPilotConnection, testConnection } from '@/config/whatsapp-connections';
 import { handleManualReply, type ManualReplyRepository } from '@/modules/admin/manual-reply';
-import { MetaMessageSender } from '@/modules/whatsapp/sender';
+import { ConfiguredMetaMessageSender } from '@/modules/whatsapp/sender';
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
 export const maxDuration=60;
@@ -14,10 +15,19 @@ export async function POST(request:Request){
     },
     services:()=>{
       const env=readEnvironment();const db=createAdminClient();
+      const pilot=readPilotConnection();
+      const connections=[testConnection(env),...(pilot?[pilot]:[])];
       const repository:ManualReplyRepository={
         prepare:async(actor,input)=>{
+          // The browser supplies a conversation, never the tenant or credential to use.
+          const conversation=await db.from('conversations').select('tenant_id,channel_id').eq('id',input.conversationId).single();
+          if(conversation.error||!conversation.data)throw new Error('Reply preparation failed');
+          const channel=await db.from('whatsapp_channels').select('tenant_id,phone_number_id,mode')
+            .eq('tenant_id',conversation.data.tenant_id).eq('id',conversation.data.channel_id).single();
+          const connection=channel.data&&connectionForChannel(connections,channel.data);
+          if(channel.error||!connection?.sendEnabled)throw new Error('Reply channel unavailable');
           const {data,error}=await db.rpc('prepare_manual_reply',{p_actor:actor,p_conversation:input.conversationId,p_request:input.requestId,p_body:input.text,
-            p_phone:env.WHATSAPP_TEST_PHONE_NUMBER_ID,p_allowed:env.WHATSAPP_TEST_RECIPIENTS});
+            p_phone:connection.phoneNumberId,p_allowed:connection.recipients});
           if(error||!data)throw new Error('Reply preparation failed');return data;
         },
         finish:async(id,state,provider,errorCode)=>{
@@ -25,7 +35,7 @@ export async function POST(request:Request){
           if(error)throw new Error('Reply settlement failed');
         },
       };
-      return {repository,sender:new MetaMessageSender(env)};
+      return {repository,sender:new ConfiguredMetaMessageSender(connections)};
     },
   });
 }

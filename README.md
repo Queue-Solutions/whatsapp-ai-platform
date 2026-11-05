@@ -60,6 +60,8 @@ Every client-owned record has a tenant ID; composite foreign keys prevent cross-
 
 This first deployment configures one test channel and token. Additional Queue Solutions clients need a secret-manager-backed credential resolver per channel, authenticated tenant administration and production onboarding. The schema supports multiple tenants; one environment token is not a production multi-client credential system.
 
+An optional, disabled-by-default company pilot has separate credentials, an exact tenant/channel binding, service-only approvals, and selected-chat controls. It does not enable general production onboarding or replace the test configuration. See [the pilot activation plan](docs/IRAM-PILOT.md) before deploying or activating it.
+
 Read `docs/CLIENT-CHAT-PRESERVATION.md` before any client onboarding.
 
 ## Migration history

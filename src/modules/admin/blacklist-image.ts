@@ -1,5 +1,6 @@
 import type {SupabaseClient} from '@supabase/supabase-js';
 import type {Environment} from '../../config/env';
+import {connectionForChannel,testConnection,type WhatsAppConnection} from '../../config/whatsapp-connections';
 import {OpenAiModerator} from '../moderation/provider';
 import {z} from 'zod';
 export async function handleBlacklistImage(request:Request,deps:{
@@ -19,12 +20,14 @@ export async function handleBlacklistImage(request:Request,deps:{
 }
 
 /** Caller supplies the authenticated user client, never a service-role client. */
-export async function loadBlacklistImage(db:SupabaseClient,env:Environment,id:string){
+export async function loadBlacklistImage(db:SupabaseClient,env:Environment,id:string,pilot:WhatsAppConnection|null=null){
   const {data:block,error}=await db.from('customer_blacklist').select('tenant_id').eq('message_id',id).maybeSingle();
   if(error||!block)return null;
   const {data:m,error:messageError}=await db.from('messages').select('media_id,channel_id,message_type').eq('tenant_id',block.tenant_id).eq('id',id).single();
   if(messageError||m.message_type!=='image'||!m.media_id)return null;
   const {data:ch,error:channelError}=await db.from('whatsapp_channels').select('phone_number_id,mode').eq('tenant_id',block.tenant_id).eq('id',m.channel_id).single();
-  if(channelError||ch.mode!=='test'||ch.phone_number_id!==env.WHATSAPP_TEST_PHONE_NUMBER_ID)return null;
-  return new OpenAiModerator(undefined,env).image(m.media_id);
+  if(channelError||!ch)return null;
+  const connection=connectionForChannel([testConnection(env),...(pilot?[pilot]:[])],{...ch,tenant_id:block.tenant_id});
+  if(!connection)return null;
+  return new OpenAiModerator(undefined,connection).image(m.media_id);
 }

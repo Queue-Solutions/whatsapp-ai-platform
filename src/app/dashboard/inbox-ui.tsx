@@ -77,7 +77,7 @@ function AssistantAvailabilityControl({repository,tenant,disabled,onWorking,onAv
   const [selected,setSelected]=useState<string[]>([]);const [candidates,setCandidates]=useState<Conversation[]>([]);const [search,setSearch]=useState('');
   const [loading,setLoading]=useState(true);const [saving,setSaving]=useState(false);const [error,setError]=useState('');const [notice,setNotice]=useState('');
   useEffect(()=>{let active=true;
-    void Promise.all([repository.assistantAvailability(tenant),repository.conversations(tenant,'all',500)]).then(([availability,rows])=>{
+    void repository.assistantAvailability(tenant).then(async availability=>({availability,rows:await repository.conversations(tenant,'all',500,availability.channelId)})).then(({availability,rows})=>{
       if(!active)return;setSaved(availability);setScope(availability.scope);setSelected(availability.selectedConversationIds);setCandidates(rows);onAvailability(availability);
     }).catch(()=>{if(active)setError('Could not load assistant availability. Refresh and try again.');}).finally(()=>{if(active)setLoading(false);});
     return()=>{active=false;};
@@ -100,7 +100,7 @@ function AssistantAvailabilityControl({repository,tenant,disabled,onWorking,onAv
     <div className="assistant-availability-heading"><div><span className={`availability-status ${scope}`}>{labels[scope].title}</span><h2 id="assistant-availability-title">Assistant availability</h2><p>Choose where the AI is allowed to answer. This does not change Meta recipient verification.</p></div>{dirty&&<span className="unsaved-indicator">Unsaved changes</span>}</div>
     {loading?<p role="status">Loading assistant settings…</p>:<fieldset disabled={disabled||saving}>
       <legend className="sr-only">Assistant availability mode</legend>
-      <div className="availability-options">{(['all','off','selected'] as AssistantScope[]).map(value=><label className={scope===value?'selected':''} key={value}><input type="radio" name={`assistant-scope-${tenant}`} value={value} checked={scope===value} onChange={()=>{setScope(value);setNotice('');}}/><span><strong>{labels[value].title}</strong><small>{labels[value].description}</small></span></label>)}</div>
+      <div className="availability-options">{((saved?.selectedOnly?['off','selected']:['all','off','selected']) as AssistantScope[]).map(value=><label className={scope===value?'selected':''} key={value}><input type="radio" name={`assistant-scope-${tenant}`} value={value} checked={scope===value} onChange={()=>{setScope(value);setNotice('');}}/><span><strong>{labels[value].title}</strong><small>{labels[value].description}</small></span></label>)}</div>
       {scope==='selected'&&<div className="chat-selector"><div className="chat-selector-heading"><label>Choose chats<input type="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by name or number"/></label><span>{selected.length} selected</span></div>
         <div className="chat-options" role="group" aria-label="Chats allowed to use the assistant">{visible.length?visible.map(c=><label key={c.id}><input type="checkbox" checked={selected.includes(c.id)} onChange={()=>toggle(c.id)}/><span><strong>{c.name}</strong><small dir="ltr">{c.phone?`+${c.phone}`:c.username?`@${c.username}`:'Phone number not shared'}</small></span></label>):<p>No matching chats.</p>}</div>
       </div>}
