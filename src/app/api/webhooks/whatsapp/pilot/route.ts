@@ -1,5 +1,5 @@
 import { after } from 'next/server';
-import { readPilotConnection } from '@/config/whatsapp-connections';
+import { readPilotVerifyToken } from '@/config/whatsapp-connections';
 import { createMessagingRuntime } from '@/modules/messaging/runtime';
 import { drainMessages } from '@/modules/messaging/process-incoming-message';
 import { receiveWebhook, verifyWebhook } from '@/modules/whatsapp/webhook';
@@ -7,8 +7,7 @@ export const runtime='nodejs';
 export const maxDuration=60;
 export function GET(request:Request) {
   try {
-    const connection=readPilotConnection();
-    return connection?verifyWebhook(request,connection.verifyToken):new Response('Not configured',{status:503});
+    return verifyWebhook(request,readPilotVerifyToken());
   } catch {return new Response('Not configured',{status:503});}
 }
 export async function POST(request:Request) {
