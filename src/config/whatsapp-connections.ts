@@ -33,18 +33,26 @@ export function asConnection(input: Environment | WhatsAppConnection): WhatsAppC
 }
 
 const enabledSchema = z.enum(['false', 'true']).default('false');
+const verifyTokenSchema = z.string().min(16);
 const pilotSchema = z.object({
   WHATSAPP_PILOT_TENANT_ID: z.uuid(),
   WHATSAPP_PILOT_APP_ID: z.string().regex(/^\d+$/),
   WHATSAPP_PILOT_PHONE_NUMBER_ID: z.string().regex(/^\d+$/),
   WHATSAPP_PILOT_APP_SECRET: z.string().min(16),
-  WHATSAPP_PILOT_VERIFY_TOKEN: z.string().min(16),
+  WHATSAPP_PILOT_VERIFY_TOKEN: verifyTokenSchema,
   WHATSAPP_PILOT_ACCESS_TOKEN: z.string().min(20),
   WHATSAPP_PILOT_GRAPH_API_VERSION: z.string().regex(/^v\d+\.0$/),
   WHATSAPP_PILOT_RECIPIENTS: z.string().transform(value => value.split(',').map(v => v.trim()).filter(Boolean))
     .pipe(z.array(z.string().regex(recipientPattern)).min(1)),
   WHATSAPP_PILOT_SEND_ENABLED: enabledSchema,
 });
+
+/** Webhook verification is safe while the pilot remains disabled; POST still uses the full gated connection. */
+export function readPilotVerifyToken(source: Record<string, string | undefined> = process.env): string {
+  const result = verifyTokenSchema.safeParse(source.WHATSAPP_PILOT_VERIFY_TOKEN);
+  if (!result.success) throw new Error('Invalid configuration: WHATSAPP_PILOT_VERIFY_TOKEN');
+  return result.data;
+}
 
 /** Separate opt-in: the original test configuration is never repurposed for a real number. */
 export function readPilotConnection(source: Record<string, string | undefined> = process.env): WhatsAppConnection | null {
@@ -66,6 +74,16 @@ export function readPilotConnection(source: Record<string, string | undefined> =
     accessToken: config.WHATSAPP_PILOT_ACCESS_TOKEN, graphVersion: config.WHATSAPP_PILOT_GRAPH_API_VERSION,
     recipients: config.WHATSAPP_PILOT_RECIPIENTS, sendEnabled: config.WHATSAPP_PILOT_SEND_ENABLED === 'true',
   };
+}
+
+/** Returns only a safe field/code for logs; configuration values are never included. */
+export function pilotConfigurationFailureCode(error: unknown): string {
+  if (!(error instanceof Error)) return 'unknown';
+  const match = /^Invalid configuration: (WHATSAPP_PILOT_[A-Z_]+(?:, WHATSAPP_PILOT_[A-Z_]+)*)$/.exec(error.message);
+  if (match) return match[1].replaceAll(', ', '+');
+  if (error.message === 'Pilot and test channels must be different') return 'pilot_matches_test_channel';
+  if (error.message === 'Pilot is not configured') return 'pilot_disabled';
+  return 'runtime_initialization_failed';
 }
 
 /** Input is a database-resolved channel, never a tenant/phone supplied by a browser or webhook. */
