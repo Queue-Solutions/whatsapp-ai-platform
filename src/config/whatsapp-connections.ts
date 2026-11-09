@@ -76,6 +76,16 @@ export function readPilotConnection(source: Record<string, string | undefined> =
   };
 }
 
+/** Returns only a safe field/code for logs; configuration values are never included. */
+export function pilotConfigurationFailureCode(error: unknown): string {
+  if (!(error instanceof Error)) return 'unknown';
+  const match = /^Invalid configuration: (WHATSAPP_PILOT_[A-Z_]+(?:, WHATSAPP_PILOT_[A-Z_]+)*)$/.exec(error.message);
+  if (match) return match[1].replaceAll(', ', '+');
+  if (error.message === 'Pilot and test channels must be different') return 'pilot_matches_test_channel';
+  if (error.message === 'Pilot is not configured') return 'pilot_disabled';
+  return 'runtime_initialization_failed';
+}
+
 /** Input is a database-resolved channel, never a tenant/phone supplied by a browser or webhook. */
 export function connectionForChannel(connections: WhatsAppConnection[], channel: {
   tenant_id: string; phone_number_id: string; mode: string;

@@ -3,7 +3,7 @@ import {PGlite} from '@electric-sql/pglite';
 import {readFile,readdir} from 'node:fs/promises';
 import {createHmac} from 'node:crypto';
 import type {SupabaseClient} from '@supabase/supabase-js';
-import {readPilotConnection,readPilotVerifyToken,connectionForChannel,type WhatsAppConnection} from '../src/config/whatsapp-connections';
+import {readPilotConnection,readPilotVerifyToken,connectionForChannel,pilotConfigurationFailureCode,type WhatsAppConnection} from '../src/config/whatsapp-connections';
 import {MetaMessageSender,ConfiguredMetaMessageSender} from '../src/modules/whatsapp/sender';
 import {SupabaseMessagingRepository} from '../src/modules/messaging/supabase-repository';
 import {receiveWebhook} from '../src/modules/whatsapp/webhook';
@@ -26,6 +26,8 @@ describe('isolated pilot transport',()=>{
   expect(()=>readPilotConnection({...source,WHATSAPP_TEST_PHONE_NUMBER_ID:'9100'})).toThrow('different');
   expect(()=>readPilotConnection({...source,WHATSAPP_PILOT_TENANT_ID:'bad-'+secret})).toThrow('WHATSAPP_PILOT_TENANT_ID');
   try{readPilotConnection({...source,WHATSAPP_PILOT_APP_SECRET:'private'});}catch(e){expect(String(e)).not.toContain('private');}
+  expect(pilotConfigurationFailureCode(new Error('Invalid configuration: WHATSAPP_PILOT_APP_SECRET, WHATSAPP_PILOT_ACCESS_TOKEN'))).toBe('WHATSAPP_PILOT_APP_SECRET+WHATSAPP_PILOT_ACCESS_TOKEN');
+  expect(pilotConfigurationFailureCode(new Error('private secret value'))).toBe('runtime_initialization_failed');
   expect(connectionForChannel([pilot],{tenant_id:other,phone_number_id:'9100',mode:'pilot'})).toBeNull();
   expect(connectionForChannel([pilot],{tenant_id:tenant,phone_number_id:'9100',mode:'test'})).toBeNull();
  });
