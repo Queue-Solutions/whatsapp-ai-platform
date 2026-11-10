@@ -121,14 +121,23 @@ describe('durable pilot guards',()=>{
   await expect(ingest('not-approved')).rejects.toThrow('disabled');
   await expect(db.query("update public.whatsapp_channels set assistant_scope='all' where id=$1",[channel])).rejects.toThrow('whatsapp_pilot_scope_check');
  });
- it('requires receive approval, the database allowlist, send approval and a selected chat independently',async()=>{
+ it('requires receive approval, the database allowlist and a selected chat while the dashboard controls the database send gate',async()=>{
   await authorize(false,[phone]);
   expect((await ingest('unapproved',second))[0].v).toBeNull();expect(await conversations()).toHaveLength(0);
-  await selectedTurn();expect(await claim()).toBeUndefined();
-  await db.query('update public.whatsapp_pilot_authorizations set sending_enabled=true where channel_id=$1',[channel]);
-  expect(await claim()).toBeUndefined(); // Policy changes never replay old work.
-  await ingest('fresh');await db.exec("update public.messages set moderation_state='clear'");
+  await selectedTurn();expect((await rows<{sending_enabled:boolean}>('select sending_enabled from public.whatsapp_pilot_authorizations where channel_id=$1',[channel]))[0].sending_enabled).toBe(true);
   const job=await claim();expect(job).toBeDefined();expect(await prepare(job)).toMatchObject({tenant_id:tenant,phone_number_id:'9100',recipient:phone});
+ });
+ it('turns the database send gate off and on with dashboard availability without replaying queued work',async()=>{
+  await authorize(false,[phone]);const conversation=await selectedTurn('first-selected');
+  await ingest('queued-before-off');await db.exec("update public.messages set moderation_state='clear'");
+  await db.query("select set_config('request.jwt.claim.sub',$1,false)",[owner]);await db.exec('set role authenticated');
+  await db.query("select public.set_assistant_availability($1,'off',array[]::uuid[])",[channel]);await db.exec('reset role');
+  expect((await rows<{sending_enabled:boolean}>('select sending_enabled from public.whatsapp_pilot_authorizations where channel_id=$1',[channel]))[0].sending_enabled).toBe(false);
+  expect(await claim()).toBeUndefined();
+  await selectChats([conversation.id]);
+  expect((await rows<{sending_enabled:boolean}>('select sending_enabled from public.whatsapp_pilot_authorizations where channel_id=$1',[channel]))[0].sending_enabled).toBe(true);
+  expect(await claim()).toBeUndefined();
+  await ingest('fresh-after-on');await db.exec("update public.messages set moderation_state='clear'");expect(await claim()).toBeDefined();
  });
  it('lets an admin preapprove a local-format number before any chat exists and auto-selects its first inbound chat',async()=>{
   await authorize(false,[phone]);await db.query('delete from public.assistant_approved_recipients where channel_id=$1',[channel]);
