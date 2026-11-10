@@ -36,11 +36,17 @@ export async function receiveWebhook(request: Request, options: {
         if(!options.recipients.includes(change.previousIdentifier)&&!await options.repository.isAllowedIdentity?.(change.previousIdentifier,options.recipients))continue;
         if(!options.repository.updateIdentity)throw new Error('Identity persistence unavailable');
         await options.repository.updateIdentity(change);
-      }else{
+      }else if(event.kind==='message'){
         const m=event.value;
         const direct=options.recipients.includes(m.from)||(!!m.userId&&options.recipients.includes(m.userId));
         if(!direct&&!await options.repository.isAllowedIdentity?.(m.from,options.recipients))continue;
         await options.repository.ingest(m);
+      }else{
+        const echo=event.value;
+        const direct=options.recipients.includes(echo.to)||(!!echo.userId&&options.recipients.includes(echo.userId));
+        if(!direct&&!await options.repository.isAllowedIdentity?.(echo.to,options.recipients))continue;
+        if(!options.repository.ingestEcho)throw new Error('Echo persistence unavailable');
+        await options.repository.ingestEcho(echo);
       }
     }
     for(const s of parsed.statuses) if(s.phoneNumberId===options.phoneNumberId) await options.repository.recordStatus(s);

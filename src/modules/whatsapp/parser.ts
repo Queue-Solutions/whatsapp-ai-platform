@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { DeliveryStatus, IncomingMessage, IdentityChange } from '../messaging/types';
+import type { DeliveryStatus, IncomingMessage, IdentityChange, OutboundEcho } from '../messaging/types';
 import { phonePattern, bsuidPattern } from './identity';
 
 const phone=z.string().regex(phonePattern),bsuid=z.string().regex(bsuidPattern);
@@ -23,17 +23,36 @@ const messageValue=z.object({
     messages:z.array(z.unknown()).transform(items=>items.filter(directCustomerTurn)).pipe(z.array(message)).optional(),
     statuses:z.array(z.object({id:z.string(),status:z.string(),timestamp,errors:z.array(z.object({code:z.number()})).optional()})).optional(),
   });
+const echo=z.object({
+  id:z.string().min(1),to:phone.optional(),to_user_id:bsuid.optional(),timestamp,
+  type:z.string().min(1),text:z.object({body:z.string().max(16384)}).optional(),
+  image:z.object({id:z.string().regex(/^\d{1,100}$/),caption:z.string().max(16384).optional()}).optional(),
+}).refine(v=>(v.to!==undefined||v.to_user_id!==undefined)&&(v.type!=='text'||v.text!==undefined));
+const echoValue=z.object({
+  metadata:z.object({phone_number_id:z.string()}),
+  message_echoes:z.array(echo),
+});
 const payload=z.object({object:z.literal('whatsapp_business_account'),entry:z.array(z.object({changes:z.array(z.object({
   field:z.string(),value:z.unknown(),
 }))}))});
-type InboundEvent={kind:'message';value:IncomingMessage}|{kind:'identity';value:IdentityChange};
-export function parseWebhook(input:unknown):{messages:IncomingMessage[];statuses:DeliveryStatus[];identityChanges:IdentityChange[];events:InboundEvent[]} {
-  const data=payload.parse(input),messages:IncomingMessage[]=[],statuses:DeliveryStatus[]=[],identityChanges:IdentityChange[]=[],events:InboundEvent[]=[];
+type WebhookEvent={kind:'message';value:IncomingMessage}|{kind:'identity';value:IdentityChange}|{kind:'echo';value:OutboundEcho};
+export function parseWebhook(input:unknown):{messages:IncomingMessage[];statuses:DeliveryStatus[];identityChanges:IdentityChange[];echoes:OutboundEcho[];events:WebhookEvent[]} {
+  const data=payload.parse(input),messages:IncomingMessage[]=[],statuses:DeliveryStatus[]=[],identityChanges:IdentityChange[]=[],echoes:OutboundEcho[]=[],events:WebhookEvent[]=[];
   for(const entry of data.entry)for(const change of entry.changes){
+    if(change.field==='smb_message_echoes'){
+      const value=echoValue.parse(change.value),phoneNumberId=value.metadata.phone_number_id;
+      for(const m of value.message_echoes){
+        const outbound:OutboundEcho={phoneNumberId,providerMessageId:m.id,to:m.to??m.to_user_id!,userId:m.to_user_id,
+          occurredAt:new Date(Number(m.timestamp)*1000).toISOString(),type:m.type,
+          mediaId:m.type==='image'?m.image?.id:undefined,text:m.type==='text'?m.text!.body:m.type==='image'?m.image?.caption??null:null};
+        echoes.push(outbound);events.push({kind:'echo',value:outbound});
+      }
+      continue;
+    }
     if(change.field!=='messages')continue;
     if(change.value&&typeof change.value==='object'&&'group_id' in change.value)continue;
-    // App-origin echoes, history and group/state events are not customer turns.
-    // Validate only the messages topic so unrelated coexistence data cannot poison a batch.
+    // History and group/state events are not customer turns. App-origin echoes
+    // use the dedicated branch above so they can never invoke the assistant.
     const value=messageValue.parse(change.value),phoneNumberId=value.metadata?.phone_number_id;
     if(!phoneNumberId&&(value.messages?.length||value.statuses?.length))throw new Error('Missing phone number ID');
     if(!phoneNumberId)continue;
@@ -64,5 +83,5 @@ export function parseWebhook(input:unknown):{messages:IncomingMessage[];statuses
       statuses.push({phoneNumberId,providerMessageId:s.id,status:s.status as DeliveryStatus['status'],occurredAt:new Date(Number(s.timestamp)*1000).toISOString(),errorCode:s.errors?.[0]?.code.toString()});
     }
   }
-  return {messages,statuses,identityChanges,events};
+  return {messages,statuses,identityChanges,echoes,events};
 }

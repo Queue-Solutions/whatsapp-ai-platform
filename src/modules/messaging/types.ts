@@ -19,6 +19,16 @@ export interface IdentityChange {
   newUserId:string;
   occurredAt:string;
 }
+export interface OutboundEcho {
+  phoneNumberId:string;
+  providerMessageId:string;
+  to:string;
+  userId?:string;
+  occurredAt:string;
+  type:string;
+  text:string|null;
+  mediaId?:string;
+}
 export interface DeliveryStatus {
   phoneNumberId: string;
   providerMessageId: string;
@@ -59,6 +69,7 @@ export interface MessagingRepository {
   moderate?(job:MessageJob,result:import('../moderation/provider').ModerationResult):Promise<boolean>;
   isAllowedIdentity?(identifier:string,allowed:string[]):Promise<boolean>;
   updateIdentity?(change:IdentityChange):Promise<void>;
+  ingestEcho?(echo:OutboundEcho):Promise<void>;
   ingest(message: IncomingMessage): Promise<void>;
   recordStatus(status: DeliveryStatus): Promise<void>;
   claim(): Promise<MessageJob | null>;

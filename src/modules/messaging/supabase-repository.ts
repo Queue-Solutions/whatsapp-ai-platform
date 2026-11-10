@@ -3,7 +3,7 @@ import {boundedHistorySince} from '../ai/conversation-context';
 import type { AgentDecision } from '../ai/contracts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { WhatsAppConnection } from '../../config/whatsapp-connections';
-import type { DeliveryStatus, IdentityChange, IncomingMessage, MessageContext, MessageJob, MessagingRepository, PreparedReply } from './types';
+import type { DeliveryStatus, IdentityChange, IncomingMessage, MessageContext, MessageJob, MessagingRepository, OutboundEcho, PreparedReply } from './types';
 
 export class SupabaseMessagingRepository implements MessagingRepository {
   constructor(private db: SupabaseClient, private phoneNumberId: string, private pilot?: WhatsAppConnection) {}
@@ -39,6 +39,12 @@ export class SupabaseMessagingRepository implements MessagingRepository {
     await this.assertChannel();
     await this.rpc('update_whatsapp_identity',{p_phone:change.phoneNumberId,p_provider_id:change.providerMessageId,p_previous:change.previousIdentifier,
       p_new_phone:change.newPhone??null,p_new_user_id:change.newUserId,p_occurred:change.occurredAt});
+  }
+  async ingestEcho(echo:OutboundEcho){
+    if(echo.phoneNumberId!==this.phoneNumberId)throw new Error('Channel mismatch');
+    await this.assertChannel();
+    await this.rpc('ingest_whatsapp_app_echo',{p_phone:echo.phoneNumberId,p_provider_id:echo.providerMessageId,
+      p_to:echo.to,p_user_id:echo.userId??null,p_occurred:echo.occurredAt,p_type:echo.type,p_body:echo.text,p_media_id:echo.mediaId??null});
   }
   async recordStatus(s: DeliveryStatus) {
     if(s.phoneNumberId!==this.phoneNumberId) throw new Error('Channel mismatch');

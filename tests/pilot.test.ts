@@ -58,12 +58,12 @@ describe('isolated pilot transport',()=>{
   await expect(repo.context(job)).rejects.toThrow('Channel mismatch');
   expect(()=>repo.prepare(job,'Synthetic reply')).toThrow('Channel mismatch');expect(rpc).not.toHaveBeenCalled();
  });
- it('authenticates with the pilot secret, filters recipients and ignores phone-app echoes, history and group turns',async()=>{
-  const ingest=vi.fn(),recordStatus=vi.fn(),repo={ingest,recordStatus,isAllowedIdentity:vi.fn().mockResolvedValue(false)} as unknown as MessagingRepository;
+ it('authenticates with the pilot secret, filters recipients, records phone-app echoes and ignores history and group turns',async()=>{
+  const ingest=vi.fn(),ingestEcho=vi.fn(),recordStatus=vi.fn(),repo={ingest,ingestEcho,recordStatus,isAllowedIdentity:vi.fn().mockResolvedValue(false)} as unknown as MessagingRepository;
   const turn=(from:string,id:string)=>({from,id,timestamp:String(Math.floor(Date.now()/1000)),type:'text',text:{body:'Synthetic message'}});
   const payload={object:'whatsapp_business_account',entry:[{changes:[
    {field:'history',value:{messages:'not an inbound turn'}},
-   {field:'smb_message_echoes',value:{messages:[turn(phone,'echo')]}},
+   {field:'smb_message_echoes',value:{metadata:{phone_number_id:'9100'},message_echoes:[{to:phone,id:'echo',timestamp:String(Math.floor(Date.now()/1000)),type:'text',text:{body:'Synthetic representative reply'}}]}},
    {field:'messages',value:{metadata:{phone_number_id:'9100'},messages:[turn(phone,'approved'),turn(second,'unapproved'),{...turn(phone,'group'),group_id:'group'}, {...turn(phone,'echo-marked'),is_echo:true}]}}
   ]}]};
   const raw=JSON.stringify(payload);
@@ -72,6 +72,7 @@ describe('isolated pilot transport',()=>{
   expect((await receiveWebhook(request('other-app-secret'),options)).status).toBe(403);expect(ingest).not.toHaveBeenCalled();
   expect((await receiveWebhook(request(secret),options)).status).toBe(200);expect(ingest).toHaveBeenCalledOnce();
   expect(ingest.mock.calls[0][0].providerMessageId).toBe('approved');
+  expect(ingestEcho).toHaveBeenCalledOnce();expect(ingestEcho.mock.calls[0][0]).toMatchObject({providerMessageId:'echo',to:phone});
  });
  it('requires an explicit dashboard channel when more than one is enabled',()=>{
   expect(availabilityChannel([{dashboard_active:false,id:'test'}])?.id).toBe('test');
@@ -160,6 +161,17 @@ describe('durable pilot guards',()=>{
   await db.query("select public.fail_message_job($1,$2,'needs_review','network_outcome_unknown')",[job.id,job.lease_token]);
   expect(await claim()).toBeUndefined();await expect(prepare(job)).rejects.toThrow('lease');
   expect(await rows("select id from public.messages where direction='outbound'")).toHaveLength(1);
+ });
+ it('stores a WhatsApp Business app reply as outbound history and pauses unsent AI work',async()=>{
+  await authorize();const c=await selectedTurn('before-human-app');
+  await ingest('queued-for-ai');
+  const first=(await rows<{v:string|null}>("select public.ingest_whatsapp_app_echo('9100','app-echo-1',$1,now(),'text','Synthetic representative reply',null,null) as v",[phone]))[0].v;
+  expect(first).toBeTruthy();
+  expect((await rows<{v:string|null}>("select public.ingest_whatsapp_app_echo('9100','app-echo-1',$1,now(),'text','Synthetic representative reply',null,null) as v",[phone]))[0].v).toBe(first);
+  expect(await rows("select id from public.messages where provider_message_id='app-echo-1' and direction='outbound' and delivery_status='sent'")).toHaveLength(1);
+  expect((await rows<{automation_mode:string}>('select automation_mode from public.conversations where id=$1',[c.id]))[0].automation_mode).toBe('human');
+  expect(await rows("select id from public.message_jobs where state in ('pending','processing')")).toHaveLength(0);
+  expect((await rows<{v:string|null}>("select public.ingest_whatsapp_app_echo('9100','denied-echo',$1,now(),'text','Denied',null,null) as v",['201099999999']))[0].v).toBeNull();
  });
  it('recovers expired sends during a send pause and continues to settle receipts without replay',async()=>{
   await authorize();await selectedTurn();const job=await claim();const reply=await prepare(job);
