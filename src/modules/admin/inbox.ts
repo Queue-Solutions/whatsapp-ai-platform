@@ -1,5 +1,6 @@
 import {AI_RECOVERY_SUMMARY} from '../ai/recovery';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import {normalizeEgyptianMobile} from '../whatsapp/identity';
 export type InboxFilter = 'all' | 'attention' | 'complaints' | 'resolved';
 export type AttentionAction = 'reply' | 'pause' | 'resolve' | 'resume' | 'flag' | 'complaint' | 'remove_complaint';
 export type Conversation = {id:string;automation_mode:'auto'|'human';status:string;last_inbound_at:string;updated_at:string;customer_id:string;name:string;phone:string|null;username:string|null;
@@ -34,7 +35,8 @@ export function waitingLabel(since:string|null,now=Date.now()) {
 export type InboxMessage = {id:string;direction:string;body:string|null;message_type:string;delivery_status:string;created_at:string};
 export type InboxEvent = {id:string;event_type:string;created_at:string};
 export type AssistantScope = 'all'|'off'|'selected';
-export type AssistantAvailability = {channelId:string;scope:AssistantScope;selectedConversationIds:string[];selectedOnly?:boolean};
+export type AssistantApprovedRecipient = {recipient:string;displayName:string|null;conversationId:string|null;createdAt:string};
+export type AssistantAvailability = {channelId:string;scope:AssistantScope;selectedConversationIds:string[];approvedRecipients:AssistantApprovedRecipient[];selectedOnly?:boolean};
 export function availabilityChannel<T extends {dashboard_active:boolean}>(channels:T[]):T|null {
   const primary=channels.filter(channel=>channel.dashboard_active);
   return primary.length===1?primary[0]:primary.length===0&&channels.length===1?channels[0]:null;
@@ -42,8 +44,8 @@ export function availabilityChannel<T extends {dashboard_active:boolean}>(channe
 /** Reads and mode controls run as the signed-in member and remain protected by RLS. */
 export class InboxRepository {
   constructor(private db:SupabaseClient){}
-  async counts(tenant:string):Promise<InboxCounts>{
-    const base=()=>this.db.from('conversations').select('id',{count:'exact',head:true}).eq('tenant_id',tenant);
+  async counts(tenant:string,channelId?:string):Promise<InboxCounts>{
+    const base=()=>{let query=this.db.from('conversations').select('id',{count:'exact',head:true}).eq('tenant_id',tenant);if(channelId)query=query.eq('channel_id',channelId);return query;};
     const rows=await Promise.all([base(),base().in('attention_state',['waiting','in_progress']),base().eq('is_complaint',true),base().eq('attention_state','resolved')]);
     if(rows.some(r=>r.error))throw new Error('Could not load inbox counts.');
     return {all:rows[0].count??0,attention:rows[1].count??0,complaints:rows[2].count??0,resolved:rows[3].count??0};
@@ -93,11 +95,25 @@ export class InboxRepository {
     if(channels.error||!channel)throw new Error('Could not load assistant availability.');
     const selected=await this.db.from('assistant_selected_conversations').select('conversation_id').eq('tenant_id',tenant).eq('channel_id',channel.id);
     if(selected.error)throw new Error('Could not load selected chats.');
-    return {channelId:channel.id,scope:channel.assistant_scope as AssistantScope,selectedConversationIds:(selected.data??[]).map(row=>row.conversation_id),selectedOnly:channel.mode==='pilot'};
+    const approved=await this.db.from('assistant_approved_recipients').select('recipient,display_name,conversation_id,created_at')
+      .eq('tenant_id',tenant).eq('channel_id',channel.id).order('created_at');
+    if(approved.error)throw new Error('Could not load approved phone numbers.');
+    return {channelId:channel.id,scope:channel.assistant_scope as AssistantScope,selectedConversationIds:(selected.data??[]).map(row=>row.conversation_id),
+      approvedRecipients:(approved.data??[]).map(row=>({recipient:row.recipient,displayName:row.display_name,conversationId:row.conversation_id,createdAt:row.created_at})),selectedOnly:channel.mode==='pilot'};
   }
   async setAssistantAvailability(channelId:string,scope:AssistantScope,selectedConversationIds:string[]){
     const {error}=await this.db.rpc('set_assistant_availability',{p_channel:channelId,p_scope:scope,p_selected:selectedConversationIds});
-    if(error)throw new Error(scope==='selected'&&!selectedConversationIds.length?'Select at least one chat before saving.':'Could not update assistant availability. Refresh and try again.');
+    if(error)throw new Error('Could not update assistant availability. Approve at least one phone number, then try again.');
+  }
+  async approveRecipient(channelId:string,phone:string,name:string):Promise<string>{
+    const canonical=normalizeEgyptianMobile(phone);if(!canonical)throw new Error('Enter a valid Egyptian mobile number, such as 01012345678.');
+    const {data,error}=await this.db.rpc('approve_assistant_recipient',{p_channel:channelId,p_phone:canonical,p_name:name.trim()||null});
+    if(error)throw new Error('Could not approve this number. Check your admin access and try again.');return data as string;
+  }
+  async removeRecipient(channelId:string,phone:string){
+    const canonical=normalizeEgyptianMobile(phone);if(!canonical)throw new Error('Invalid approved phone number.');
+    const {error}=await this.db.rpc('remove_assistant_recipient',{p_channel:channelId,p_phone:canonical});
+    if(error)throw new Error('Could not remove this number. Check your admin access and try again.');
   }
   async send(conversationId:string,requestId:string,text:string){
     const {data,error}=await this.db.auth.getSession();if(error||!data.session)throw new Error('Please sign in again.');

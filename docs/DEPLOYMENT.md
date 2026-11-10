@@ -10,7 +10,7 @@ References: [Vercel plans](https://vercel.com/pricing), [cron limits](https://ve
 
 ## Vercel settings
 
-- Create a dedicated project named `whatsapp-ai-platform-dev` from the public Queue Solutions repository. Keep all WhatsApp assets in test mode.
+- Use the dedicated project named `whatsapp-ai-platform-dev` from the public Queue Solutions repository. The only connected WhatsApp channel is IRAM's approved coexistence pilot.
 - Framework: Next.js; root directory: repository root; Node.js: 24.x; install: `npm ci`; build: `npm run build`; output directory: framework default.
 - `vercel.json` places functions in Dublin near the existing Supabase database and leaves scheduling to Supabase Cron. This is a recovery worker for low-volume development; each call handles one job, while incoming webhooks also trigger processing. Monitor backlog before increasing traffic.
 - Use Vercel's Production environment for the stable **development-project** URL. This does not make the WhatsApp channel a production channel. Preview branches must not receive the shared live test credentials or drain the development queue.
@@ -25,26 +25,28 @@ Required names:
 ```
 SUPABASE_URL
 SUPABASE_SECRET_KEY
-META_APP_SECRET
-WHATSAPP_VERIFY_TOKEN
-META_GRAPH_API_VERSION
-WHATSAPP_ACCESS_TOKEN
-WHATSAPP_TEST_PHONE_NUMBER_ID
-WHATSAPP_TEST_RECIPIENTS
-WHATSAPP_MODE
 CRON_SECRET
+WHATSAPP_PILOT_ENABLED
+WHATSAPP_PILOT_SEND_ENABLED
+WHATSAPP_PILOT_TENANT_ID
+WHATSAPP_PILOT_APP_ID
+WHATSAPP_PILOT_PHONE_NUMBER_ID
+WHATSAPP_PILOT_APP_SECRET
+WHATSAPP_PILOT_VERIFY_TOKEN
+WHATSAPP_PILOT_ACCESS_TOKEN
+WHATSAPP_PILOT_GRAPH_API_VERSION
 ```
 
-Keep `WHATSAPP_MODE=test`. Keep the verified temporary Phone Number ID and approved recipient. The Supabase scheduler sends `CRON_SECRET` as its Authorization bearer token, retrieved from Vault at runtime. Do not deploy `SMOKE_BASE_URL`; that is only for local diagnostics. Temporary Meta access tokens expire: replace the value and redeploy when renewed. Never assume a server stays authenticated indefinitely.
+Approved tester phone numbers are stored in Supabase and managed from the dashboard; they are not Vercel environment variables. The Supabase scheduler sends `CRON_SECRET` as its Authorization bearer token, retrieved from Vault at runtime. Rotate Meta credentials through protected settings and never assume a server stays authenticated indefinitely.
 
 ## Verification and cutover
 
 1. Run the repository checks and deploy the dedicated development project after the hosting decision.
 2. Check `/api/health` for HTTP 200, unsigned webhook POST for HTTP 403, and unauthenticated worker requests for HTTP 401. Verify the protected worker succeeds using a server-side request that does not print the secret.
-3. Change Meta's callback to the stable project domain plus `/api/webhooks/whatsapp`, using the same verify token. Keep client-certificate attachment disabled. Confirm the `messages` field and test WABA app subscription remain enabled.
-4. Send real English and Arabic messages from the approved recipient. Confirm completed jobs, persisted inbound/outbound records, and Meta delivery receipts.
+3. Keep IRAM's approved callback on the stable project domain plus `/api/webhooks/whatsapp/pilot`, using the matching verify token. Keep client-certificate attachment disabled and confirm the `messages` subscription remains enabled.
+4. Add tester numbers in **Selected chats only**, then send real English and Arabic messages from those numbers. Confirm completed jobs, persisted inbound/outbound records, and Meta delivery receipts.
 5. Configure Supabase Cron using `supabase/operations/configure-worker.sql` after adding the worker URL and secret in Supabase Vault. Verify the HTTP response status in `net._http_response` as well as the cron run status, and check that pending jobs are not accumulating. Never claim scheduling is active from the committed configuration alone.
-6. Only after hosted delivery and scheduling are verified, stop the local tunnel and backend. Do not alter or register the client's phone number.
+6. Only after hosted delivery and scheduling are verified, stop the local tunnel and backend. Never deregister, migrate or re-register the client's phone number.
 
 ## Failure handling
 

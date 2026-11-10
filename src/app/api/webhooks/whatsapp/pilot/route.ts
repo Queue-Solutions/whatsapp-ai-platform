@@ -12,7 +12,7 @@ export function GET(request:Request) {
 }
 export async function POST(request:Request) {
   try {
-    const deps=createMessagingRuntime('pilot');
+    const deps=createMessagingRuntime();
     const {connection}=deps;
     const response=await receiveWebhook(request,{repository:deps.repository,appSecret:connection.appSecret,
       phoneNumberId:connection.phoneNumberId,recipients:connection.recipients});

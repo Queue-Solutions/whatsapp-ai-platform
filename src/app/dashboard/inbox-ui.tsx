@@ -31,17 +31,17 @@ export function Inbox({db}:{db:SupabaseClient}){
   const [error,setError]=useState('');const [loading,setLoading]=useState(true);const [refresh,setRefresh]=useState(0);
   useEffect(()=>{let active=true;void new KnowledgeEditor(db).memberships().then(rows=>{if(active){setMemberships(rows);setTenant(rows[0]?.tenant_id??'');if(!rows.length)setLoading(false);}}).catch(()=>{if(active){setError('Could not load business access.');setLoading(false);}});return()=>{active=false;};},[db]);
   useEffect(()=>{
-    if(!tenant)return;let active=true;let running=false;
+    if(!tenant||!assistantAvailability)return;let active=true;let running=false;
     const load=async()=>{
       if(running)return;running=true;
       try{
-        const [rows,totals]=await Promise.all([repository.conversations(tenant,filter,limit),repository.counts(tenant)]);
+        const [rows,totals]=await Promise.all([repository.conversations(tenant,filter,limit,assistantAvailability.channelId),repository.counts(tenant,assistantAvailability.channelId)]);
         if(active){setConversations(rows);setCounts(totals);setSelected(id=>rows.some(c=>c.id===id)?id:rows[0]?.id??'');setError('');setNow(Date.now());}
       }catch{if(active)setError('Could not refresh conversations. Check your connection and try again.');}
       finally{running=false;if(active)setLoading(false);}
     };
     void load();const timer=setInterval(()=>void load(),10000);return()=>{active=false;clearInterval(timer);};
-  },[repository,tenant,filter,limit,refresh]);
+  },[repository,tenant,filter,limit,refresh,assistantAvailability]);
   const current=conversations.find(c=>c.id===selected);
   const canEdit=['owner','admin','agent'].includes(memberships.find(m=>m.tenant_id===tenant)?.role??'');
   const canEditFaq=['owner','admin'].includes(memberships.find(m=>m.tenant_id===tenant)?.role??'');
@@ -52,7 +52,8 @@ export function Inbox({db}:{db:SupabaseClient}){
   return <main className="content inbox-content">
     <div className="page-title"><div><div className="eyebrow">YOUR CUSTOMER CONVERSATIONS</div><h1>Inbox</h1><p className="intro">See who needs you, reply personally, and keep every issue in view.</p></div><button className="text-button" disabled={working} onClick={()=>{if(discard())void db.auth.signOut({scope:'local'});}}>Sign out</button></div>
     <div className="toolbar"><label>Business<select value={tenant} disabled={loading||working} onChange={e=>{if(!discard())return;setDraftDirty(false);setTenant(e.target.value);setConversations([]);setSelected('');setAssistantAvailability(null);setCounts({all:0,attention:0,complaints:0,resolved:0});setLimit(50);setLoading(true);}}>{memberships.map(m=><option key={m.tenant_id} value={m.tenant_id}>{m.name}</option>)}</select></label><span className="draft-count">Updates every 10 seconds</span><button className="secondary" disabled={working} onClick={()=>setRefresh(n=>n+1)}>Refresh</button></div>
-    {tenant&&<AssistantAvailabilityControl key={tenant} repository={repository} tenant={tenant} disabled={working} onWorking={setWorking} onAvailability={setAssistantAvailability}/>}
+    {tenant&&
+      <AssistantAvailabilityControl key={tenant} repository={repository} tenant={tenant} canApprove={canEditFaq} disabled={working} onWorking={setWorking} onAvailability={setAssistantAvailability}/>}
     <div className="inbox-filters" role="group" aria-label="Filter conversations">{filters.map(f=><button key={f.id} aria-pressed={filter===f.id} disabled={working} onClick={()=>changeFilter(f.id)}>{f.label}<span>{counts[f.id]}</span></button>)}</div>
     {error&&<p className="error" role="alert">{error}</p>}
     {loading?<p role="status">Loading conversations…</p>:!memberships.length?<p className="notice">Your account needs business access.</p>:<div className="inbox-grid">
@@ -72,10 +73,11 @@ export function Inbox({db}:{db:SupabaseClient}){
   </main>;
 }
 
-function AssistantAvailabilityControl({repository,tenant,disabled,onWorking,onAvailability}:{repository:InboxRepository;tenant:string;disabled:boolean;onWorking:(working:boolean)=>void;onAvailability:(availability:AssistantAvailability)=>void}){
+function AssistantAvailabilityControl({repository,tenant,canApprove,disabled,onWorking,onAvailability}:{repository:InboxRepository;tenant:string;canApprove:boolean;disabled:boolean;onWorking:(working:boolean)=>void;onAvailability:(availability:AssistantAvailability)=>void}){
   const [saved,setSaved]=useState<AssistantAvailability|null>(null);const [scope,setScope]=useState<AssistantScope>('all');
   const [selected,setSelected]=useState<string[]>([]);const [candidates,setCandidates]=useState<Conversation[]>([]);const [search,setSearch]=useState('');
   const [loading,setLoading]=useState(true);const [saving,setSaving]=useState(false);const [error,setError]=useState('');const [notice,setNotice]=useState('');
+  const [phone,setPhone]=useState('');const [name,setName]=useState('');const [recipientBusy,setRecipientBusy]=useState('');
   useEffect(()=>{let active=true;
     void repository.assistantAvailability(tenant).then(async availability=>({availability,rows:await repository.conversations(tenant,'all',500,availability.channelId)})).then(({availability,rows})=>{
       if(!active)return;setSaved(availability);setScope(availability.scope);setSelected(availability.selectedConversationIds);setCandidates(rows);onAvailability(availability);
@@ -86,11 +88,18 @@ function AssistantAvailabilityControl({repository,tenant,disabled,onWorking,onAv
   const dirty=!!saved&&(scope!==saved.scope||normalized.join(',')!==savedSelected.join(','));
   const visible=candidates.filter(c=>`${c.name} ${c.phone??''} ${c.username??''}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
   function toggle(id:string){setSelected(ids=>ids.includes(id)?ids.filter(value=>value!==id):[...ids,id]);setNotice('');}
-  async function save(){if(!saved||saving||!dirty)return;if(scope==='selected'&&!selected.length){setError('Select at least one chat before saving.');return;}
+  async function save(){if(!saved||saving||!dirty)return;if(scope==='selected'&&!selected.length&&!saved.approvedRecipients.length){setError('Approve at least one phone number before enabling selected chats.');return;}
     setSaving(true);onWorking(true);setError('');setNotice('');
     try{await repository.setAssistantAvailability(saved.channelId,scope,selected);const next={...saved,scope,selectedConversationIds:[...selected]};setSaved(next);onAvailability(next);setNotice('Assistant availability updated. The new setting applies to future messages.');}
     catch(e){setError((e as Error).message);}finally{setSaving(false);onWorking(false);}
   }
+  async function refreshAvailability(){if(!saved)return;const next=await repository.assistantAvailability(tenant);setSaved(next);setScope(next.scope);setSelected(next.selectedConversationIds);onAvailability(next);}
+  async function approve(){if(!saved||recipientBusy)return;setRecipientBusy('add');onWorking(true);setError('');setNotice('');
+    try{const canonical=await repository.approveRecipient(saved.channelId,phone,name);await refreshAvailability();setPhone('');setName('');setNotice(`+${canonical} is approved. The first message from this number will create and select its IRAM chat automatically.`);}
+    catch(e){setError((e as Error).message);}finally{setRecipientBusy('');onWorking(false);}}
+  async function remove(phoneToRemove:string){if(!saved||recipientBusy||!window.confirm(`Remove +${phoneToRemove} from approved AI replies? Future messages will stay in the inbox without an automatic reply.`))return;
+    setRecipientBusy(phoneToRemove);onWorking(true);setError('');setNotice('');try{await repository.removeRecipient(saved.channelId,phoneToRemove);await refreshAvailability();setNotice(`+${phoneToRemove} was removed from approved AI replies.`);}
+    catch(e){setError((e as Error).message);}finally{setRecipientBusy('');onWorking(false);}}
   const labels:Record<AssistantScope,{title:string;description:string}>={
     all:{title:'Assistant on',description:'Reply automatically in every eligible chat. Individually paused chats stay paused.'},
     off:{title:'Assistant off',description:'Keep receiving messages in the inbox without automatic replies.'},
@@ -101,9 +110,11 @@ function AssistantAvailabilityControl({repository,tenant,disabled,onWorking,onAv
     {loading?<p role="status">Loading assistant settings…</p>:<fieldset disabled={disabled||saving}>
       <legend className="sr-only">Assistant availability mode</legend>
       <div className="availability-options">{((saved?.selectedOnly?['off','selected']:['all','off','selected']) as AssistantScope[]).map(value=><label className={scope===value?'selected':''} key={value}><input type="radio" name={`assistant-scope-${tenant}`} value={value} checked={scope===value} onChange={()=>{setScope(value);setNotice('');}}/><span><strong>{labels[value].title}</strong><small>{labels[value].description}</small></span></label>)}</div>
-      {scope==='selected'&&<div className="chat-selector"><div className="chat-selector-heading"><label>Choose chats<input type="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by name or number"/></label><span>{selected.length} selected</span></div>
-        <div className="chat-options" role="group" aria-label="Chats allowed to use the assistant">{visible.length?visible.map(c=><label key={c.id}><input type="checkbox" checked={selected.includes(c.id)} onChange={()=>toggle(c.id)}/><span><strong>{c.name}</strong><small dir="ltr">{c.phone?`+${c.phone}`:c.username?`@${c.username}`:'Phone number not shared'}</small></span></label>):<p>No matching chats.</p>}</div>
+      {scope==='selected'&&saved?.selectedOnly&&<div className="chat-selector approved-recipients"><div className="chat-selector-heading"><div><strong>Approved phone numbers</strong><small>Only these people can receive AI replies. They do not need to message first.</small></div><span>{saved.approvedRecipients.length} approved</span></div>
+        {canApprove&&<div className="recipient-form"><label>Name (optional)<input value={name} maxLength={120} onChange={e=>setName(e.target.value)} placeholder="Employee name"/></label><label>Egyptian mobile number<input dir="ltr" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="01012345678 or +201012345678"/></label><button className="secondary" type="button" disabled={!phone.trim()||!!recipientBusy} onClick={()=>void approve()}>{recipientBusy==='add'?'Adding…':'Approve number'}</button></div>}
+        <div className="approved-recipient-list">{saved.approvedRecipients.length?saved.approvedRecipients.map(recipient=><div key={recipient.recipient}><span><strong>{recipient.displayName||'Approved tester'}</strong><small dir="ltr">+{recipient.recipient}</small><em>{recipient.conversationId?'Chat connected':'Waiting for first message'}</em></span>{canApprove&&<button className="text-button" type="button" disabled={!!recipientBusy} onClick={()=>void remove(recipient.recipient)}>{recipientBusy===recipient.recipient?'Removing…':'Remove'}</button>}</div>):<p>No phone numbers approved yet.</p>}</div>
       </div>}
+      {scope==='selected'&&!saved?.selectedOnly&&<div className="chat-selector"><div className="chat-selector-heading"><label>Choose chats<input type="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by name or number"/></label><span>{selected.length} selected</span></div><div className="chat-options" role="group" aria-label="Chats allowed to use the assistant">{visible.length?visible.map(c=><label key={c.id}><input type="checkbox" checked={selected.includes(c.id)} onChange={()=>toggle(c.id)}/><span><strong>{c.name}</strong><small dir="ltr">{c.phone?`+${c.phone}`:c.username?`@${c.username}`:'Phone number not shared'}</small></span></label>):<p>No matching chats.</p>}</div></div>}
       <div className="availability-actions"><button className="primary" type="button" disabled={!dirty||saving} onClick={()=>void save()}>{saving?'Saving…':'Save availability'}</button><span>A reply already being sent may still arrive.</span></div>
     </fieldset>}
     {error&&<p className="error" role="alert">{error}</p>}{notice&&<p className="success" role="status">{notice}</p>}

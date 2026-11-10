@@ -21,6 +21,9 @@ export class SupabaseMessagingRepository implements MessagingRepository {
     if(error) throw new Error(`Database operation failed: ${name}`);
     return data as T;
   }
+  private authorized(reply:PreparedReply|null):PreparedReply|null {
+    return reply&&this.pilot?{...reply,authorization_scope:'approved_recipient'}:reply;
+  }
   async ingest(m: IncomingMessage) {
     if(m.phoneNumberId!==this.phoneNumberId) throw new Error('Channel mismatch');
     await this.assertChannel();
@@ -95,7 +98,7 @@ export class SupabaseMessagingRepository implements MessagingRepository {
   }
   prepare(job: MessageJob, text: string) {
     this.assertJob(job);
-    return this.rpc<PreparedReply|null>('prepare_message_reply',{p_job:job.id,p_lease:job.lease_token,p_body:text});
+    return this.rpc<PreparedReply|null>('prepare_message_reply',{p_job:job.id,p_lease:job.lease_token,p_body:text}).then(reply=>this.authorized(reply));
   }
   async prepareDecision(job: MessageJob, decision: AgentDecision) {
     this.assertJob(job);
@@ -118,10 +121,10 @@ export class SupabaseMessagingRepository implements MessagingRepository {
       return null;
     }
     if(decision.reason==='live_price_information'){
-      return this.rpc<PreparedReply|null>('prepare_policy_reply',{p_job:job.id,p_lease:job.lease_token,p_body:decision.text,p_reason:decision.reason});
+      return this.rpc<PreparedReply|null>('prepare_policy_reply',{p_job:job.id,p_lease:job.lease_token,p_body:decision.text,p_reason:decision.reason}).then(reply=>this.authorized(reply));
     }
     return this.rpc<PreparedReply|null>('prepare_followup_reply', { p_job: job.id, p_lease: job.lease_token,
-      p_body: decision.text, p_action: decision.action, p_sources: decision.sources, p_reason: decision.reason, p_summary: decision.attentionSummary ?? null, p_contact:decision.followUp??null });
+      p_body: decision.text, p_action: decision.action, p_sources: decision.sources, p_reason: decision.reason, p_summary: decision.attentionSummary ?? null, p_contact:decision.followUp??null }).then(reply=>this.authorized(reply));
   }
   recover(job:MessageJob,code:string){
     this.assertJob(job);

@@ -8,22 +8,27 @@ import {MetaMessageSender,ConfiguredMetaMessageSender} from '../src/modules/what
 import {SupabaseMessagingRepository} from '../src/modules/messaging/supabase-repository';
 import {receiveWebhook} from '../src/modules/whatsapp/webhook';
 import {availabilityChannel} from '../src/modules/admin/inbox';
+import {normalizeEgyptianMobile,sameEgyptianMobile} from '../src/modules/whatsapp/identity';
 import type {MessagingRepository,PreparedReply} from '../src/modules/messaging/types';
 
 const tenant='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222';
 const owner='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',viewer='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const phone='201000000001',second='201000000002',secret='synthetic-secret-value-for-unit-tests';
 const pilot:WhatsAppConnection={mode:'pilot',tenantId:tenant,appId:'123',phoneNumberId:'9100',appSecret:secret,verifyToken:secret,accessToken:secret,graphVersion:'v24.0',recipients:[phone],sendEnabled:true};
-const source={WHATSAPP_PILOT_ENABLED:'true',WHATSAPP_PILOT_TENANT_ID:tenant,WHATSAPP_PILOT_APP_ID:'123',WHATSAPP_PILOT_PHONE_NUMBER_ID:'9100',WHATSAPP_PILOT_APP_SECRET:secret,WHATSAPP_PILOT_VERIFY_TOKEN:secret,WHATSAPP_PILOT_ACCESS_TOKEN:secret,WHATSAPP_PILOT_GRAPH_API_VERSION:'v24.0',WHATSAPP_PILOT_RECIPIENTS:phone};
+const source={WHATSAPP_PILOT_ENABLED:'true',WHATSAPP_PILOT_TENANT_ID:tenant,WHATSAPP_PILOT_APP_ID:'123',WHATSAPP_PILOT_PHONE_NUMBER_ID:'9100',WHATSAPP_PILOT_APP_SECRET:secret,WHATSAPP_PILOT_VERIFY_TOKEN:secret,WHATSAPP_PILOT_ACCESS_TOKEN:secret,WHATSAPP_PILOT_GRAPH_API_VERSION:'v24.0'};
 
 describe('isolated pilot transport',()=>{
+ it('canonicalizes every supported Egyptian mobile spelling to one WhatsApp identity',()=>{
+  for(const value of ['01000000001','+20 100 000 0001','00201000000001','201000000001','١٠٠٠٠٠٠٠٠١'])expect(normalizeEgyptianMobile(value)).toBe(phone);
+  expect(sameEgyptianMobile('01000000001','+201000000001')).toBe(true);
+  for(const value of ['010123','+971501234567','201300000001','not a phone'])expect(normalizeEgyptianMobile(value)).toBeNull();
+ });
  it('requires explicit configuration and defaults sends off without leaking values in errors',()=>{
   expect(readPilotConnection({})).toBeNull();
   expect(readPilotVerifyToken(source)).toBe(secret);
   expect(readPilotVerifyToken({...source,WHATSAPP_PILOT_ENABLED:'false'})).toBe(secret);
   expect(()=>readPilotVerifyToken({WHATSAPP_PILOT_VERIFY_TOKEN:'short'})).toThrow('WHATSAPP_PILOT_VERIFY_TOKEN');
   expect(readPilotConnection(source)).toMatchObject({sendEnabled:false,mode:'pilot',tenantId:tenant});
-  expect(()=>readPilotConnection({...source,WHATSAPP_TEST_PHONE_NUMBER_ID:'9100'})).toThrow('different');
   expect(()=>readPilotConnection({...source,WHATSAPP_PILOT_TENANT_ID:'bad-'+secret})).toThrow('WHATSAPP_PILOT_TENANT_ID');
   try{readPilotConnection({...source,WHATSAPP_PILOT_APP_SECRET:'private'});}catch(e){expect(String(e)).not.toContain('private');}
   expect(pilotConfigurationFailureCode(new Error('Invalid configuration: WHATSAPP_PILOT_APP_SECRET, WHATSAPP_PILOT_ACCESS_TOKEN'))).toBe('WHATSAPP_PILOT_APP_SECRET+WHATSAPP_PILOT_ACCESS_TOKEN');
@@ -33,15 +38,16 @@ describe('isolated pilot transport',()=>{
  });
  it('never sends through a disabled, mismatched or unapproved channel and retains unknown outcomes',async()=>{
   const fetcher=vi.fn().mockResolvedValue(Response.json({messages:[{id:'synthetic-outbound'}]}));
-  const reply:PreparedReply={tenant_id:tenant,outbound_id:'out',phone_number_id:'9100',recipient:phone,body:'Synthetic reply'};
-  await expect(new MetaMessageSender({...pilot,sendEnabled:false},fetcher).send(reply)).rejects.toMatchObject({ambiguous:false,code:'pilot_guard_rejected'});
-  for(const invalid of [{...reply,tenant_id:other},{...reply,tenant_id:undefined},{...reply,recipient:second},{...reply,phone_number_id:'9001'}]){
-   await expect(new MetaMessageSender(pilot,fetcher).send(invalid)).rejects.toMatchObject({ambiguous:false});
+  const reply:PreparedReply={tenant_id:tenant,outbound_id:'out',phone_number_id:'9100',recipient:phone,authorization_scope:'approved_recipient',body:'Synthetic reply'};
+  const authorize=vi.fn(async(candidate:PreparedReply)=>candidate.recipient===phone);
+  await expect(new MetaMessageSender({...pilot,sendEnabled:false},fetcher,authorize).send(reply)).rejects.toMatchObject({ambiguous:false,code:'pilot_guard_rejected'});
+  for(const invalid of [{...reply,tenant_id:other},{...reply,tenant_id:undefined},{...reply,recipient:second},{...reply,phone_number_id:'9001'},{...reply,authorization_scope:undefined}]){
+   await expect(new MetaMessageSender(pilot,fetcher,authorize).send(invalid)).rejects.toMatchObject({ambiguous:false});
   }
   expect(fetcher).not.toHaveBeenCalled();
-  await new ConfiguredMetaMessageSender([pilot],fetcher).send(reply);
+  await new ConfiguredMetaMessageSender([pilot],fetcher,async(_connection,candidate)=>authorize(candidate)).send(reply);
   expect(fetcher.mock.calls[0][0]).toBe('https://graph.facebook.com/v24.0/9100/messages');
-  await expect(new MetaMessageSender(pilot,vi.fn().mockRejectedValue(new Error('Synthetic timeout'))).send(reply)).rejects.toMatchObject({ambiguous:true,code:'network_outcome_unknown'});
+  await expect(new MetaMessageSender(pilot,vi.fn().mockRejectedValue(new Error('Synthetic timeout')),authorize).send(reply)).rejects.toMatchObject({ambiguous:true,code:'network_outcome_unknown'});
  });
  it('rejects a wrong database tenant before privileged ingestion or job updates',async()=>{
   const rpc=vi.fn(),query={select:()=>query,eq:()=>query,single:async()=>({data:{tenant_id:other,mode:'pilot'}})};
@@ -82,6 +88,7 @@ describe('durable pilot guards',()=>{
  const prepare=async(job:{id:string;lease_token:string})=>(await rows<{v:PreparedReply|null}>("select public.prepare_message_reply($1,$2,'Synthetic reply') as v",[job.id,job.lease_token]))[0].v;
  async function authorize(sending=true,allowed=[phone,second]) {
   await db.query("insert into public.whatsapp_pilot_authorizations(tenant_id,channel_id,approved_at,receiving_enabled,sending_enabled,allowed_recipients) values($1,$2,now(),true,$3,$4)",[tenant,channel,sending,allowed]);
+  for(const recipient of allowed)await db.query("insert into public.assistant_approved_recipients(tenant_id,channel_id,recipient,approved_by) values($1,$2,$3,$4)",[tenant,channel,recipient,owner]);
   await db.query("update public.whatsapp_channels set enabled=true where id=$1",[channel]);
  }
  async function selectChats(ids:string[]) {
@@ -123,6 +130,19 @@ describe('durable pilot guards',()=>{
   await ingest('fresh');await db.exec("update public.messages set moderation_state='clear'");
   const job=await claim();expect(job).toBeDefined();expect(await prepare(job)).toMatchObject({tenant_id:tenant,phone_number_id:'9100',recipient:phone});
  });
+ it('lets an admin preapprove a local-format number before any chat exists and auto-selects its first inbound chat',async()=>{
+  await authorize(false,[phone]);await db.query('delete from public.assistant_approved_recipients where channel_id=$1',[channel]);
+  await db.query('update public.whatsapp_channels set dashboard_active=true where id=$1',[channel]);
+  await db.query("select set_config('request.jwt.claim.sub',$1,false)",[owner]);await db.exec('set role authenticated');
+  expect((await rows<{v:string}>("select public.approve_assistant_recipient($1,'٠١٠٠٠٠٠٠٠٠١','Ziad') as v",[channel]))[0].v).toBe(phone);
+  await db.query("select public.set_assistant_availability($1,'selected',array[]::uuid[])",[channel]);
+  await expect(db.query("insert into public.assistant_approved_recipients(tenant_id,channel_id,recipient) values($1,$2,$3)",[tenant,channel,second])).rejects.toThrow();
+  await db.exec('reset role');
+  expect(await rows('select conversation_id from public.assistant_approved_recipients where channel_id=$1',[channel])).toEqual([{conversation_id:null}]);
+  await ingest('first-approved-message');const [conversation]=await conversations();
+  expect(await rows('select conversation_id from public.assistant_approved_recipients where channel_id=$1',[channel])).toEqual([{conversation_id:conversation.id}]);
+  expect(await rows('select conversation_id from public.assistant_selected_conversations where channel_id=$1',[channel])).toEqual([{conversation_id:conversation.id}]);
+ });
  it('deduplicates deliveries and retains uncertain sends for review without retry',async()=>{
   await authorize();await selectedTurn();
   const first=(await ingest('duplicate'))[0].v;expect((await ingest('duplicate'))[0].v).toBe(first);
@@ -147,7 +167,7 @@ describe('durable pilot guards',()=>{
   expect(await claim()).toBeUndefined();
  });
  it('blocks unselected, paused and revoked work, including an already claimed generation',async()=>{
-  await authorize();const c=await selectedTurn();await ingest('other-person',second);
+  await authorize(true,[phone]);const c=await selectedTurn();await ingest('other-person',second);
   await db.exec("update public.messages set moderation_state='clear'");const job=await claim();
   await db.query("update public.conversations set automation_mode='human',automation_epoch=automation_epoch+1 where id=$1",[c.id]);
   expect(await prepare(job)).toBeNull();expect(await claim()).toBeUndefined();

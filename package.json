@@ -13,8 +13,6 @@
     "lint": "eslint .",
     "test": "vitest run",
     "check": "npm run lint && npm run typecheck && npm test && npm run build",
-    "setup:test-tenant": "tsx --env-file=.env.local scripts/setup-test-tenant.ts",
-    "smoke:webhook": "tsx --env-file=.env.local scripts/smoke-webhook.ts",
     "check:supabase": "tsx --env-file=.env.local scripts/check-supabase.ts",
     "worker:once": "tsx --env-file=.env.local scripts/drain-once.ts"
   },

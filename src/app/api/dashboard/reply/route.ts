@@ -1,7 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/client';
-import { readEnvironment } from '@/config/env';
-import { connectionForChannel, readPilotConnection, testConnection } from '@/config/whatsapp-connections';
+import { connectionForChannel, readPilotConnection } from '@/config/whatsapp-connections';
 import { handleManualReply, type ManualReplyRepository } from '@/modules/admin/manual-reply';
 import { ConfiguredMetaMessageSender } from '@/modules/whatsapp/sender';
 export const runtime='nodejs';
@@ -14,9 +13,9 @@ export async function POST(request:Request){
       const {data,error}=await db.auth.getUser(token);return error?null:data.user?.id??null;
     },
     services:()=>{
-      const env=readEnvironment();const db=createAdminClient();
+      const db=createAdminClient();
       const pilot=readPilotConnection();
-      const connections=[testConnection(env),...(pilot?[pilot]:[])];
+      const connections=pilot?[pilot]:[];
       const repository:ManualReplyRepository={
         prepare:async(actor,input)=>{
           // The browser supplies a conversation, never the tenant or credential to use.
@@ -26,16 +25,23 @@ export async function POST(request:Request){
             .eq('tenant_id',conversation.data.tenant_id).eq('id',conversation.data.channel_id).single();
           const connection=channel.data&&connectionForChannel(connections,channel.data);
           if(channel.error||!connection?.sendEnabled)throw new Error('Reply channel unavailable');
+          const approvals=await db.from('assistant_approved_recipients').select('recipient')
+            .eq('tenant_id',conversation.data.tenant_id).eq('channel_id',conversation.data.channel_id);
+          if(approvals.error)throw new Error('Reply preparation failed');
           const {data,error}=await db.rpc('prepare_manual_reply',{p_actor:actor,p_conversation:input.conversationId,p_request:input.requestId,p_body:input.text,
-            p_phone:connection.phoneNumberId,p_allowed:connection.recipients});
-          if(error||!data)throw new Error('Reply preparation failed');return data;
+            p_phone:connection.phoneNumberId,p_allowed:(approvals.data??[]).map(row=>row.recipient)});
+          if(error||!data)throw new Error('Reply preparation failed');
+          return data.reply?{...data,reply:{...data.reply,authorization_scope:'approved_recipient'}}:data;
         },
         finish:async(id,state,provider,errorCode)=>{
           const {error}=await db.rpc('finish_manual_reply',{p_request:id,p_state:state,p_provider:provider,p_error:errorCode});
           if(error)throw new Error('Reply settlement failed');
         },
       };
-      return {repository,sender:new ConfiguredMetaMessageSender(connections)};
+      return {repository,sender:new ConfiguredMetaMessageSender(connections,fetch,async(connection,reply)=>{
+        const {data,error}=await db.rpc('is_allowed_whatsapp_identity',{p_phone:connection.phoneNumberId,p_identifier:reply.recipient,p_allowed:[]});
+        return !error&&data===true;
+      })};
     },
   });
 }

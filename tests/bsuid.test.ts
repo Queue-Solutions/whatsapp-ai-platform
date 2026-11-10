@@ -5,12 +5,12 @@ import {createHmac} from 'node:crypto';
 import {parseWebhook} from '../src/modules/whatsapp/parser';
 import {receiveWebhook} from '../src/modules/whatsapp/webhook';
 import {MetaMessageSender} from '../src/modules/whatsapp/sender';
-import {readEnvironment,type Environment} from '../src/config/env';
+import type {WhatsAppConnection} from '../src/config/whatsapp-connections';
 import type {MessagingRepository,PreparedReply} from '../src/modules/messaging/types';
 import {InboxRepository} from '../src/modules/admin/inbox';
 import type {SupabaseClient} from '@supabase/supabase-js';
 const phone='201000000001',bsuid='EG.Abc123',channel='9001',secret='s'.repeat(32);
-const env:Environment={SUPABASE_URL:'https://example.supabase.co',SUPABASE_SECRET_KEY:secret,META_APP_SECRET:secret,WHATSAPP_VERIFY_TOKEN:secret,META_GRAPH_API_VERSION:'v24.0',WHATSAPP_ACCESS_TOKEN:secret,WHATSAPP_TEST_PHONE_NUMBER_ID:channel,WHATSAPP_TEST_RECIPIENTS:[phone],WHATSAPP_MODE:'test',CRON_SECRET:secret};
+const connection:WhatsAppConnection={mode:'test',phoneNumberId:channel,appSecret:secret,verifyToken:secret,accessToken:secret,graphVersion:'v24.0',recipients:[phone],sendEnabled:true};
 const message=(overrides:Record<string,unknown>={})=>({id:'inbound',timestamp:String(Math.floor(Date.now()/1000)),type:'text',text:{body:'Fictional question'},from_user_id:bsuid,...overrides});
 const payload=(messages:unknown[],contacts:unknown[]=[])=>({object:'whatsapp_business_account',entry:[{changes:[{field:'messages',value:{metadata:{phone_number_id:channel},contacts,messages}}]}]});
 const request=(body:unknown)=>{const raw=JSON.stringify(body);return new Request('https://example.test/webhook',{method:'POST',body:raw,headers:{'x-hub-signature-256':`sha256=${createHmac('sha256',secret).update(raw).digest('hex')}`}});};
@@ -31,14 +31,13 @@ describe('Meta BSUID protocol',()=>{
  });
  it('sends BSUIDs in recipient, phones in to, and requires an exact allowlisted identity or verified alias',async()=>{
   const fetcher=vi.fn().mockImplementation(async()=>Response.json({messages:[{id:'outbound'}]}));
-  const sender=new MetaMessageSender(env,fetcher),reply={outbound_id:'out',phone_number_id:channel,recipient:bsuid,body:'Fictional reply'};
+  const sender=new MetaMessageSender(connection,fetcher),reply={outbound_id:'out',phone_number_id:channel,recipient:bsuid,body:'Fictional reply'};
   await expect(sender.send(reply)).rejects.toMatchObject({code:'test_guard_rejected'});expect(fetcher).not.toHaveBeenCalled();
   await sender.send({...reply,recipient_aliases:[phone]});
   const sent=JSON.parse(fetcher.mock.calls[0][1].body);expect(sent.recipient).toBe(bsuid);expect(sent).not.toHaveProperty('to');
   await sender.send({...reply,recipient:phone});expect(JSON.parse(fetcher.mock.calls[1][1].body)).toMatchObject({to:phone});
   await expect(sender.send({...reply,recipient:'@maya',recipient_aliases:[phone]})).rejects.toThrow();
-  const configured=readEnvironment({...env,WHATSAPP_TEST_RECIPIENTS:phone+','+bsuid});expect(configured.WHATSAPP_TEST_RECIPIENTS).toEqual([phone,bsuid]);
-  await expect(new MetaMessageSender(configured,vi.fn().mockRejectedValue(new Error('timeout'))).send(reply)).rejects.toMatchObject({ambiguous:true,code:'network_outcome_unknown'});
+  await expect(new MetaMessageSender({...connection,recipients:[phone,bsuid]},vi.fn().mockRejectedValue(new Error('timeout'))).send(reply)).rejects.toMatchObject({ambiguous:true,code:'network_outcome_unknown'});
  });
  it('never resolves or ingests unsigned BSUID webhooks, and fails closed for unapproved identities',async()=>{
   const repository={ingest:vi.fn(),isAllowedIdentity:vi.fn().mockResolvedValue(false)} as unknown as MessagingRepository;

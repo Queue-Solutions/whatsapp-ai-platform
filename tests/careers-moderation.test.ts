@@ -3,13 +3,13 @@ import {GroundedStrategy} from '../src/modules/ai/grounded-strategy';
 import {isCareerEnquiry} from '../src/modules/ai/follow-up';
 import type {MessageContext,MessagingRepository} from '../src/modules/messaging/types';
 import {OpenAiModerator,blockedCategories} from '../src/modules/moderation/provider';
-import type {Environment} from '../src/config/env';
+import type {WhatsAppConnection} from '../src/config/whatsapp-connections';
 import {processIncomingMessage} from '../src/modules/messaging/process-incoming-message';
 import {handleBlacklistImage} from '../src/modules/admin/blacklist-image';
 import {parseWebhook} from '../src/modules/whatsapp/parser';
 const context:MessageContext={tenantId:'tenant',conversationId:'conversation',requestKey:'message:job',type:'text',text:'محتاج شغل'};
 const careerFaq={id:'career-faq',kind:'faq' as const,label:'F9',updatedAt:'2026-09-20',content:JSON.stringify({question:'Do you have any job vacancies?',answer:'Please send your CV to hr@example.test.'})};
-const env={WHATSAPP_ACCESS_TOKEN:'synthetic-token',META_GRAPH_API_VERSION:'v24.0',WHATSAPP_TEST_PHONE_NUMBER_ID:'9001'} as Environment;
+const connection:WhatsAppConnection={mode:'test',phoneNumberId:'9001',appSecret:'synthetic-secret',verifyToken:'synthetic-verify',accessToken:'synthetic-token',graphVersion:'v24.0',recipients:['201000000001'],sendEnabled:true};
 const categories=(flag:string|null=null)=>Object.fromEntries([...blockedCategories,'self-harm','violence'].map(c=>[c,c===flag]));
 const result=(flag:string|null=null)=>Response.json({results:[{categories:categories(flag)}]});
 describe('job enquiries',()=>{
@@ -50,33 +50,33 @@ describe('job enquiries',()=>{
 describe('text and image moderation',()=>{
  it.each(['كسمك','احا','يعم احا بقى كسمكم','كس أمك','ك س م ك','احاا'])('blocks configured Egyptian Arabic abuse locally: %s',async text=>{
   const fetcher=vi.fn<typeof fetch>();
-  expect(await new OpenAiModerator('synthetic-key',env,fetcher).check({...context,text})).toEqual({state:'flagged',categories:['harassment']});
+  expect(await new OpenAiModerator('synthetic-key',connection,fetcher).check({...context,text})).toEqual({state:'flagged',categories:['harassment']});
   expect(fetcher).not.toHaveBeenCalled();
  });
  it.each(['احاول اوضح سؤالي','عايز اسأل عن الأسعار'])('does not confuse ordinary Arabic with local abuse: %s',async text=>{
   const fetcher=vi.fn<typeof fetch>(async()=>result());
-  expect(await new OpenAiModerator('synthetic-key',env,fetcher).check({...context,text})).toEqual({state:'clear',categories:[]});
+  expect(await new OpenAiModerator('synthetic-key',connection,fetcher).check({...context,text})).toEqual({state:'clear',categories:[]});
   expect(fetcher).toHaveBeenCalledOnce();
  });
  it('blocks only configured categories, not complaints, job details or unrelated sensitive categories',async()=>{
   for(const flag of [null,'self-harm','violence',...blockedCategories]){
-   const fetcher=vi.fn<typeof fetch>(async()=>result(flag));const check=await new OpenAiModerator('synthetic-key',env,fetcher).check({...context,text:'Synthetic content'});
+   const fetcher=vi.fn<typeof fetch>(async()=>result(flag));const check=await new OpenAiModerator('synthetic-key',connection,fetcher).check({...context,text:'Synthetic content'});
    expect(check.state).toBe(blockedCategories.includes(flag as typeof blockedCategories[number])?'flagged':'clear');
    expect(JSON.parse(fetcher.mock.calls[0][1]!.body as string).model).toBe('omni-moderation-latest');
   }
  });
  it('inspects images and captions using authenticated bounded Meta retrieval without exposing a media URL to OpenAI',async()=>{
   const fetcher=vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({url:'https://lookaside.fbsbx.com/whatsapp_business/attachments/?mid=123',mime_type:'image/png',file_size:3})).mockResolvedValueOnce(new Response(new Uint8Array([1,2,3]),{headers:{'Content-Type':'image/png'}})).mockResolvedValueOnce(result('sexual'));
-  expect(await new OpenAiModerator('synthetic-key',env,fetcher).check({...context,type:'image',mediaId:'123',text:'Synthetic caption'})).toMatchObject({state:'flagged',categories:['sexual']});
+  expect(await new OpenAiModerator('synthetic-key',connection,fetcher).check({...context,type:'image',mediaId:'123',text:'Synthetic caption'})).toMatchObject({state:'flagged',categories:['sexual']});
   const input=JSON.parse(fetcher.mock.calls[2][1]!.body as string).input;
   expect(input).toEqual([{type:'text',text:'Synthetic caption'},{type:'image_url',image_url:{url:'data:image/png;base64,AQID'}}]);
   expect(fetcher.mock.calls[0][0]).toContain('phone_number_id=9001');expect(fetcher.mock.calls[1][1]).toMatchObject({redirect:'error',headers:{Authorization:'Bearer synthetic-token'}});
  });
  it('never downloads customer-controlled URLs or oversized media and treats failures as unavailable, not abuse',async()=>{
   for(const metadata of [{url:'https://attacker.example/image',mime_type:'image/png',file_size:3},{url:'https://lookaside.fbsbx.com/x',mime_type:'image/png',file_size:6000000}]){
-   const fetcher=vi.fn(async()=>Response.json(metadata));expect((await new OpenAiModerator('key',env,fetcher).check({...context,type:'image',mediaId:'123'})).state).toBe('unavailable');expect(fetcher).toHaveBeenCalledOnce();
+   const fetcher=vi.fn(async()=>Response.json(metadata));expect((await new OpenAiModerator('key',connection,fetcher).check({...context,type:'image',mediaId:'123'})).state).toBe('unavailable');expect(fetcher).toHaveBeenCalledOnce();
   }
-  for(const response of [new Response('',{status:429}),Response.json({results:[]}),Response.json({results:[{categories:{sexual:false}}]})])expect((await new OpenAiModerator('key',env,vi.fn(async()=>response)).check(context)).state).toBe('unavailable');
+  for(const response of [new Response('',{status:429}),Response.json({results:[]}),Response.json({results:[{categories:{sexual:false}}]})])expect((await new OpenAiModerator('key',connection,vi.fn(async()=>response)).check(context)).state).toBe('unavailable');
  });
  it('extracts signed-image metadata including caption without treating it as a text message',()=>{
   const parsed=parseWebhook({object:'whatsapp_business_account',entry:[{changes:[{field:'messages',value:{metadata:{phone_number_id:'9001'},messages:[{id:'image',from:'201000000001',timestamp:'1700000000',type:'image',image:{id:'123',caption:'Synthetic caption'}}]}}]}]});

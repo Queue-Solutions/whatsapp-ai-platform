@@ -1,6 +1,5 @@
 import {z} from 'zod';
-import type {Environment} from '../../config/env';
-import {asConnection,type WhatsAppConnection} from '../../config/whatsapp-connections';
+import type {WhatsAppConnection} from '../../config/whatsapp-connections';
 import type {MessageContext} from '../messaging/types';
 export const blockedCategories=['sexual','sexual/minors','harassment','harassment/threatening','hate','hate/threatening'] as const;
 export type ModerationResult={state:'clear'|'flagged'|'unavailable';categories:string[]};
@@ -23,7 +22,7 @@ async function boundedBody(response:Response,max:number):Promise<Buffer>{
 /** Only selected abuse categories trigger a block. No raw provider response or media is logged or stored. */
 export class OpenAiModerator implements ContentModerator {
   private connection:WhatsAppConnection;
-  constructor(private key:string|undefined,env:Environment|WhatsAppConnection,private fetcher:typeof fetch=fetch){this.connection=asConnection(env);}
+  constructor(private key:string|undefined,connection:WhatsAppConnection,private fetcher:typeof fetch=fetch){this.connection=connection;}
   async check(context:MessageContext):Promise<ModerationResult>{
     if(context.type!=='text'&&context.type!=='image')return {state:'clear',categories:[]};
     const localCategories=localAbuseCategories(context.text);

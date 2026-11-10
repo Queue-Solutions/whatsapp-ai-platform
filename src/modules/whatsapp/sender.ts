@@ -1,5 +1,4 @@
-import type { Environment } from "@/config/env";
-import { asConnection, type WhatsAppConnection } from '@/config/whatsapp-connections';
+import type { WhatsAppConnection } from '@/config/whatsapp-connections';
 import type { MessageSender, PreparedReply } from "../messaging/types";
 import { allowedRecipient, bsuidPattern } from './identity';
 export class SendError extends Error {
@@ -7,14 +6,14 @@ export class SendError extends Error {
 }
 export class MetaMessageSender implements MessageSender {
   private connection: WhatsAppConnection;
-  constructor(input: Environment | WhatsAppConnection, private request: typeof fetch = fetch) {
-    this.connection = asConnection(input);
-  }
+  constructor(input: WhatsAppConnection, private request: typeof fetch = fetch,
+    private authorize?: (reply:PreparedReply)=>Promise<boolean>) { this.connection = input; }
   async send(reply: PreparedReply): Promise<string> {
     const connection = this.connection;
     const validMode = connection.mode === 'test' || (connection.mode === 'pilot' && !!connection.tenantId && reply.tenant_id === connection.tenantId);
-    if (!validMode || !connection.sendEnabled || reply.phone_number_id !== connection.phoneNumberId ||
-      !allowedRecipient(reply.recipient,reply.recipient_aliases??[],connection.recipients)) {
+    const authorized=connection.mode==='pilot'?reply.authorization_scope==='approved_recipient'&&!!this.authorize&&await this.authorize(reply)
+      :allowedRecipient(reply.recipient,reply.recipient_aliases??[],connection.recipients);
+    if (!validMode || !connection.sendEnabled || reply.phone_number_id !== connection.phoneNumberId || !authorized) {
       throw new SendError(false, connection.mode === 'test' ? 'test_guard_rejected' : 'pilot_guard_rejected');
     }
     let response: Response;
@@ -47,11 +46,12 @@ export class MetaMessageSender implements MessageSender {
 
 /** Manual replies select credentials only after the database has prepared a guarded send. */
 export class ConfiguredMetaMessageSender implements MessageSender {
-  constructor(private connections: WhatsAppConnection[], private request: typeof fetch = fetch) {}
+  constructor(private connections: WhatsAppConnection[], private request: typeof fetch = fetch,
+    private authorize?: (connection:WhatsAppConnection,reply:PreparedReply)=>Promise<boolean>) {}
   async send(reply: PreparedReply): Promise<string> {
     const connection = this.connections.find(c => c.phoneNumberId === reply.phone_number_id
-      && (c.mode === 'test' || c.tenantId === reply.tenant_id));
+      && c.tenantId === reply.tenant_id);
     if (!connection) throw new SendError(false, 'channel_guard_rejected');
-    return new MetaMessageSender(connection, this.request).send(reply);
+    return new MetaMessageSender(connection,this.request,this.authorize?candidate=>this.authorize!(connection,candidate):undefined).send(reply);
   }
 }

@@ -329,12 +329,12 @@ describe('inbox query scope',()=>{
   });
   it('reflects master availability in every conversation label',()=>{
     const conversation={id:'chat-1',attention_state:'none' as const,automation_mode:'auto' as const};
-    const off={channelId:'channel',scope:'off' as const,selectedConversationIds:[]};
+    const off={channelId:'channel',scope:'off' as const,selectedConversationIds:[],approvedRecipients:[]};
     expect(conversationStateLabel(conversation,off)).toBe('Assistant off');
     expect(conversationAssistantEnabled(conversation,off)).toBe(false);
-    expect(conversationStateLabel(conversation,{channelId:'channel',scope:'all',selectedConversationIds:[]})).toBe('Assistant on');
-    expect(conversationStateLabel(conversation,{channelId:'channel',scope:'selected',selectedConversationIds:['chat-1']})).toBe('Assistant on');
-    expect(conversationStateLabel(conversation,{channelId:'channel',scope:'selected',selectedConversationIds:['chat-2']})).toBe('Assistant off');
+    expect(conversationStateLabel(conversation,{channelId:'channel',scope:'all',selectedConversationIds:[],approvedRecipients:[]})).toBe('Assistant on');
+    expect(conversationStateLabel(conversation,{channelId:'channel',scope:'selected',selectedConversationIds:['chat-1'],approvedRecipients:[]})).toBe('Assistant on');
+    expect(conversationStateLabel(conversation,{channelId:'channel',scope:'selected',selectedConversationIds:['chat-2'],approvedRecipients:[]})).toBe('Assistant off');
   });
   it('loads the exact unanswered message within the authenticated tenant and conversation',async()=>{
     const q={select:vi.fn(),eq:vi.fn(),maybeSingle:vi.fn().mockResolvedValue({data:null,error:null})};

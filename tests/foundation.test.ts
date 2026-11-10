@@ -8,17 +8,14 @@ import { validSignature } from '../src/modules/whatsapp/security';
 import { MetaMessageSender, SendError } from '../src/modules/whatsapp/sender';
 import { processIncomingMessage } from '../src/modules/messaging/process-incoming-message';
 import { echoStrategy } from '../src/modules/messaging/echo-strategy';
-import { readEnvironment } from '../src/config/env';
-import type { Environment } from '../src/config/env';
+import type {WhatsAppConnection} from '../src/config/whatsapp-connections';
 import type { MessagingRepository, MessageJob, PreparedReply, IncomingMessage } from '../src/modules/messaging/types';
 
 const tenant='11111111-1111-4111-8111-111111111111';
 const otherTenant='22222222-2222-4222-8222-222222222222';
 const user='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const phone='9001', recipient='201000000001', secret='a'.repeat(32);
-const env:Environment={SUPABASE_URL:'https://example.supabase.co',SUPABASE_SECRET_KEY:'s'.repeat(32),META_APP_SECRET:secret,
-  WHATSAPP_VERIFY_TOKEN:secret,META_GRAPH_API_VERSION:'v24.0',WHATSAPP_ACCESS_TOKEN:'t'.repeat(32),
-  WHATSAPP_TEST_PHONE_NUMBER_ID:phone,WHATSAPP_TEST_RECIPIENTS:[recipient],WHATSAPP_MODE:'test',CRON_SECRET:secret};
+const connection:WhatsAppConnection={mode:'test',phoneNumberId:phone,appSecret:secret,verifyToken:secret,accessToken:'t'.repeat(32),graphVersion:'v24.0',recipients:[recipient],sendEnabled:true};
 const incoming=(id='wamid.inbound'):IncomingMessage=>({phoneNumberId:phone,providerMessageId:id,from:recipient,
   occurredAt:new Date().toISOString(),type:'text',text:'أهلاً hello'});
 function fixture(){return {object:'whatsapp_business_account',entry:[{changes:[{field:'messages',value:{metadata:{phone_number_id:phone},
@@ -71,29 +68,23 @@ describe('webhook boundary and sender',()=>{
     log.mockRestore();
   });
   it('blocks sends outside the test channel and recipient list',async()=>{
-    const fetcher=vi.fn();const sender=new MetaMessageSender(env,fetcher);
+    const fetcher=vi.fn();const sender=new MetaMessageSender(connection,fetcher);
     await expect(sender.send({outbound_id:'x',phone_number_id:'other',recipient,body:'x'})).rejects.toMatchObject({code:'test_guard_rejected'});
     await expect(sender.send({outbound_id:'x',phone_number_id:phone,recipient:'201999999999',body:'x'})).rejects.toThrow();
     expect(fetcher).not.toHaveBeenCalled();
   });
   it('constructs a Cloud API text request and returns the provider ID',async()=>{
     const fetcher=vi.fn().mockResolvedValue(Response.json({messages:[{id:'wamid.out'}]}));
-    expect(await new MetaMessageSender(env,fetcher).send({outbound_id:'x',phone_number_id:phone,recipient,body:'أهلاً'})).toBe('wamid.out');
+    expect(await new MetaMessageSender(connection,fetcher).send({outbound_id:'x',phone_number_id:phone,recipient,body:'أهلاً'})).toBe('wamid.out');
     expect(fetcher.mock.calls[0][0]).toBe('https://graph.facebook.com/v24.0/9001/messages');
     expect(JSON.parse(fetcher.mock.calls[0][1].body)).toMatchObject({to:recipient,messaging_product:'whatsapp',text:{body:'أهلاً'}});
   });
   it('distinguishes rejected and ambiguous sends without exposing Meta response bodies',async()=>{
     const reply={outbound_id:'x',phone_number_id:phone,recipient,body:'x'};
-    await expect(new MetaMessageSender(env,vi.fn().mockResolvedValue(new Response('private error',{status:401}))).send(reply)).rejects.toMatchObject({ambiguous:false,code:'meta_http_401'});
-    await expect(new MetaMessageSender(env,vi.fn().mockResolvedValue(Response.json({error:{code:200,error_subcode:123,message:'private content'}},{status:403}))).send(reply)).rejects.toMatchObject({ambiguous:false,code:'meta_http_403_code_200_subcode_123'});
-    await expect(new MetaMessageSender(env,vi.fn().mockRejectedValue(new Error('timeout'))).send(reply)).rejects.toMatchObject({ambiguous:true});
-    await expect(new MetaMessageSender(env,vi.fn().mockResolvedValue(Response.json({}))).send(reply)).rejects.toMatchObject({ambiguous:true});
-  });
-  it('requires test mode and a nonempty recipient allowlist',()=>{
-    const source={...env,WHATSAPP_TEST_RECIPIENTS:recipient};
-    expect(readEnvironment(source).WHATSAPP_MODE).toBe('test');
-    expect(()=>readEnvironment({...source,WHATSAPP_MODE:'live'})).toThrow();
-    expect(()=>readEnvironment({...source,WHATSAPP_TEST_RECIPIENTS:''})).toThrow();
+    await expect(new MetaMessageSender(connection,vi.fn().mockResolvedValue(new Response('private error',{status:401}))).send(reply)).rejects.toMatchObject({ambiguous:false,code:'meta_http_401'});
+    await expect(new MetaMessageSender(connection,vi.fn().mockResolvedValue(Response.json({error:{code:200,error_subcode:123,message:'private content'}},{status:403}))).send(reply)).rejects.toMatchObject({ambiguous:false,code:'meta_http_403_code_200_subcode_123'});
+    await expect(new MetaMessageSender(connection,vi.fn().mockRejectedValue(new Error('timeout'))).send(reply)).rejects.toMatchObject({ambiguous:true});
+    await expect(new MetaMessageSender(connection,vi.fn().mockResolvedValue(Response.json({}))).send(reply)).rejects.toMatchObject({ambiguous:true});
   });
 });
 

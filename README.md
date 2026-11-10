@@ -1,6 +1,6 @@
 # Queue Solutions · WhatsApp AI platform foundation
 
-Next.js + TypeScript + Supabase, using **Meta's temporary test number only**. The response mode defaults to diagnostic echo. A bounded OpenAI strategy can answer from approved dashboard knowledge when enabled; see `docs/BOUNDED-AI.md`.
+Next.js + TypeScript + Supabase for IRAM's existing WhatsApp Business number through Meta Cloud API coexistence. A bounded OpenAI strategy answers from approved dashboard knowledge when enabled; see `docs/BOUNDED-AI.md`.
 
 ## Current milestone
 
@@ -18,7 +18,7 @@ The webhook acknowledges after persistence. Next.js `after()` attempts one queue
 2. Copy `.env.example` to `.env.local` if absent. Keep it out of Git; fill the Supabase URL and backend secret key.
 3. Apply the SQL files in `supabase/migrations` once each, in filename order, to an empty development database. For an existing database, apply only its missing forward migrations; never replay the foundation or reset the database. The current worker requires the inbox migration even in echo mode. For later CLI use, follow the migration-history note below.
 4. Run `npm run check:supabase` to verify the connection and schema.
-5. Follow `docs/META-TEST-NUMBER.md` to fill Meta settings and seed the development tenant/channel.
+5. Configure only the server-side IRAM connection values listed in `.env.example`. Approved tester numbers are managed in the dashboard.
 6. Run `npm run dev`. The service page is at `http://localhost:3000`.
 
 `npm run check` runs lint, TypeScript,  PostgreSQL-backed tests, and a production build. Tests use isolated in-memory PostgreSQL through PGlite and fake Meta sends; they need no account credentials and send no real messages. This validates the migration and RLS SQL, but is not a replacement for testing hosted Supabase/PostgREST and real Meta delivery.
@@ -27,8 +27,8 @@ The webhook acknowledges after persistence. Next.js `after()` attempts one queue
 
 | Route | Purpose |
 |---|---|
-| `GET /api/webhooks/whatsapp` | Meta verification challenge |
-| `POST /api/webhooks/whatsapp` | Signed inbound messages and delivery events |
+| `GET /api/webhooks/whatsapp/pilot` | Meta verification challenge for IRAM |
+| `POST /api/webhooks/whatsapp/pilot` | Signed IRAM inbound messages and delivery events |
 | `GET/POST /api/internal/process-messages` | Worker; requires `Authorization: Bearer <CRON_SECRET>` |
 | `GET /api/health` | Process liveness and configured reply strategy; no claim of database/Meta readiness |
 | `/dashboard/inbox` | Authenticated conversation history and pause/resume controls |
@@ -58,9 +58,7 @@ Status events are stored even if they arrive before the outbound provider ID is 
 
 Every client-owned record has a tenant ID; composite foreign keys prevent cross-tenant relations. Channels resolve tenant identity on the server. No tenant ID from a public webhook is trusted. Browser roles have no worker or sending RPC access; a narrow authenticated RPC supports audited pause/resume; authenticated members can read their tenant's data, and only owners/admins can edit its knowledge. The authenticated business knowledge editor is at `/dashboard`; see `docs/ADMIN-KNOWLEDGE.md` for its public-key and account setup. Account provisioning remains an administrator operation. The privileged Supabase client must remain on the server, behind authorization.
 
-This first deployment configures one test channel and token. Additional Queue Solutions clients need a secret-manager-backed credential resolver per channel, authenticated tenant administration and production onboarding. The schema supports multiple tenants; one environment token is not a production multi-client credential system.
-
-An optional, disabled-by-default company pilot has separate credentials, an exact tenant/channel binding, service-only approvals, and selected-chat controls. It does not enable general production onboarding or replace the test configuration. See [the pilot activation plan](docs/IRAM-PILOT.md) before deploying or activating it.
+This deployment is scoped to IRAM's one company channel. It uses exact tenant/channel binding, service-only Meta credentials, dashboard-managed recipient approvals and selected-chat controls. Additional Queue Solutions clients still need a secret-manager-backed credential resolver and separate production onboarding. See [the IRAM runbook](docs/IRAM-PILOT.md).
 
 Read `docs/CLIENT-CHAT-PRESERVATION.md` before any client onboarding.
 

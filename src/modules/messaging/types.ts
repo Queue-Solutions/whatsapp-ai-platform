@@ -39,6 +39,7 @@ export interface PreparedReply {
   phone_number_id: string;
   recipient: string;
   recipient_aliases?: string[];
+  authorization_scope?: 'approved_recipient';
   body: string;
 }
 export interface MessageContext {
