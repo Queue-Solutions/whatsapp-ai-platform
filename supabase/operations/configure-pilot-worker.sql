@@ -14,7 +14,9 @@ begin
   end if;
   if worker_secret is null or length(worker_secret)<32 then raise exception 'Configure the pilot worker secret in Vault first'; end if;
 end; $$;
-select cron.schedule('queue-pilot-message-recovery','* * * * *',$job$
+-- Ten seconds keeps customer-facing replies responsive while durable claiming and
+-- deduplication prevent overlapping invocations from sending a message twice.
+select cron.schedule('queue-pilot-message-recovery','10 seconds',$job$
   select net.http_post(
     url:=(select decrypted_secret from vault.decrypted_secrets where name='queue_pilot_worker_url'),
     headers:=jsonb_build_object('Content-Type','application/json','Authorization','Bearer '||
