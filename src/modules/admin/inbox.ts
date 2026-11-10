@@ -32,7 +32,7 @@ export function waitingLabel(since:string|null,now=Date.now()) {
   return minutes<1?'Waiting just now':minutes<60?`Waiting ${minutes} min`:minutes<1440?`Waiting ${Math.floor(minutes/60)}h ${minutes%60}m`:`Waiting ${Math.floor(minutes/1440)}d ${Math.floor(minutes%1440/60)}h`;
 }
 
-export type InboxMessage = {id:string;direction:string;body:string|null;message_type:string;delivery_status:string;created_at:string};
+export type InboxMessage = {id:string;direction:string;body:string|null;message_type:string;delivery_status:string;occurred_at:string;created_at:string};
 export type InboxEvent = {id:string;event_type:string;created_at:string};
 export type AssistantScope = 'all'|'off'|'selected';
 export type AssistantApprovedRecipient = {recipient:string;displayName:string|null;conversationId:string|null;createdAt:string};
@@ -66,8 +66,8 @@ export class InboxRepository {
     return data.map(c=>{const customer=customers.data.find(x=>x.id===c.customer_id);return {...c,blocked:blocks.data.some(b=>b.customer_id===c.customer_id&&b.state!=='removed'),name:customer?.display_name||(customer?.whatsapp_username?`@${customer.whatsapp_username}`:'WhatsApp customer'),phone:customer?.whatsapp_id??null,username:customer?.whatsapp_username??null};});
   }
   async messages(tenant:string,conversation:string,limit=100):Promise<InboxMessage[]>{
-    const {data,error}=await this.db.from('messages').select('id,direction,body,message_type,delivery_status,created_at')
-      .eq('tenant_id',tenant).eq('conversation_id',conversation).order('created_at',{ascending:false}).order('id',{ascending:false}).limit(limit);
+    const {data,error}=await this.db.from('messages').select('id,direction,body,message_type,delivery_status,occurred_at,created_at')
+      .eq('tenant_id',tenant).eq('conversation_id',conversation).order('occurred_at',{ascending:false}).order('created_at',{ascending:false}).order('id',{ascending:false}).limit(limit);
     if(error)throw new Error('Could not load messages.');return data.reverse();
   }
   async events(tenant:string,conversation:string):Promise<InboxEvent[]>{
@@ -76,7 +76,7 @@ export class InboxRepository {
     if(error)throw new Error('Could not load activity.');return data;
   }
   async attentionMessage(tenant:string,conversation:string,id:string):Promise<InboxMessage|null>{
-    const {data,error}=await this.db.from('messages').select('id,direction,body,message_type,delivery_status,created_at')
+    const {data,error}=await this.db.from('messages').select('id,direction,body,message_type,delivery_status,occurred_at,created_at')
       .eq('tenant_id',tenant).eq('conversation_id',conversation).eq('id',id).eq('direction','inbound').maybeSingle();
     if(error)throw new Error('Could not load the unanswered question. Refresh and try again.');
     return data;

@@ -59,21 +59,21 @@ export class SupabaseMessagingRepository implements MessagingRepository {
   }
   async context(job: MessageJob): Promise<MessageContext> {
     this.assertJob(job);
-    const {data,error}=await this.db.from('messages').select('tenant_id,conversation_id,channel_id,body,message_type,media_id,moderation_state,created_at')
+    const {data,error}=await this.db.from('messages').select('tenant_id,conversation_id,channel_id,body,message_type,media_id,moderation_state,occurred_at,created_at')
       .eq('id',job.inbound_message_id).eq('tenant_id',job.tenant_id).single();
     if(error || !data) throw new Error('Message context unavailable');
     const conversation=await this.db.from('conversations').select('customer_id,followup_purpose,followup_role,automation_mode,automation_epoch,status,last_inbound_at,context_reset_at,followup_state,followup_name,followup_phone,attention_state,attention_reason,attention_summary')
       .eq('tenant_id',job.tenant_id).eq('id',data.conversation_id).single();
     if(conversation.error||!conversation.data)throw new Error('Message context unavailable');
     const c=conversation.data;
-    let historyQuery=this.db.from('messages').select('body,direction,created_at').eq('tenant_id',job.tenant_id).eq('conversation_id',data.conversation_id)
-      .lt('created_at',data.created_at).in('delivery_status',['received','sent','delivered','read']);
-    if(c.context_reset_at)historyQuery=historyQuery.gt('created_at',c.context_reset_at);
+    const historyPromise=this.rpc<import('../ai/conversation-context').HistoryRow[]>('message_history_before',{
+      p_tenant:job.tenant_id,p_message:job.inbound_message_id,p_limit:16,
+    });
     const [channel,history]=await Promise.all([
       this.db.from('whatsapp_channels').select('enabled,mode,phone_number_id,assistant_scope').eq('tenant_id',job.tenant_id).eq('id',data.channel_id).single(),
-      historyQuery.order('created_at',{ascending:false}).limit(16),
+      historyPromise,
     ]);
-    if(channel.error||history.error)throw new Error('Message context unavailable');
+    if(channel.error)throw new Error('Message context unavailable');
     const ch=channel.data;
     if(this.pilot&&(ch.mode!=='pilot'||ch.phone_number_id!==this.phoneNumberId))throw new Error('Channel mismatch');
     const selected=ch.assistant_scope==='selected'?await this.db.from('assistant_selected_conversations').select('conversation_id')
@@ -88,7 +88,7 @@ export class SupabaseMessagingRepository implements MessagingRepository {
       && job.automation_epoch === c.automation_epoch
       && ch.phone_number_id === this.phoneNumberId && Date.parse(c.last_inbound_at) >= Date.now() - (23*60+55)*60000;
     const activeFollowUp=['waiting','in_progress'].includes(c.attention_state)&&['collecting','ready','declined'].includes(c.followup_state);
-    return {tenantId:data.tenant_id,conversationId:data.conversation_id,text:data.body,type:data.message_type,mediaId:data.media_id??undefined,moderationState:data.moderation_state,blocked,eligible,history:boundedHistorySince(history.data,c.context_reset_at),
+    return {tenantId:data.tenant_id,conversationId:data.conversation_id,text:data.body,type:data.message_type,mediaId:data.media_id??undefined,moderationState:data.moderation_state,blocked,eligible,history:boundedHistorySince(history,c.context_reset_at),
       followUp:activeFollowUp?{state:c.followup_state as 'collecting'|'ready'|'declined',purpose:c.followup_purpose==='career'?'career':undefined,role:c.followup_role,name:c.followup_name,phone:c.followup_phone,
         reason:c.attention_reason==='knowledge_gap'?'missing_business_information':c.attention_reason,summary:c.attention_summary}:undefined};
   }

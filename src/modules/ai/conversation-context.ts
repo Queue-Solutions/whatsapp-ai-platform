@@ -42,7 +42,7 @@ export function resolveContinuation(context:MessageContext):MessageContext {
   return context;
 }
 
-export type HistoryRow={body:string|null;direction:string;created_at?:string};
+export type HistoryRow={body:string|null;direction:string;occurred_at?:string;created_at?:string};
 /** Preserve a contiguous recent window. Never skip a large assistant turn and keep stale older turns. */
 export function boundedHistory(rows:HistoryRow[],maxBytes=9000):NonNullable<MessageContext['history']>{
   const result:NonNullable<MessageContext['history']>=[];let bytes=0;
@@ -60,5 +60,5 @@ export function boundedHistorySince(rows:HistoryRow[],resetAt:string|null,maxByt
   if(!resetAt)return boundedHistory(rows,maxBytes);
   const boundary=Date.parse(resetAt);
   if(!Number.isFinite(boundary))return [];
-  return boundedHistory(rows.filter(row=>!!row.created_at&&Date.parse(row.created_at)>boundary),maxBytes);
+  return boundedHistory(rows.filter(row=>!!row.occurred_at&&Date.parse(row.occurred_at)>boundary),maxBytes);
 }

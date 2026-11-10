@@ -5,7 +5,7 @@ const tenant='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-82
 describe('blacklist and careers PostgreSQL boundaries',()=>{
  let db:PGlite;
  const rows=async<T=Record<string,unknown>>(sql:string,args:unknown[]=[])=> (await db.query<T>(sql,args)).rows;
- const ingest=async(id:string,from='201000000001',phone='9001',type='text')=>(await rows<{v:string}>("select public.ingest_moderated_message($1,$2,$3,'Fictional customer',now(),$4,'Synthetic content',null,null,$5) as v",[phone,id,from,type,type==='image'?'123':null]))[0].v;
+ const ingest=async(id:string,from='201000000001',phone='9001',type='text',occurredAt=new Date().toISOString())=>(await rows<{v:string}>("select public.ingest_moderated_message($1,$2,$3,'Fictional customer',$5,$4,'Synthetic content',null,null,$6) as v",[phone,id,from,type,occurredAt,type==='image'?'123':null]))[0].v;
  const claim=async()=>(await rows<{id:string;lease_token:string;inbound_message_id:string}>("select * from public.claim_message_job('9001')"))[0];
  const moderate=async(job:Awaited<ReturnType<typeof claim>>,state='clear',categories:string[]=[])=> (await rows<{v:boolean}>('select public.finish_content_check($1,$2,$3,$4) as v',[job.id,job.lease_token,state,categories]))[0].v;
  const prepare=async(job:Awaited<ReturnType<typeof claim>>) => (await rows<{v:unknown}>("select public.prepare_message_reply($1,$2,'Synthetic response') as v",[job.id,job.lease_token]))[0].v;
@@ -26,6 +26,25 @@ describe('blacklist and careers PostgreSQL boundaries',()=>{
   await ingest('newer-turn');expect(await prepare(older)).toBeNull();
   expect((await rows('select state,error_code from public.message_jobs where id=$1',[older.id]))[0]).toEqual({state:'skipped',error_code:'superseded_by_newer_inbound'});
   const newer=await claim();await moderate(newer);expect(await prepare(newer)).toBeTruthy();
+ });
+ it('skips a delayed older delivery and claims the chronologically latest customer turn',async()=>{
+  await ingest('latest-event',undefined,undefined,'text','2026-11-10T00:07:00Z');
+  await ingest('delayed-old-event',undefined,undefined,'text','2026-11-09T23:27:00Z');
+  const job=await claim();
+  expect((await rows<{provider_message_id:string}>('select provider_message_id from public.messages where id=$1',[job.inbound_message_id]))[0].provider_message_id).toBe('latest-event');
+  expect((await rows('select state,error_code from public.message_jobs j join public.messages m on m.id=j.inbound_message_id where m.provider_message_id=$1',['delayed-old-event']))[0]).toEqual({state:'skipped',error_code:'superseded_by_newer_inbound'});
+ });
+ it('does not let a delayed older delivery cancel an in-flight newer reply',async()=>{
+  await ingest('in-flight-latest',undefined,undefined,'text','2026-11-10T00:07:00Z');const latest=await claim();await moderate(latest);
+  await ingest('late-old-webhook',undefined,undefined,'text','2026-11-09T23:27:00Z');
+  expect(await prepare(latest)).toBeTruthy();
+ });
+ it('returns AI history in WhatsApp event order and applies resets to event time',async()=>{
+  const old=await ingest('history-old',undefined,undefined,'text','2026-11-09T23:27:00Z');
+  const current=await ingest('history-current',undefined,undefined,'text','2026-11-10T00:07:00Z');
+  await db.query("update public.messages set created_at=now()+interval '1 hour' where id=$1",[old]);
+  const history=await rows<{id:string;occurred_at:string}>('select id,occurred_at from public.message_history_before($1,$2,16)',[tenant,current]);
+  expect(history.map(row=>row.id)).toEqual([old]);
  });
  it('blocks automatic and manual sends and preserves messages while waiting for review',async()=>{
   const b=await block();expect(b.state).toBe('pending_review');

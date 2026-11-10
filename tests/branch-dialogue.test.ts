@@ -257,9 +257,9 @@ describe('short replies act on the last assistant offer',()=>{
  });
  it('keeps the transcript but excludes every turn at or before the agent context reset',()=>{
   const rows=[
-   {direction:'outbound',body:'New assistant reply',created_at:'2026-09-28T20:00:02Z'},
-   {direction:'inbound',body:'New customer message',created_at:'2026-09-28T20:00:01Z'},
-   {direction:'outbound',body:'Old assistant context',created_at:'2026-09-28T19:59:59Z'},
+   {direction:'outbound',body:'New assistant reply',occurred_at:'2026-09-28T20:00:02Z'},
+   {direction:'inbound',body:'New customer message',occurred_at:'2026-09-28T20:00:01Z'},
+   {direction:'outbound',body:'Old assistant context',occurred_at:'2026-09-28T19:59:59Z'},
   ];
   expect(boundedHistorySince(rows,'2026-09-28T20:00:00Z')).toEqual([
    {role:'user',content:'New customer message'},{role:'assistant',content:'New assistant reply'},
