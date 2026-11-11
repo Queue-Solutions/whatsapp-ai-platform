@@ -1,0 +1,147 @@
+.page {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(42, 98, 75, 0.12), transparent 34rem),
+    #f7f9f7;
+  color: #193029;
+}
+
+.header {
+  border-bottom: 1px solid #dce6e0;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.headerInner,
+.article,
+.footerInner {
+  width: min(100% - 40px, 860px);
+  margin: 0 auto;
+}
+
+.headerInner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 22px 0;
+}
+
+.brand {
+  color: #183f32;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-decoration: none;
+}
+
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.nav a,
+.article a,
+.footerInner a {
+  color: #1f654d;
+  text-underline-offset: 3px;
+}
+
+.article {
+  padding: 64px 0 72px;
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  color: #527065;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.article h1 {
+  max-width: 720px;
+  margin: 0;
+  color: #102c23;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(38px, 7vw, 60px);
+  font-weight: 500;
+  line-height: 1.03;
+}
+
+.updated {
+  margin: 18px 0 38px;
+  color: #61736c;
+  font-size: 14px;
+}
+
+.summary {
+  margin: 0 0 40px;
+  padding: 22px 24px;
+  border: 1px solid #ccddd5;
+  border-radius: 14px;
+  background: #edf5f1;
+  font-size: 18px;
+  line-height: 1.65;
+}
+
+.article section {
+  margin-top: 38px;
+}
+
+.article h2 {
+  margin: 0 0 12px;
+  color: #153f32;
+  font-size: 24px;
+}
+
+.article p,
+.article li {
+  color: #344e45;
+  font-size: 16px;
+  line-height: 1.75;
+}
+
+.article ul,
+.article ol {
+  padding-left: 24px;
+}
+
+.article li + li {
+  margin-top: 8px;
+}
+
+.notice {
+  margin-top: 38px;
+  padding: 20px 22px;
+  border-left: 4px solid #2f745b;
+  border-radius: 4px 12px 12px 4px;
+  background: #fff;
+}
+
+.footer {
+  border-top: 1px solid #dce6e0;
+  background: #edf2ef;
+}
+
+.footerInner {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 28px 0;
+  color: #51665e;
+  font-size: 14px;
+}
+
+@media (max-width: 640px) {
+  .headerInner,
+  .footerInner {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .article {
+    padding-top: 44px;
+  }
+}
