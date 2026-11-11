@@ -124,7 +124,7 @@
 @media(max-width:430px){.metric-grid{grid-template-columns:1fr}.date-controls label{min-width:100%}.date-controls .refresh-analytics{width:100%}.period-presets button{flex:1}.recommendation-list>article{grid-template-columns:1fr}.recommendation-rank{display:none}.recommendation-action{grid-column:1}}
 
 /* One-time, authenticated Meta coexistence onboarding */
-.onboarding-page{min-height:100vh;display:grid;place-items:center;padding:32px;background:#f4f6ef}
+.onboarding-page{--green:#245b48;min-height:100vh;display:grid;place-items:center;padding:32px;background:#f4f6ef}
 .onboarding-card{width:min(760px,100%);background:#fff;border:1px solid #dfe6d8;border-radius:22px;padding:40px;box-shadow:0 18px 55px rgba(31,70,53,.08)}
 .onboarding-card h1{margin:10px 0 14px}.onboarding-card .primary{margin-top:22px}
 @media(max-width:600px){.onboarding-page{padding:16px}.onboarding-card{padding:24px}}
