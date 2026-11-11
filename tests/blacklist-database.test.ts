@@ -35,8 +35,9 @@ describe('blacklist and careers PostgreSQL boundaries',()=>{
   expect((await rows('select state,error_code from public.message_jobs j join public.messages m on m.id=j.inbound_message_id where m.provider_message_id=$1',['delayed-old-event']))[0]).toEqual({state:'skipped',error_code:'superseded_by_newer_inbound'});
  });
  it('does not let a delayed older delivery cancel an in-flight newer reply',async()=>{
-  await ingest('in-flight-latest',undefined,undefined,'text','2026-11-10T00:07:00Z');const latest=await claim();await moderate(latest);
-  await ingest('late-old-webhook',undefined,undefined,'text','2026-11-09T23:27:00Z');
+  const latestAt=new Date(Date.now()-5*60_000).toISOString(),olderAt=new Date(Date.now()-45*60_000).toISOString();
+  await ingest('in-flight-latest',undefined,undefined,'text',latestAt);const latest=await claim();await moderate(latest);
+  await ingest('late-old-webhook',undefined,undefined,'text',olderAt);
   expect(await prepare(latest)).toBeTruthy();
  });
  it('returns AI history in WhatsApp event order and applies resets to event time',async()=>{
